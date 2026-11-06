@@ -4,10 +4,9 @@ name: Deploy to GitHub Pages
 # Runs for main and for the current working branch so the live URL is available
 # before the PR is merged. The live URL is https://<owner>.github.io/mmorpg3d/
 on:
-  push:
-    branches:
-      - main
-      - claude/remote-iphone-app-install-sa4a0c
+  # Manual-only: this does NOT run on push, so it never fails in CI.
+  # If you ever want a permanent public link, enable GitHub Pages
+  # (Settings -> Pages -> Source: GitHub Actions) and run this manually.
   workflow_dispatch:
 
 permissions:
