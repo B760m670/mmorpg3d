@@ -1,8 +1,9 @@
 import { defineConfig } from 'vite';
 
-// Minimal Vite config. The project is plain ES modules + three.js,
-// so no framework plugins are needed yet.
-export default defineConfig({
+// Dev serves at '/', production build is served from the GitHub Pages project
+// path '/mmorpg3d/'. Override with BASE_PATH env if you deploy elsewhere.
+export default defineConfig(({ command }) => ({
+  base: command === 'build' ? process.env.BASE_PATH || '/mmorpg3d/' : '/',
   server: {
     host: true, // expose on LAN so you can open it from other devices
     port: 5173,
@@ -11,4 +12,4 @@ export default defineConfig({
     target: 'es2020',
     outDir: 'dist',
   },
-});
+}));

@@ -10,9 +10,9 @@ import { CAMERA } from '../config.js';
 // around the sun/moon and the specular glitter. OutputPass does the final
 // tone-map + color-space conversion so it must come last.
 export class Engine {
-  constructor(container) {
+  constructor(container, { maxPixelRatio = 2 } = {}) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, maxPixelRatio));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 0.62;

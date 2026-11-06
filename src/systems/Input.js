@@ -6,6 +6,9 @@ export class Input {
     this.keys = new Set();
     this.throttle = 0;
     this.steer = 0;
+    // Written by TouchControls; folded into throttle/steer each update.
+    this.touchThrottle = 0;
+    this.touchSteer = 0;
     this.actions = { toggleTime: false, toggleCamera: false };
 
     this._down = (e) => {
@@ -31,8 +34,8 @@ export class Input {
     if (k.has('s') || k.has('arrowdown')) t -= 1;
     if (k.has('a') || k.has('arrowleft')) s += 1;
     if (k.has('d') || k.has('arrowright')) s -= 1;
-    this.throttle = t;
-    this.steer = s;
+    this.throttle = Math.max(-1, Math.min(1, t + this.touchThrottle));
+    this.steer = Math.max(-1, Math.min(1, s + this.touchSteer));
   }
 
   consume(name) {

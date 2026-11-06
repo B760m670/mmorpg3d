@@ -9,17 +9,24 @@ import { Environment } from './world/Environment.js';
 import { Boat } from './entities/Boat.js';
 import { Input } from './systems/Input.js';
 import { FollowCamera } from './systems/FollowCamera.js';
+import { TouchControls } from './systems/TouchControls.js';
 
 const container = document.getElementById('app');
 const loading = document.getElementById('loading');
 
-const engine = new Engine(container);
+// Detect touch / coarse-pointer devices and dial quality down a notch for them.
+const IS_TOUCH =
+  (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) ||
+  'ontouchstart' in window ||
+  navigator.maxTouchPoints > 0;
+
+const engine = new Engine(container, { maxPixelRatio: IS_TOUCH ? 1.5 : 2 });
 const { scene, camera, renderer } = engine;
 
 const sky = new SkyDome();
 scene.add(sky.mesh);
 
-const ocean = new Ocean();
+const ocean = new Ocean({ segments: IS_TOUCH ? 220 : undefined });
 scene.add(ocean.mesh);
 
 const environment = new Environment(scene);
@@ -35,6 +42,23 @@ const orbit = new OrbitControls(camera, renderer.domElement);
 orbit.enableDamping = true;
 orbit.maxPolarAngle = Math.PI * 0.495; // don't dip under the water
 orbit.enabled = false;
+
+// Touch controls (phones/tablets). Buttons fire the same one-shot actions as
+// the N / C keys. The joystick is hidden while free-look camera owns touch.
+let touch = null;
+if (IS_TOUCH) {
+  document.body.classList.add('touch');
+  touch = new TouchControls(input, {
+    onToggleTime: () => { input.actions.toggleTime = true; },
+    onToggleCamera: () => { input.actions.toggleCamera = true; },
+  });
+  const hud = document.getElementById('hud');
+  if (hud) {
+    hud.innerHTML =
+      '<div>Drag the stick: <b>up</b> sail &nbsp; <b>left / right</b> steer</div>' +
+      '<div>Buttons: <b>day / night</b> &nbsp; <b>camera</b></div>';
+  }
+}
 
 // --- Presets -------------------------------------------------------------
 const order = ['day', 'night'];
@@ -69,6 +93,7 @@ function tick() {
     follow.enabled = !follow.enabled;
     orbit.enabled = !follow.enabled;
     if (orbit.enabled) orbit.target.copy(boat.position);
+    if (touch) touch.setVisible(follow.enabled);
   }
 
   input.update();

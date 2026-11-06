@@ -127,8 +127,8 @@ const FRAG = /* glsl */ `
 `;
 
 export class Ocean {
-  constructor() {
-    const geo = new THREE.PlaneGeometry(OCEAN.size, OCEAN.size, OCEAN.segments, OCEAN.segments);
+  constructor({ segments = OCEAN.segments } = {}) {
+    const geo = new THREE.PlaneGeometry(OCEAN.size, OCEAN.size, segments, segments);
     geo.rotateX(-Math.PI / 2); // lay flat: local (x, 0, z)
 
     this.uniforms = {

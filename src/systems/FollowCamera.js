@@ -13,17 +13,26 @@ export class FollowCamera {
     this._lookCurrent = new THREE.Vector3();
   }
 
+  // On portrait / narrow screens the vertical FOV frames the boat much larger,
+  // so pull the camera back and up proportionally to keep a comfortable view.
+  _fit() {
+    const aspect = this.camera.aspect || 1;
+    const k = aspect < 1 ? 1 + (1 - aspect) * 1.15 : 1;
+    return { dist: CAMERA.distance * k, height: CAMERA.height * (aspect < 1 ? 1 + (1 - aspect) * 0.5 : 1) };
+  }
+
   update(dt, boat, time) {
     if (!this.enabled) return;
 
     const fx = Math.sin(boat.heading);
     const fz = Math.cos(boat.heading);
+    const { dist, height } = this._fit();
 
     // Behind the boat (bow is -Z), lifted up.
     this._desired.set(
-      boat.position.x + fx * CAMERA.distance,
-      boat.position.y + CAMERA.height + Math.sin(time * 0.6) * 0.4,
-      boat.position.z + fz * CAMERA.distance,
+      boat.position.x + fx * dist,
+      boat.position.y + height + Math.sin(time * 0.6) * 0.4,
+      boat.position.z + fz * dist,
     );
 
     const k = 1 - Math.pow(0.0001, dt * CAMERA.damping);
@@ -41,10 +50,11 @@ export class FollowCamera {
   snap(boat) {
     const fx = Math.sin(boat.heading);
     const fz = Math.cos(boat.heading);
+    const { dist, height } = this._fit();
     this.camera.position.set(
-      boat.position.x + fx * CAMERA.distance,
-      boat.position.y + CAMERA.height,
-      boat.position.z + fz * CAMERA.distance,
+      boat.position.x + fx * dist,
+      boat.position.y + height,
+      boat.position.z + fz * dist,
     );
     this._lookCurrent.set(boat.position.x, boat.position.y + CAMERA.lookHeight, boat.position.z);
     this.camera.lookAt(this._lookCurrent);
