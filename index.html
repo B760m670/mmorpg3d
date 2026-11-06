@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Open World — Ocean</title>
+    <style>
+      :root { color-scheme: dark; }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 100%; height: 100%; overflow: hidden; background: #0b0f12; }
+      #app { position: fixed; inset: 0; }
+      canvas { display: block; }
+
+      #hud {
+        position: fixed;
+        left: 16px;
+        bottom: 14px;
+        font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+        color: rgba(230, 238, 242, 0.75);
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+        pointer-events: none;
+        user-select: none;
+      }
+      #hud b { color: #eaf2f6; }
+
+      #loading {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        font: 14px/1.4 ui-sans-serif, system-ui, sans-serif;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: rgba(230, 238, 242, 0.6);
+        background: #0b0f12;
+        transition: opacity 0.6s ease;
+      }
+      #loading.hidden { opacity: 0; pointer-events: none; }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <div id="hud">
+      <div><b>W / ↑</b> throttle &nbsp; <b>S / ↓</b> reverse &nbsp; <b>A D / ← →</b> steer</div>
+      <div><b>N</b> day / night &nbsp; <b>C</b> free camera</div>
+    </div>
+    <div id="loading">loading ocean…</div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
