@@ -67,11 +67,23 @@ const FRAG = /* glsl */ `
   varying float vHeight;
   varying float vViewDist;
 
-  // Cheap hash noise to break the specular into glitter.
-  float hash(vec2 p) {
-    p = fract(p * vec2(123.34, 456.21));
-    p += dot(p, p + 45.32);
-    return fract(p.x * p.y);
+  // Small capillary/wind waves for the normal only (no displacement):
+  // six directional waves at golden-angle spacing with analytic gradients.
+  // Smooth and animated, so no blocky artifacts.
+  vec2 ripple(vec2 p, float t) {
+    vec2 g = vec2(0.0);
+    float ang = 0.37;
+    float freq = 0.55;
+    float amp = 0.075;
+    for (int i = 0; i < 9; i++) {
+      vec2 d = vec2(cos(ang), sin(ang));
+      float ph = dot(d, p) * freq + t * sqrt(9.81 * freq) * 0.8;
+      g += d * (freq * amp * cos(ph));
+      ang += 2.39996;
+      freq *= 1.41;
+      amp *= 0.78;
+    }
+    return g;
   }
 
   vec3 skyColor(vec3 dir) {
@@ -85,11 +97,10 @@ const FRAG = /* glsl */ `
   void main() {
     vec3 N = normalize(vNormal);
 
-    // Micro-ripple perturbation for sparkle (animated, high frequency).
-    vec2 rp = vWorldPos.xz * 1.6 + uTime * 0.6;
-    float nX = hash(floor(rp)) - 0.5;
-    float nZ = hash(floor(rp.yx)) - 0.5;
-    N = normalize(N + vec3(nX, 0.0, nZ) * 0.08);
+    // Ripple detail, faded with distance to avoid shimmering.
+    float fade = exp(-vViewDist * 0.004);
+    vec2 rg = ripple(vWorldPos.xz, uTime);
+    N = normalize(N + vec3(-rg.x, 0.0, -rg.y) * fade);
 
     vec3 V = normalize(uCameraPos - vWorldPos);
 
@@ -111,12 +122,16 @@ const FRAG = /* glsl */ `
     // Sun / moon specular glitter.
     vec3 H = normalize(V + uSunDir);
     float spec = pow(max(dot(N, H), 0.0), uSpecPower);
-    float sparkle = 0.6 + 0.8 * hash(floor(vWorldPos.xz * 3.0 + uTime));
-    col += uSunColor * spec * uSpecStrength * sparkle;
+    col += uSunColor * spec * uSpecStrength;
+
+    // Light shining through the thin tops of waves facing away from the sun.
+    float sss = pow(max(dot(V, -uSunDir), 0.0), 6.0) * clamp(vHeight * 0.4, 0.0, 1.0);
+    col += uShallow * uSunColor * sss * 0.25;
 
     // Foam on the sharpest crests.
-    float foam = smoothstep(1.1, 2.1, vHeight);
-    col = mix(col, uFoam, foam * 0.5);
+    // Foam only on the highest crests, broken up by the ripple pattern.
+    float foam = smoothstep(2.3, 3.0, vHeight) * smoothstep(0.08, 0.2, length(rg));
+    col = mix(col, uFoam, foam * 0.6);
 
     // Distance fog — melt into the haze.
     float fog = 1.0 - exp(-uFogDensity * vViewDist);

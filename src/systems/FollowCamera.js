@@ -38,6 +38,12 @@ export class FollowCamera {
     const k = 1 - Math.pow(0.0001, dt * CAMERA.damping);
     this.camera.position.lerp(this._desired, k);
 
+    // Never let the camera sink into a cliff.
+    if (this.groundAt) {
+      const g = this.groundAt(this.camera.position.x, this.camera.position.z) + 6;
+      if (this.camera.position.y < g) this.camera.position.y = g;
+    }
+
     this._look.set(
       boat.position.x,
       boat.position.y + CAMERA.lookHeight,

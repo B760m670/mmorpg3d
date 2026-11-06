@@ -6,6 +6,7 @@ import { Engine } from './core/Engine.js';
 import { SkyDome } from './world/SkyDome.js';
 import { Ocean } from './world/Ocean.js';
 import { Environment } from './world/Environment.js';
+import { Terrain, heightAt, isNavigable } from './world/Terrain.js';
 import { Boat } from './entities/Boat.js';
 import { Input } from './systems/Input.js';
 import { FollowCamera } from './systems/FollowCamera.js';
@@ -29,6 +30,9 @@ scene.add(sky.mesh);
 const ocean = new Ocean({ segments: IS_TOUCH ? 220 : undefined });
 scene.add(ocean.mesh);
 
+const terrain = new Terrain({ spacing: IS_TOUCH ? 12 : undefined });
+scene.add(terrain.mesh);
+
 const environment = new Environment(scene);
 
 const boat = new Boat();
@@ -36,6 +40,7 @@ scene.add(boat.object);
 
 const input = new Input();
 const follow = new FollowCamera(camera);
+follow.groundAt = (x, z) => Math.max(0, heightAt(x, z));
 
 // Free-look camera (toggled with C). Disabled by default.
 const orbit = new OrbitControls(camera, renderer.domElement);
@@ -97,7 +102,7 @@ function tick() {
   }
 
   input.update();
-  boat.update(dt, input, time);
+  boat.update(dt, input, time, isNavigable);
 
   if (follow.enabled) {
     follow.update(dt, boat, time);
@@ -119,4 +124,4 @@ function tick() {
 tick();
 
 // Expose for quick console tweaking / debugging.
-window.__scene = { engine, sky, ocean, boat, environment, applyPreset };
+window.__scene = { engine, sky, ocean, boat, environment, terrain, follow, heightAt, applyPreset };

@@ -77,7 +77,8 @@ export class Boat {
     return this.group;
   }
 
-  update(dt, input, time) {
+  // canMove(x, z) -> boolean: optional world query for deep-enough water.
+  update(dt, input, time, canMove = null) {
     // Throttle & steering
     this.speed += input.throttle * BOAT.acceleration * dt;
     this.speed *= Math.pow(BOAT.drag, dt * 60); // frame-rate-independent drag
@@ -91,8 +92,17 @@ export class Boat {
     // Forward vector (-Z is the bow)
     const fx = Math.sin(this.heading);
     const fz = Math.cos(this.heading);
-    this.position.x -= fx * this.speed * dt;
-    this.position.z -= fz * this.speed * dt;
+    const nx = this.position.x - fx * this.speed * dt;
+    const nz = this.position.z - fz * this.speed * dt;
+    // Probe a bit ahead of the bow (or stern when reversing) so the hull
+    // stops before it visibly enters the rock.
+    const probe = Math.sign(this.speed) * 8;
+    if (!canMove || canMove(nx - fx * probe, nz - fz * probe)) {
+      this.position.x = nx;
+      this.position.z = nz;
+    } else {
+      this.speed *= -0.25; // bump off the shore
+    }
 
     // Buoyancy: sample the surface at the hull center plus fore/aft/side
     // points to derive the up vector (pitch + roll).

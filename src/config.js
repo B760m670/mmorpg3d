@@ -2,6 +2,26 @@
 // Everything visual/physical that we iterate on lives here so the rest
 // of the code stays structural. Day/night are presets of the same scene.
 
+// Fjord terrain. The boat starts in open sea at z = 0 facing -Z; the fjord
+// mouth opens at mouthZ and a meandering channel runs deep into the land.
+export const TERRAIN = {
+  minX: -1400, maxX: 1400,
+  minZ: -5000, maxZ: 400,
+  spacing: 8,          // world units between vertices (desktop)
+  mouthZ: -250,        // where the land starts rising
+  mouthRamp: 600,      // distance over which headlands grow to full height
+  channelHalfWidth: 62,
+  channelWidthVar: 35,
+  meanderA: 160, meanderF: 0.0011,
+  meanderB: 60, meanderG: 0.0029,
+  wallWidth: 45,       // horizontal run of the cliff face (smaller = steeper)
+  seabed: -40,
+  cliffHeight: 230,
+  plateauVar: 70,
+  cragHeight: 85,
+  mountainHeight: 260, // extra rise of the land further from the channel
+};
+
 export const OCEAN = {
   size: 2600,       // world units across the water plane
   segments: 400,    // vertex density (segments x segments)
@@ -23,12 +43,12 @@ export const WAVES = [
 export const PRESETS = {
   day: {
     label: 'day',
-    exposure: 0.62,
+    exposure: 0.55,
     showSkyDome: true,
-    sky: { turbidity: 12, rayleigh: 1.4, mieCoefficient: 0.02, mieDirectionalG: 0.86, elevation: 7, azimuth: 175 },
+    sky: { turbidity: 10, rayleigh: 1.3, mieCoefficient: 0.012, mieDirectionalG: 0.84, elevation: 17, azimuth: 118 },
     sun: { color: [1.0, 0.95, 0.86], intensity: 2.4 },
-    ambient: { color: [0.7, 0.78, 0.84], intensity: 0.9 },
-    fog: { color: [0.78, 0.83, 0.86], density: 0.00085 },
+    ambient: { color: [0.7, 0.78, 0.84], intensity: 1.35 },
+    fog: { color: [0.72, 0.78, 0.82], density: 0.00062 },
     water: {
       deep: [0.02, 0.05, 0.07],
       shallow: [0.1, 0.18, 0.2],
@@ -56,7 +76,7 @@ export const PRESETS = {
       shallow: [0.02, 0.04, 0.06],
       horizon: [0.1, 0.13, 0.19],
       zenith: [0.02, 0.03, 0.06],
-      foam: [0.6, 0.68, 0.8],
+      foam: [0.22, 0.27, 0.34],
       specPower: 320,
       specStrength: 3.2,
     },
