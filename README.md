@@ -3,7 +3,8 @@
 Atmospheric open-world ocean prototype in the browser, built with **three.js**.
 Inspired by the filmic "boat sailing through a fjord" look: a spectral (FFT)
 ocean, hazy distance fog, a chase camera and a drivable trawler, all graded
-with ACES tone mapping and bloom.
+with ACES tone mapping and bloom. The land and the sea floor are real: the
+Reine area of Lofoten, Norway, from open elevation and bathymetry data.
 
 This is **Phase 1**: a correct, extensible skeleton. The visuals are deliberately
 achieved with cheap shader tricks so the architecture (systems, physics, camera,
@@ -118,7 +119,9 @@ The realism here is **not** the engine — it's the water shader + fog + post.
   spectrum (Hs 1.5 m at Bft 4, 6.7 m at Bft 8), and the sea builds up or
   calms over a few seconds when you change it.
 - **Not uniform, like a real sea** (`src/world/Ocean.js`): the long waves die
-  down going up the fjord and the swell is damped near the cliffs. Drifting
+  down behind the islands and up the fjords (each point's openness to the
+  sea is worked out from the real coastline, see below) and the swell is
+  damped where the real sea floor shoals. Drifting
   wind gusts (cat's paws) roughen the small waves in patches. Whitecaps
   appear where the summed surface folds over (Jacobian) and leave foam that
   fades. A gale blows foam into streaks along the wind, and there is surf at
@@ -166,9 +169,8 @@ The realism here is **not** the engine — it's the water shader + fog + post.
   (water rising fast against the bow) throws a sheet of spray to both sides.
   It carries with the ship, blows downwind and falls back; light spray runs
   off the bow wave at speed in a seaway.
-- **Waterfalls** (`src/world/Waterfalls.js`): six falls on the fjord walls,
-  placed where the terrain has high, steep stretches of wall, alternating
-  sides. Each is two crossed curtains hugging the cliff from lip to sea, with
+- **Waterfalls** (`src/world/Waterfalls.js`): six falls inside the fjords,
+  placed where the real terrain has a high, steep face right at the water. Each is two crossed curtains hugging the cliff from lip to sea, with
   streaks accelerating as they fall and mist where they land. They run
   fuller in the rain. The two nearest roar from their foot (spatial sound).
 - **Night sky** (`src/world/NightSky.js`): a dark gradient with airglow at
@@ -283,6 +285,44 @@ engine is loud in the engine room.
 
 ![below decks](docs/below_decks.jpg)
 
+## The land and the sea floor: Reine, Lofoten
+
+The world is a real place: Reine on Moskenesøya in Lofoten, with Reinefjorden
+and its arms, the skerries off the village and Vestfjorden outside. You start
+in open water south-east of Reine, bow toward the fjord mouth.
+
+- **Land**: Kartverket's national height model (NHM digital terrain model,
+  10 m), from the Geonorge WCS (CC BY 4.0).
+- **Sea floor**: the EMODnet Bathymetry digital terrain model (mean depth,
+  1/16 arc-minute, about 115 x 45 m here), which includes the fjord basins
+  (to about 155 m deep in Reinefjorden, 250 m in Vestfjorden).
+- `tools/build_terrain.py` downloads both, merges them at the coastline (the
+  coarse sea-floor model is limited by a slope off the real shore so rock
+  does not drop vertically and narrow sounds keep water), smooths the
+  sea-floor facets and writes two grids: 10 m over the 10 x 11 km you sail in
+  and 64 m over 41 x 41 km so the mountains on the horizon are real too. It
+  also works out how open each point is to the sea (fetch along 32 bearings)
+  for the wave shelter. Output: `src/assets/terrain/` (about 1.7 MB).
+- In the game (`src/world/Terrain.js`) the same heights answer the boat
+  (grounding), camera, radar, echo sounder and chart, and drive the mesh: a
+  quadtree of patches, finer near the camera, drawn as one instanced draw
+  call with the heights read from a texture in the vertex shader. It is
+  shaded by height and slope: grey rock, green on the gentler slopes, snow on
+  the high ledges, a dark wet band with weed at the tide line, the flat
+  mountain lakes, and on the sea floor sand, gravel and rock, mud in the
+  deep basins.
+
+Honest limits: the land is accurate to about 10 m; the sea floor is the
+regional model, so single rocks and the shape of small coves under water are
+smoothed. Individual stones, kelp and so on are not in the data.
+
+To rebuild the terrain data:
+
+```bash
+python3 -m venv .geoenv && .geoenv/bin/pip install numpy scipy tifffile pyproj
+.geoenv/bin/python tools/build_terrain.py
+```
+
 ## Project layout
 
 ```
@@ -297,6 +337,7 @@ src/
     Weather.js         # weather states, blending, preset resolution
     CloudLayer.js      # cloud deck
     NightSky.js        # stars, Milky Way, moon
+    Terrain.js         # real terrain: data, CPU heights, GPU quadtree mesh
     Waterfalls.js      # waterfalls on the fjord walls
     Rain.js            # rain streaks
     Spray.js           # bow spray particles
@@ -313,8 +354,7 @@ src/
 
 Known rough edges and the planned path to reference-level fidelity:
 
-1. **Cliffs / fjord terrain** — the big missing visual. Height-displaced
-   terrain or Blender-sculpted cliff meshes (glTF) lining a channel.
+1. ~~Cliffs / fjord terrain~~ — done: the real Reine area of Lofoten.
 2. **Boat asset** — replace the primitive with a Blender-authored, baked-PBR
    trawler exported as Draco-compressed glTF.
 3. **Water fidelity** — detail normal maps, better LOD near the camera, and

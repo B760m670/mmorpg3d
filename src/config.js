@@ -2,25 +2,8 @@
 // Everything visual/physical that we iterate on lives here so the rest
 // of the code stays structural. Day/night are presets of the same scene.
 
-// Fjord terrain. The boat starts in open sea at z = 0 facing -Z; the fjord
-// mouth opens at mouthZ and a meandering channel runs deep into the land.
-export const TERRAIN = {
-  minX: -1400, maxX: 1400,
-  minZ: -5000, maxZ: 400,
-  spacing: 8,          // world units between vertices (desktop)
-  mouthZ: -250,        // where the land starts rising
-  mouthRamp: 600,      // distance over which headlands grow to full height
-  channelHalfWidth: 62,
-  channelWidthVar: 35,
-  meanderA: 160, meanderF: 0.0011,
-  meanderB: 60, meanderG: 0.0029,
-  wallWidth: 45,       // horizontal run of the cliff face (smaller = steeper)
-  seabed: -40,
-  cliffHeight: 230,
-  plateauVar: 70,
-  cragHeight: 85,
-  mountainHeight: 260, // extra rise of the land further from the channel
-};
+// Terrain: the real Reine area of Lofoten, see world/Terrain.js and
+// tools/build_terrain.py. The boat starts in open water south-east of Reine.
 
 
 // Sea states (see world/OceanSpectrum.js). The wind sea follows the JONSWAP
@@ -36,9 +19,9 @@ export const WEATHER = {
   transition: 12,          // seconds for a front to come through
   states: [
     { name: 'clear', sea: 0, clouds: 0.2, dark: 0.0, rain: 0, fog: 0.85, sun: 1.0, wind: 3.5, lightning: 0 },
-    { name: 'fair', sea: 1, clouds: 0.5, dark: 0.06, rain: 0, fog: 1.0, sun: 0.95, wind: 7.5, lightning: 0 },
-    { name: 'overcast, showers', sea: 2, clouds: 0.93, dark: 0.5, rain: 0.35, fog: 1.45, sun: 0.28, wind: 12.5, lightning: 0 },
-    { name: 'storm', sea: 3, clouds: 1.0, dark: 0.82, rain: 1.0, fog: 2.6, sun: 0.1, wind: 19, lightning: 1 },
+    { name: 'fair', sea: 1, clouds: 0.5, dark: 0.06, rain: 0, fog: 1.4, sun: 0.95, wind: 7.5, lightning: 0 },
+    { name: 'overcast, showers', sea: 2, clouds: 0.93, dark: 0.5, rain: 0.35, fog: 3.2, sun: 0.28, wind: 12.5, lightning: 0 },
+    { name: 'storm', sea: 3, clouds: 1.0, dark: 0.82, rain: 1.0, fog: 7.0, sun: 0.1, wind: 19, lightning: 1 },
   ],
 };
 
@@ -65,7 +48,7 @@ export const PRESETS = {
     sky: { turbidity: 10, rayleigh: 1.3, mieCoefficient: 0.012, mieDirectionalG: 0.84, elevation: 17, azimuth: 118 },
     sun: { color: [1.0, 0.95, 0.86], intensity: 2.4 },
     ambient: { color: [0.7, 0.78, 0.84], intensity: 1.05 },
-    fog: { color: [0.72, 0.78, 0.82], density: 0.00062 },
+    fog: { color: [0.72, 0.78, 0.82], density: 0.00016 },   // clear: the Lofoten wall stands 15-20 km off
     water: {
       deep: [0.02, 0.05, 0.07],
       shallow: [0.1, 0.18, 0.2],
@@ -88,7 +71,7 @@ export const PRESETS = {
     sky: { turbidity: 6, rayleigh: 0.9, mieCoefficient: 0.004, mieDirectionalG: 0.92, elevation: 11, azimuth: 165 },
     sun: { color: [0.55, 0.62, 0.8], intensity: 0.5 }, // "moon"
     ambient: { color: [0.18, 0.24, 0.35], intensity: 0.5 },
-    fog: { color: [0.05, 0.07, 0.11], density: 0.0011 },
+    fog: { color: [0.05, 0.07, 0.11], density: 0.00034 },
     water: {
       deep: [0.004, 0.008, 0.015],
       shallow: [0.02, 0.04, 0.06],

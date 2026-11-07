@@ -5,3 +5,5 @@ dist/
 .vite/
 .blenv/
 blender/out/
+.terrain_cache/
+.geoenv/

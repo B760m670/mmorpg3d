@@ -37,7 +37,7 @@ const { scene, camera, renderer } = engine;
 
 const sky = new SkyDome();
 scene.add(sky.mesh);
-const terrain = new Terrain({ spacing: IS_TOUCH ? 12 : undefined });
+const terrain = new Terrain({ mobile: IS_TOUCH });
 scene.add(terrain.mesh);
 const ocean = new Ocean({ renderer, terrain, mobile: IS_TOUCH });
 scene.add(ocean.mesh);
@@ -71,6 +71,9 @@ const environment = new Environment(scene, { shadowMapSize: IS_TOUCH ? 1024 : 20
 
 const instruments = new Instruments(terrain);
 const boat = new Boat();
+// Lying off Reine in Vestfjorden, bow toward the fjord mouth: course 335°,
+// clear water for about 3 km (the skerries east of Reine are to port).
+boat.heading = THREE.MathUtils.degToRad(25);
 boat.water = (x, z, t) => ocean.sampleWater(x, z, t);
 boat.load(trawlerUrl, () => instruments.attach(boat.model));
 scene.add(boat.object);
@@ -337,11 +340,16 @@ function tick() {
   if (boat.slam > 0) sound.slam(boat.slam);
   sound.update(dt, {
     camera, ship: boat.model, rpm: boat.rpm, speed: boat.speed, heave: boat.heaveV, rollRate: boat.rollV,
-    sea: ocean.uniforms.uSeaRough.value, exposure: Math.min(1, Math.max(0, (boat.position.z + 1600) / 1400)),
+    sea: ocean.uniforms.uSeaRough.value, exposure: terrain.exposure(boat.position.x, boat.position.z),
     wind: weather.v.wind, rain: weather.v.rain, dark: weather.v.dark, night: order[presetIndex] === 'night',
     inside: onBridge || belowDecks, engineRoom, aboard: mode !== '3p', fallFlow: falls.flow,
   });
   ocean.uniforms.uRain.value = weather.v.rain;
+  // Near plane: close for walking about inside the ship, further out in
+  // third person so the distant mountains keep their depth precision.
+  const nearPlane = mode === '3p' ? 1.0 : 0.08;
+  if (camera.near !== nearPlane) { camera.near = nearPlane; camera.updateProjectionMatrix(); }
+  terrain.update(camera);
   engine.render();
   input.endFrame();
 

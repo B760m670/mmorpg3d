@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { SEA } from '../config.js';
 import { makeCascades, OceanSpectrum, WaveSampler } from './OceanSpectrum.js';
 import { OceanFFT } from './OceanFFT.js';
+import { TERRAIN_GLSL, terrainUniforms } from './Terrain.js';
 
 // The ocean surface.
 //
@@ -27,9 +28,7 @@ const VERT = /* glsl */ `
   uniform sampler2D uDisp2;
   uniform vec3  uL;
   uniform vec3  uN;
-  uniform sampler2D uTerrain;
-  uniform vec4  uTerrainBox;   // minX, minZ, 1/width, 1/depth (m)
-  uniform vec2  uTerrainHalf;  // half a texel in uv
+  ${TERRAIN_GLSL}
 
   varying vec3  vWorldPos;
   varying vec2  vFlat;
@@ -38,19 +37,18 @@ const VERT = /* glsl */ `
   varying vec3  vAmp;
   varying float vShore;
 
-  float terrainH(vec2 p) {
-    return texture(uTerrain, (p - uTerrainBox.xy) * uTerrainBox.zw + uTerrainHalf).r;
-  }
 
   void main() {
     vec3 world = (modelMatrix * vec4(position, 1.0)).xyz;
     vec2 p = world.xz;
     float dist = length(uCameraPos.xz - p);
 
-    // Shelter: long waves fade going up the fjord; the swell is damped in
-    // the last ten metres of depth before the rock.
-    float th = terrainH(p);
-    float expo = smoothstep(-1600.0, -200.0, p.y);
+    // Shelter: long waves die out behind the islands and up the fjords (how
+    // open each point is to the sea, worked out from the real coastline); the
+    // swell is damped in the last ten metres of depth before the rock.
+    vec2 te = terrainHE(p);
+    float th = te.x;
+    float expo = te.y;
     float deep = smoothstep(-0.5, -12.0, th);
     vec3 amp = vec3(mix(0.1, 1.0, expo) * mix(0.25, 1.0, deep), mix(0.45, 1.0, expo) * mix(0.5, 1.0, deep), 1.0);
 
@@ -368,15 +366,6 @@ function polarGrid(segments, rings, rMin, rMax) {
   return geo;
 }
 
-function terrainTexture(terrain) {
-  const g = terrain.grid;
-  const data = new Uint16Array(g.nx * g.nz);
-  for (let i = 0; i < data.length; i++) data[i] = THREE.DataUtils.toHalfFloat(g.heights[i]);
-  const t = new THREE.DataTexture(data, g.nx, g.nz, THREE.RedFormat, THREE.HalfFloatType);
-  t.magFilter = t.minFilter = THREE.LinearFilter;
-  t.needsUpdate = true;
-  return t;
-}
 
 export class Ocean {
   constructor({ renderer, terrain, mobile = false }) {
@@ -392,8 +381,6 @@ export class Ocean {
     this.fft = new OceanFFT(renderer, this.cascades);
     this.sampler = new WaveSampler(this.cascades, mobile ? 1000 : 1800);
 
-    const g = terrain.grid;
-    const tw = g.nx * g.spacing, td = g.nz * g.spacing;
     const C = this.cascades;
     this.uniforms = {
       uTime: { value: 0 },
@@ -420,9 +407,7 @@ export class Ocean {
       uFoamBias: { value: 0.5 },
       uRain: { value: 0 },
       uHullMask: { value: 0 },
-      uTerrain: { value: terrainTexture(terrain) },
-      uTerrainBox: { value: new THREE.Vector4(g.minX, g.minZ, 1 / tw, 1 / td) },
-      uTerrainHalf: { value: new THREE.Vector2(0.5 / g.nx, 0.5 / g.nz) },
+      ...terrainUniforms(),
       uBoatPos: { value: new THREE.Vector2(0, 0) },
       uBoatFwd: { value: new THREE.Vector2(0, -1) },
       uBoatSpeed: { value: 0 },
@@ -543,7 +528,7 @@ export class Ocean {
   // Same shelter factors as the vertex shader.
   amps(x, z) {
     const sm = (a, b, v) => { const t = Math.min(1, Math.max(0, (v - a) / (b - a))); return t * t * (3 - 2 * t); };
-    const expo = sm(-1600, -200, z);
+    const expo = this.terrain.exposure(x, z);
     const deep = sm(-0.5, -12, this.terrain.sample(x, z));
     return [(0.1 + 0.9 * expo) * (0.25 + 0.75 * deep), (0.45 + 0.55 * expo) * (0.5 + 0.5 * deep)];
   }

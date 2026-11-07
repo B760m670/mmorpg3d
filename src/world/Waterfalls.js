@@ -4,7 +4,7 @@ import * as THREE from 'three';
 // falling water that hug the cliff face from the lip to the sea, with
 // streaks racing down, a drifting cloud of mist where they hit the water,
 // more flow in the rain. Places are found from the terrain: high, steep
-// stretches of wall along the channel, alternating sides.
+// faces right at the water inside the fjords.
 
 const FALL_VERT = /* glsl */ `
   varying vec2 vUv;
@@ -89,34 +89,35 @@ export class Waterfalls {
     for (const s of this.spots) this.build(s);
   }
 
-  // Walk down the fjord, find the channel and its walls at each station,
-  // keep high steep stretches, at least 600 m apart, alternating sides.
+  // Shore points just off a high, steep face inside the fjords (sheltered
+  // water), at least 900 m apart: where the streams off the plateau come
+  // down to the sea.
   findSpots(count) {
-    const T = this.terrain;
+    const T = this.terrain, g = T.grid;
+    const maxX = g.minX + (g.nx - 1) * g.spacing, maxZ = g.minZ + (g.nz - 1) * g.spacing;
+    const cands = [];
+    for (let z = g.minZ + 300; z < maxZ - 300; z += 30) {
+      for (let x = g.minX + 300; x < maxX - 300; x += 30) {
+        const h = T.sample(x, z);
+        if (h > -2 || h < -30 || T.exposure(x, z) > 0.25) continue;
+        const gx = T.sample(x + 15, z) - T.sample(x - 15, z);
+        const gz = T.sample(x, z + 15) - T.sample(x, z - 15);
+        const l = Math.hypot(gx, gz);
+        if (l < 1e-3) continue;
+        const dx = gx / l, dz = gz / l;           // up the slope, toward the land
+        let r = 0;
+        while (r < 300 && T.sample(x + dx * r, z + dz * r) < 0.5) r += 4;
+        if (r >= 300) continue;
+        const h60 = T.sample(x + dx * (r + 60), z + dz * (r + 60));
+        const h150 = T.sample(x + dx * (r + 150), z + dz * (r + 150));
+        if (h60 > 70 && h150 > 170) cands.push({ x, z, dx, dz, score: h60 + h150, top: Math.min(h150, 280) });
+      }
+    }
+    cands.sort((p, q) => q.score - p.score);
     const out = [];
-    let side = 1, lastZ = 1e9;
-    for (let z = -700; z > -4700 && out.length < count; z -= 40) {
-      // channel centre: the deepest run across
-      let best = null;
-      for (let x = -700; x <= 700; x += 6) {
-        if (T.sample(x, z) < -25) {
-          let e = x;
-          while (T.sample(e, z) < -25 && e < 700) e += 6;
-          best = { c: (x + e) / 2 };
-          break;
-        }
-      }
-      if (!best || lastZ - z < 600) continue;
-      // march to the wall on this side
-      let xs = best.c;
-      while (T.sample(xs, z) < 0 && Math.abs(xs - best.c) < 300) xs += side * 3;
-      const top = T.sample(xs + side * 45, z);
-      const steep = T.sample(xs + side * 15, z);
-      if (top > 140 && steep > 50) {
-        out.push({ x: xs, z, side, centre: best.c, top: Math.min(top, 260) });
-        lastZ = z;
-        side = -side;
-      }
+    for (const c of cands) {
+      if (out.length >= count) break;
+      if (out.every((o) => Math.hypot(o.x - c.x, o.z - c.z) > 900)) out.push(c);
     }
     return out;
   }
@@ -125,27 +126,34 @@ export class Waterfalls {
     const T = this.terrain;
     const N = 48;
     const pos = [], uv = [], idx = [], pts = [];
+    const px = -s.dz, pz = s.dx;                 // across the fall
     let len = 0, prev = null;
     for (let k = 0; k <= N; k++) {
       const y = s.top - (s.top + 1.5) * (k / N);
       // where the face reaches this height, a little off the rock
-      let x = s.centre;
-      for (let i = 0; i < 400; i++) {
-        if (T.sample(x, s.z) >= y) break;
-        x += s.side * 0.75;
+      let t = 0;
+      for (let i = 0; i < 600; i++) {
+        if (T.sample(s.x + s.dx * t, s.z + s.dz * t) >= y) break;
+        t += 0.75;
       }
-      x -= s.side * (1.2 + 2.5 * (k / N));
+      t -= 1.2 + 2.5 * (k / N);
       const w = 6 + 15 * Math.pow(k / N, 0.8);
-      if (prev) len += Math.hypot(x - prev[0], y - prev[1]);
-      prev = [x, y];
-      pts.push([x, y, w, len]);
+      if (prev) len += Math.hypot(t - prev[0], y - prev[1]);
+      prev = [t, y];
+      pts.push([t, y, w, len]);
     }
     // two crossed curtains: one along the rock, one standing out from it,
     // so the fall has body from every side
-    for (const [x, y, w, l] of pts) { pos.push(x, y, s.z - w / 2, x, y, s.z + w / 2); uv.push(0, l / len, 1, l / len); }
-    for (const [x, y, w, l] of pts) {
+    const at = (t) => [s.x + s.dx * t, s.z + s.dz * t];
+    for (const [t, y, w, l] of pts) {
+      const [x, z] = at(t);
+      pos.push(x - px * w / 2, y, z - pz * w / 2, x + px * w / 2, y, z + pz * w / 2);
+      uv.push(0, l / len, 1, l / len);
+    }
+    for (const [t, y, w, l] of pts) {
       const d = w * 0.45;
-      pos.push(x + s.side * d * 0.3, y, s.z, x - s.side * d, y, s.z);
+      const [xa, za] = at(t + d * 0.3), [xb, zb] = at(t - d);
+      pos.push(xa, y, za, xb, y, zb);
       uv.push(0, l / len, 1, l / len);
     }
     for (let c = 0; c < 2; c++) {
@@ -171,13 +179,14 @@ export class Waterfalls {
     }));
     mesh.frustumCulled = false;
     this.group.add(mesh);
-    s.base = { x: prev[0], y: 1, z: s.z };
+    const [bx, bz] = at(prev[0]);
+    s.base = { x: bx, y: 1, z: bz };
 
     // mist where it lands
     const n = 70;
     const mpos = new Float32Array(n * 3), seed = new Float32Array(n * 4);
     for (let i = 0; i < n; i++) {
-      mpos[i * 3] = prev[0] - s.side * 4; mpos[i * 3 + 1] = 0; mpos[i * 3 + 2] = s.z;
+      mpos[i * 3] = bx - s.dx * 4; mpos[i * 3 + 1] = 0; mpos[i * 3 + 2] = bz - s.dz * 4;
       for (let j = 0; j < 4; j++) seed[i * 4 + j] = Math.random();
     }
     const mg = new THREE.BufferGeometry();

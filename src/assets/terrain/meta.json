@@ -1,0 +1,44 @@
+{
+ "origin_utm33": [
+  422489.0,
+  7536188.0
+ ],
+ "reine_utm33": [
+  419889.0,
+  7536588.0
+ ],
+ "heightScale": 0.05,
+ "heightOffset": -500.0,
+ "sources": [
+  "Kartverket NHM DTM (Geonorge WCS, CC BY 4.0)",
+  "EMODnet Bathymetry DTM, mean depth"
+ ],
+ "inner": {
+  "nx": 1000,
+  "nz": 1100,
+  "spacing": 10.0,
+  "minX": -9095.0,
+  "minZ": -8395.0,
+  "expo": {
+   "nx": 250,
+   "nz": 275,
+   "spacing": 40.0,
+   "minX": -9080.0,
+   "minZ": -8380.0
+  }
+ },
+ "outer": {
+  "nx": 640,
+  "nz": 640,
+  "spacing": 64.0,
+  "minX": -24548.0,
+  "minZ": -23348.0,
+  "expo": {
+   "nx": 640,
+   "nz": 640,
+   "spacing": 64.0,
+   "minX": -24548.0,
+   "minZ": -23348.0
+  }
+ }
+}

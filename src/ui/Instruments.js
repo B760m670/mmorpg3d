@@ -234,15 +234,14 @@ class Chart {
     this.ctx = this.canvas.getContext('2d');
     this.track = [];
     this.trackTimer = 0;
-    // Base chart, 5 m per pixel, painted once from the terrain grid.
+    // Base chart, 10 m per pixel, painted once from the terrain grid.
     const g = terrain.grid;
-    const px = 5;
+    const px = 10;
     this.px = px;
     this.minX = g.minX;
     this.minZ = g.minZ;
     const w = Math.ceil((g.nx - 1) * g.spacing / px);
-    const extra = 1600;                       // open sea to the south
-    const h = Math.ceil(((g.nz - 1) * g.spacing + extra) / px);
+    const h = Math.ceil((g.nz - 1) * g.spacing / px);
     const base = makeCanvas(w, h);
     const bctx = base.getContext('2d');
     const img = bctx.createImageData(w, h);
