@@ -20,9 +20,11 @@ export const ORDER_RU = [
   'САМЫЙ МАЛЫЙ ВПЕРЁД', 'МАЛЫЙ ВПЕРЁД', 'СРЕДНИЙ ВПЕРЁД', 'ПОЛНЫЙ ВПЕРЁД',
 ];
 
+// The published single-file page carries its own <style> in the body, after
+// this sheet in document order, so rules that compete with it use !important.
 const CSS = `
-#touch-layer { left: 0 !important; top: auto !important; bottom: 0; width: calc(210px + env(safe-area-inset-left, 0px)) !important; height: calc(240px + env(safe-area-inset-bottom, 0px)) !important; z-index: 5; }
-#look-layer { left: 0 !important; right: 0 !important; top: 0; width: 100% !important; height: 100% !important; z-index: 4; display: block !important; }
+#touch-layer { left: 0 !important; top: auto !important; bottom: 0; width: calc(210px + env(safe-area-inset-left, 0px)) !important; height: calc(240px + env(safe-area-inset-bottom, 0px)) !important; z-index: 6 !important; }
+#look-layer { left: 0 !important; right: 0 !important; top: 0; width: 100% !important; height: 100% !important; z-index: 4 !important; display: block !important; }
 #touch-buttons { display: none !important; }
 .tc { position: fixed; z-index: 6; font: 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace; color: #eaf2f6; }
 .tc button {
