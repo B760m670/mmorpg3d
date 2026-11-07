@@ -11,6 +11,28 @@ export class FollowCamera {
     this._desired = new THREE.Vector3();
     this._look = new THREE.Vector3();
     this._lookCurrent = new THREE.Vector3();
+    // player-controlled framing: pinch / wheel zoom, drag to orbit the ship
+    this.zoom = 1;
+    this.yaw = 0;
+    this.pitch = 0;
+  }
+
+  orbit(dx, dy) {
+    this.yaw -= dx * 0.005;
+    this.pitch = THREE.MathUtils.clamp(this.pitch + dy * 0.004, -0.22, 1.1);
+  }
+
+  zoomBy(f) {
+    this.zoom = THREE.MathUtils.clamp(this.zoom * f, 0.3, 5);
+  }
+
+  // Offset from the ship to the camera for the current framing.
+  _offset(boat) {
+    const { dist, height } = this._fit();
+    const a = boat.heading + this.yaw;
+    const e = THREE.MathUtils.clamp(Math.atan2(height, dist) + this.pitch, 0.03, 1.35);
+    const r = Math.hypot(dist, height) * this.zoom;
+    return [Math.sin(a) * r * Math.cos(e), r * Math.sin(e), Math.cos(a) * r * Math.cos(e)];
   }
 
   // On portrait / narrow screens the vertical FOV frames the boat much larger,
@@ -24,15 +46,12 @@ export class FollowCamera {
   update(dt, boat, time) {
     if (!this.enabled) return;
 
-    const fx = Math.sin(boat.heading);
-    const fz = Math.cos(boat.heading);
-    const { dist, height } = this._fit();
-
-    // Behind the boat (bow is -Z), lifted up.
+    // Behind the boat (bow is -Z), lifted up, as framed by the player.
+    const [ox, oy, oz] = this._offset(boat);
     this._desired.set(
-      boat.position.x + fx * dist,
-      boat.position.y + height + Math.sin(time * 0.6) * 0.4,
-      boat.position.z + fz * dist,
+      boat.position.x + ox,
+      boat.position.y + oy + Math.sin(time * 0.6) * 0.4,
+      boat.position.z + oz,
     );
 
     const k = 1 - Math.pow(0.0001, dt * CAMERA.damping);
@@ -54,14 +73,8 @@ export class FollowCamera {
   }
 
   snap(boat) {
-    const fx = Math.sin(boat.heading);
-    const fz = Math.cos(boat.heading);
-    const { dist, height } = this._fit();
-    this.camera.position.set(
-      boat.position.x + fx * dist,
-      boat.position.y + height,
-      boat.position.z + fz * dist,
-    );
+    const [ox, oy, oz] = this._offset(boat);
+    this.camera.position.set(boat.position.x + ox, boat.position.y + oy, boat.position.z + oz);
     this._lookCurrent.set(boat.position.x, boat.position.y + CAMERA.lookHeight, boat.position.z);
     this.camera.lookAt(this._lookCurrent);
   }

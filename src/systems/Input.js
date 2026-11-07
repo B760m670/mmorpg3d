@@ -5,6 +5,8 @@
 //   moveX / moveY  -1..1 from WASD/arrows or the touch stick (right / forward)
 //   stickActive    the touch stick is being dragged
 //   lookDX/lookDY  accumulated mouse / touch look deltas (pixels)
+//   zoom           camera zoom factor accumulated this frame (wheel / pinch)
+//   telegraphSet   engine-order index set directly (telegraph lever), or null
 //
 // Touch buttons call press(key) so every action has exactly one code path.
 export class Input {
@@ -18,6 +20,9 @@ export class Input {
     this.lookDY = 0;
     this.moveX = 0;
     this.moveY = 0;
+    this.zoom = 1;
+    this.telegraphSet = null;
+    this.dragging = false;
 
     target.addEventListener('keydown', (e) => {
       const k = e.key.toLowerCase();
@@ -28,11 +33,15 @@ export class Input {
     target.addEventListener('keyup', (e) => this.keys.delete(e.key.toLowerCase()));
     target.addEventListener('blur', () => this.keys.clear());
     document.addEventListener('mousemove', (e) => {
-      if (document.pointerLockElement) {
+      // first person: pointer lock; third person: drag with a button held
+      if (document.pointerLockElement || (this.dragging && e.buttons)) {
         this.lookDX += e.movementX;
         this.lookDY += e.movementY;
       }
     });
+    window.addEventListener('wheel', (e) => {
+      this.zoom *= Math.exp(e.deltaY * 0.0012);
+    }, { passive: true });
   }
 
   held(k) {
@@ -60,5 +69,7 @@ export class Input {
     this.edges.clear();
     this.lookDX = 0;
     this.lookDY = 0;
+    this.zoom = 1;
+    this.telegraphSet = null;
   }
 }

@@ -1,4 +1,5 @@
-import { BOAT, TELEGRAPH } from '../config.js';
+import { BOAT } from '../config.js';
+import { ORDER_RU } from '../systems/TouchControls.js';
 
 // Bridge instruments as an overlay: speed log, gyro heading, engine-order
 // telegraph with rpm, rudder angle indicator and wheel order — what a
@@ -25,6 +26,13 @@ const CSS = `
 #bridge .rud i { position: absolute; top: -2px; width: 4px; height: 14px; border-radius: 2px; background: #f2f7f9; }
 #bridge .rud b { position: absolute; top: 1px; width: 2px; height: 8px; background: #ffcf7a; }
 #bridge .rud::after { content: ""; position: absolute; left: 50%; top: -3px; width: 1px; height: 16px; background: rgba(255,255,255,.4); }
+body.touch #bridge { gap: 2px 10px; padding: 6px 9px; font-size: 10px; opacity: 0.88; }
+body.touch #bridge .val { font-size: 13px; }
+body.touch #bridge .lbl { font-size: 8px; }
+body.touch #bridge .eng { font-size: 10px; }
+body.touch #bridge .sea { display: none; }
+body.touch #bridge .rud { width: 110px; height: 7px; }
+body.touch #hud { font-size: 10px; max-width: 60%; }
 @media (max-width: 520px) {
   #bridge { gap: 4px 10px; padding: 8px 10px; }
   #bridge .val { font-size: 15px; }
@@ -40,21 +48,21 @@ export class Bridge {
     const el = document.createElement('div');
     el.id = 'bridge';
     el.innerHTML = `
-      <div><div class="lbl">Speed log</div><div class="val" data-k="sog">0.0 kn</div></div>
-      <div><div class="lbl">Heading</div><div class="val" data-k="hdg">000°</div></div>
-      <div class="wide"><div class="lbl">Engine order</div><div class="eng" data-k="eng">STOP</div></div>
-      <div class="wide"><div class="lbl">Rudder <span data-k="rudtxt">0° MID</span></div>
+      <div><div class="lbl">Скорость</div><div class="val" data-k="sog">0.0 уз</div></div>
+      <div><div class="lbl">Курс</div><div class="val" data-k="hdg">000°</div></div>
+      <div class="wide"><div class="eng" data-k="eng">СТОП</div></div>
+      <div class="wide"><div class="lbl">Руль <span data-k="rudtxt">0°</span></div>
         <div class="rud"><b data-k="wheel"></b><i data-k="rud"></i></div></div>
-      <div class="wide"><div class="lbl">Weather</div><div class="sea" data-k="sea">—</div></div>`;
+      <div class="wide"><div class="sea" data-k="sea">—</div></div>`;
     document.body.appendChild(el);
     this.el = el;
     this.f = {};
     el.querySelectorAll('[data-k]').forEach((n) => { this.f[n.dataset.k] = n; });
   }
 
-  // ocean: { info: {bft}, hs }, weather: { label }
+  // ocean: { info: {bft}, hs }, weather: text
   setSea(ocean, weather) {
-    const text = `${weather.label} · Bft ${ocean.info.bft} · Hs ${ocean.hs.toFixed(1)} m`;
+    const text = `${weather} · ${ocean.info.bft} балла · волна ${ocean.hs.toFixed(1)} м`;
     if (text !== this.seaText) {
       this.seaText = text;
       this.f.sea.textContent = text;
@@ -63,12 +71,12 @@ export class Bridge {
 
   update(boat) {
     const f = this.f;
-    f.sog.textContent = `${boat.knots.toFixed(1)} kn`;
+    f.sog.textContent = `${boat.knots.toFixed(1)} уз`;
     f.hdg.textContent = `${String(Math.round(boat.headingDeg) % 360).padStart(3, '0')}°`;
     const rpm = Math.round(Math.abs(boat.rpm) * BOAT.rpmMax);
-    f.eng.textContent = `${TELEGRAPH[boat.telegraph].name} · ${rpm} rpm${boat.rpm < -0.02 ? ' astern' : ''}`;
+    f.eng.textContent = `${ORDER_RU[boat.telegraph]} · ${rpm} об/мин`;
     const r = boat.rudder;
-    const side = Math.abs(r) < 0.5 ? 'MID' : r > 0 ? 'PORT' : 'STBD';
+    const side = Math.abs(r) < 0.5 ? 'прямо' : r > 0 ? 'лево' : 'право';
     f.rudtxt.textContent = `${Math.abs(r).toFixed(0)}° ${side}`;
     // + rudder (port) drawn to the left
     const pos = (v) => `${50 - (v / BOAT.rudderMax) * 50}%`;

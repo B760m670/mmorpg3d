@@ -117,10 +117,11 @@ export class Player {
       // walk up steps / sills smoothly
       this.pos.y += (floorY - this.pos.y) * Math.min(1, dt * 18);
       this.vy = 0;
-      this.lastSafe.copy(this.pos);
+      if (floorY > 4.0) this.lastSafe.copy(this.pos);
     }
-    // Over the side: back aboard where we last stood.
-    if (this.pos.y < -2) {
+    // Over the side, or down a gap into the hull below the working deck
+    // (4.3 m): back aboard where we last stood.
+    if (this.pos.y < 3.6 || Math.abs(this.pos.x) > 5.2 || Math.abs(this.pos.z) > 12.6) {
       this.pos.copy(this.lastSafe);
       this.vy = 0;
     }

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-import { PRESETS, BOAT } from './config.js';
+import { PRESETS, BOAT, SEA } from './config.js';
 import { Weather, resolve } from './world/Weather.js';
 import { CloudLayer } from './world/CloudLayer.js';
 import { NightSky } from './world/NightSky.js';
@@ -93,14 +93,27 @@ let mode = '3p';
 let lastNear = null;
 
 const HINTS = IS_TOUCH ? {
-  '3p': 'stick ◄ ► wheel · ▲ ▼ telegraph · <b>1st / 3rd</b> to go aboard',
-  helm: 'stick ◄ ► wheel · ▲ ▼ telegraph · drag right side to look · <b>leave helm</b> to walk',
-  walk: 'stick to walk · drag right side to look · <b>take helm</b> at the wheel',
+  '3p': 'рычаг справа — ход · джойстик слева — руль · палец — облёт, щипок — ближе/дальше',
+  helm: 'рычаг — ход · джойстик — руль · палец — осмотреться · «отойти» — пройтись по судну',
+  walk: 'джойстик — идти · палец — осмотреться · у штурвала — «к штурвалу»',
 } : {
-  '3p': '<b>W/S</b> telegraph · <b>A/D</b> wheel · <b>Z</b> midships · <b>F</b> go aboard · <b>C</b> orbit · <b>N</b> day/night · <b>B</b> weather · <b>H</b> horn · <b>M</b> sound',
-  helm: '<b>W/S</b> telegraph · <b>A/D</b> wheel · <b>Z</b> midships · <b>E</b> leave the helm · <b>F</b> 3rd person · click to look',
-  walk: '<b>WASD</b> walk · <b>Shift</b> run · <b>E</b> take the helm (at the wheel) · <b>F</b> 3rd person · click to look',
+  '3p': '<b>W/S</b> телеграф · <b>A/D</b> руль · <b>Z</b> руль прямо · мышь — облёт, колесо — ближе/дальше · <b>F</b> на борт · <b>N</b> день/ночь · <b>B</b> погода · <b>H</b> гудок · <b>M</b> звук',
+  helm: '<b>W/S</b> телеграф · <b>A/D</b> руль · <b>Z</b> руль прямо · <b>E</b> отойти от штурвала · <b>F</b> вид со стороны · клик — осмотреться',
+  walk: '<b>WASD</b> идти · <b>Shift</b> бегом · <b>E</b> к штурвалу (стоя у него) · <b>F</b> вид со стороны · клик — осмотреться',
 };
+const WEATHER_RU = { clear: 'ясно', fair: 'переменная облачность', 'overcast, showers': 'пасмурно, ливни', storm: 'шторм' };
+const weatherRu = () => `${WEATHER_RU[weather.state.name] || weather.state.name}${weather.auto ? ' · меняется сама' : ''}`;
+
+// The hint shows for a few seconds after each change of mode, then fades.
+let hintTimer = null;
+function showHint(html) {
+  if (!hint) return;
+  hint.innerHTML = html;
+  hint.style.transition = 'opacity 0.8s ease';
+  hint.style.opacity = '1';
+  clearTimeout(hintTimer);
+  hintTimer = setTimeout(() => { hint.style.opacity = '0'; }, IS_TOUCH ? 7000 : 12000);
+}
 
 function setMode(m) {
   mode = m;
@@ -110,7 +123,8 @@ function setMode(m) {
     orbit.enabled = false;
     if (document.pointerLockElement) document.exitPointerLock();
   }
-  if (hint) hint.innerHTML = HINTS[mode];
+  input.dragging = m === '3p';
+  showHint(HINTS[mode]);
   lastNear = null;
 }
 setMode('3p');
@@ -200,8 +214,14 @@ function tick() {
     presetIndex = (presetIndex + 1) % order.length;
     applyPreset();
   }
-  if (input.pressed('b')) weather.cycle();
-  if (input.pressed('m')) sound.toggle();
+  if (input.pressed('b')) {
+    weather.cycle();
+    if (touch) touch.toast(`Погода: <b>${weatherRu()}</b><br>волнение ${SEA.states[weather.state.sea].bft} балла`, 3);
+  }
+  if (input.pressed('m')) {
+    const muted = sound.toggle();
+    if (touch) touch.setSound(muted);
+  }
   if (input.pressed('h')) sound.horn(boat.position);
   updateWeather(dt);
   if (input.pressed('f')) setMode(mode === '3p' ? 'helm' : '3p');
@@ -220,6 +240,7 @@ function tick() {
     if (input.pressed('w') || input.pressed('arrowup')) boat.telegraphStep(+1);
     if (input.pressed('s') || input.pressed('arrowdown')) boat.telegraphStep(-1);
     if (input.pressed('z')) boat.midships();
+    if (input.telegraphSet !== null) boat.telegraph = input.telegraphSet;
     const turn = (input.held('a') || input.held('arrowleft') ? 1 : 0) - (input.held('d') || input.held('arrowright') ? 1 : 0);
     boat.steer(dt, { turn, target: input.stickActive ? -input.touchX * BOAT.rudderMax : null });
   }
@@ -231,6 +252,8 @@ function tick() {
     player.update(dt, input.moveX, input.moveY, input.held('shift'), boat.collider);
   }
   if (mode === '3p') {
+    follow.orbit(input.lookDX, input.lookDY);
+    follow.zoomBy(input.zoom);
     if (follow.enabled) follow.update(dt, boat, time);
     else {
       orbit.target.lerp(boat.position, 0.05);
@@ -247,13 +270,14 @@ function tick() {
     lastNear = near;
   }
   bridge.update(boat);
+  if (touch) touch.update(boat.telegraph);
   const pp = player.pos;
   const onBridge = mode === 'helm' ||
     (mode === 'walk' && pp.y > 5.1 && pp.z > -6.3 && pp.z < 0.2 && Math.abs(pp.x) < 3.4);
   instruments.update(dt, boat, onBridge);
   ocean.setBoat(boat);
   ocean.update(time, dt, camera, sky.sunDirection);
-  bridge.setSea(ocean, weather);
+  bridge.setSea(ocean, weatherRu());
   clouds.update(time, camera, flash);
   nightSky.update(time, camera);
   falls.update(time, camera, weather.v.rain);
@@ -273,6 +297,10 @@ function tick() {
   if (!started) {
     started = true;
     loading.classList.add('hidden');
+    if (touch) {
+      touch.toast('<b>Как управлять</b><br>Рычаг справа — ход: вверх вперёд, вниз назад.<br>Джойстик слева — руль.<br>'
+        + 'Проведите пальцем — облететь судно, щипок двумя пальцами — ближе/дальше.<br>«на борт» — встать к штурвалу, ☰ — меню.', 9);
+    }
   }
   requestAnimationFrame(tick);
 }

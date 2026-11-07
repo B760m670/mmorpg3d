@@ -45,9 +45,20 @@ You can command the ship from outside, stand at the wheel, or walk about her.
 | `B` | weather: clear → fair → overcast with showers → storm → changing on its own | weather |
 | `M` / `H` | sound on / off / ship's horn | sound on / off / horn |
 
-On a phone: the left stick turns the wheel (or walks), ▲ ▼ step the telegraph,
-drag the right half of the screen to look, buttons switch view and take or
-leave the helm; *day / night*, *weather*, *sound* and *horn* are in the top-right corner.
+On a phone the interface is in Russian and kept out of the way:
+- **Bottom right**: the engine-order telegraph lever. Slide it up for ahead,
+  down for astern; *руль 0* sets the rudder midships.
+- **Bottom left**: a stick that turns the wheel, or walks you about when
+  aboard.
+- **Anywhere else**: drag to look around (aboard) or to fly the camera around
+  the ship (third person). Pinch with two fingers to zoom.
+- **Top right**: *на борт / со стороны* switches view, *к штурвалу / отойти*
+  takes or leaves the helm, and ☰ opens day/night, weather, sound and horn.
+- Hints fade after a few seconds, and a short how-to shows on start.
+
+On desktop, drag the mouse to orbit the ship and use the wheel to zoom.
+If you fall over the side or down a gap into the hull, you are put back where
+you last stood on deck.
 Sound starts with your first tap (browser rule). On an iPhone the ring/silent
 switch must be on ring to hear it.
 
