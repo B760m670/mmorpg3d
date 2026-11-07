@@ -43,11 +43,11 @@ You can command the ship from outside, stand at the wheel, or walk about her.
 | mouse | (click to capture) look around | look around |
 | `N` / `C` | day ↔ night / orbit camera (third person) | |
 | `B` | weather: clear → fair → overcast with showers → storm → changing on its own | weather |
-| `M` | sound on / off | sound on / off |
+| `M` / `H` | sound on / off / ship's horn | sound on / off / horn |
 
 On a phone: the left stick turns the wheel (or walks), ▲ ▼ step the telegraph,
 drag the right half of the screen to look, buttons switch view and take or
-leave the helm; *day / night*, *weather* and *sound* are in the top-right corner.
+leave the helm; *day / night*, *weather*, *sound* and *horn* are in the top-right corner.
 Sound starts with your first tap (browser rule). On an iPhone the ring/silent
 switch must be on ring to hear it.
 
@@ -127,13 +127,28 @@ The realism here is **not** the engine — it's the water shader + fog + post.
   haze. Rain is wind-slanted streaks in a box around the camera, culled inside
   the wheelhouse, plus rings on the water. A storm adds lightning. Under
   cloud the sea reflects grey, the sun glitter goes and the shadows soften.
-- **Sound** (`src/systems/Sound.js`): fully procedural Web Audio, with no
-  sound files. The diesel is a six-cylinder four-stroke at 600–1200 rpm
-  (firing pulses, lowpass and mechanical clatter). You also hear the sea and
-  the bow wash with speed and sea state, gusting wind with rigging whistle in
-  a gale, rain, the boom of the bow slamming into a sea, and thunder delayed
-  after each flash. From the wheelhouse the outside is muffled and the rain
-  drums on the roof.
+- **Sound** (`src/systems/Sound.js`): fully procedural, spatial Web Audio
+  with no sound files. The camera is the listener. Point sources sit in the
+  world and fade with distance, carry direction (HRTF on desktop) and lose
+  their highs far away (air absorption).
+  - **The ship**: the diesel exhaust (a 6-cylinder four-stroke, 600–1200 rpm),
+    water sloshing against the hull with the motion, bow wash, rigging
+    whistling in a gale, VHF chatter on the bridge, and the horn (`H`,
+    340/425 Hz).
+  - **The land**: surf on the nearest cliffs, found by scanning the terrain
+    around you, so it gets louder as you close the rocks. Gulls call near the
+    shore and over the ship in fair weather; there are none at night or in
+    rain.
+  - **The sky**: thunder from the strike point, arriving distance / 343 m/s
+    after the flash, with a crack when it is close.
+  - **Everywhere**: open-sea waves (quieter up the fjord), wind with gusts,
+    rain.
+  - **Aboard**: the engine through the hull and the hull creaking as she
+    rolls. From the wheelhouse the outside is muffled and rain drums on the
+    roof; out on deck rain patters.
+  - **The fjord rings**: reverb grows with how enclosed you are, and the horn
+    comes back as real echoes from every cliff within 1.5 km, delayed by the
+    path length.
 - **Bow spray** (`src/world/Spray.js`): the bow plunging into a rising sea
   (water rising fast against the bow) throws a sheet of spray to both sides.
   It carries with the ship, blows downwind and falls back; light spray runs

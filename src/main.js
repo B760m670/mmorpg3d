@@ -51,7 +51,7 @@ spray.resize(window.innerHeight);
 window.addEventListener('resize', () => spray.resize(window.innerHeight));
 
 // Sound starts with the first tap or key press (browser autoplay rules).
-const sound = new SoundScape();
+const sound = new SoundScape({ terrain, mobile: IS_TOUCH });
 const startSound = () => sound.start();
 for (const ev of ['pointerdown', 'keydown', 'touchend']) window.addEventListener(ev, startSound, { passive: true });
 const environment = new Environment(scene, { shadowMapSize: IS_TOUCH ? 1024 : 2048 });
@@ -88,7 +88,7 @@ const HINTS = IS_TOUCH ? {
   helm: 'stick ◄ ► wheel · ▲ ▼ telegraph · drag right side to look · <b>leave helm</b> to walk',
   walk: 'stick to walk · drag right side to look · <b>take helm</b> at the wheel',
 } : {
-  '3p': '<b>W/S</b> telegraph · <b>A/D</b> wheel · <b>Z</b> midships · <b>F</b> go aboard · <b>C</b> orbit · <b>N</b> day/night · <b>B</b> weather · <b>M</b> sound',
+  '3p': '<b>W/S</b> telegraph · <b>A/D</b> wheel · <b>Z</b> midships · <b>F</b> go aboard · <b>C</b> orbit · <b>N</b> day/night · <b>B</b> weather · <b>H</b> horn · <b>M</b> sound',
   helm: '<b>W/S</b> telegraph · <b>A/D</b> wheel · <b>Z</b> midships · <b>E</b> leave the helm · <b>F</b> 3rd person · click to look',
   walk: '<b>WASD</b> walk · <b>Shift</b> run · <b>E</b> take the helm (at the wheel) · <b>F</b> 3rd person · click to look',
 };
@@ -165,7 +165,7 @@ function updateWeather(dt) {
     flashTimer -= dt;
     if (flashTimer <= 0) {
       flashTimer = 6 + Math.random() * 20;
-      sound.thunder(1.2 + Math.random() * 4.5, 0.55 + Math.random() * 0.45);
+      sound.thunder(0.6 + Math.random() * 0.4, camera.position);
       flashSeq = [0, 0.12, 0.3].slice(0, 2 + (Math.random() < 0.5 ? 1 : 0)).map((t) => t + Math.random() * 0.05);
     }
   }
@@ -191,6 +191,7 @@ function tick() {
   }
   if (input.pressed('b')) weather.cycle();
   if (input.pressed('m')) sound.toggle();
+  if (input.pressed('h')) sound.horn(boat.position);
   updateWeather(dt);
   if (input.pressed('f')) setMode(mode === '3p' ? 'helm' : '3p');
   if (input.pressed('e')) {
@@ -247,8 +248,10 @@ function tick() {
   spray.update(dt, boat, weather.v.wind);
   if (boat.slam > 0) sound.slam(boat.slam);
   sound.update(dt, {
-    rpm: boat.rpm, speed: boat.speed, sea: ocean.uniforms.uSeaRough.value, wind: weather.v.wind,
-    rain: weather.v.rain, inside: onBridge, far: mode === '3p', heave: boat.heaveV,
+    camera, ship: boat.model, rpm: boat.rpm, speed: boat.speed, heave: boat.heaveV, rollRate: boat.rollV,
+    sea: ocean.uniforms.uSeaRough.value, exposure: Math.min(1, Math.max(0, (boat.position.z + 1600) / 1400)),
+    wind: weather.v.wind, rain: weather.v.rain, dark: weather.v.dark, night: order[presetIndex] === 'night',
+    inside: onBridge, aboard: mode !== '3p',
   });
   ocean.uniforms.uRain.value = weather.v.rain;
   engine.render();
