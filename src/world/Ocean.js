@@ -101,6 +101,7 @@ const FRAG = /* glsl */ `
   uniform float uGustiness;
   uniform float uSeaRough;      // 0 calm .. 1 storm
   uniform float uFoamBias;      // Jacobian below which crests break
+  uniform float uRain;          // 0..1, rings from raindrops
 
   // The player's vessel, for hull foam, bow wave and wake.
   uniform vec2  uBoatPos;
@@ -189,6 +190,23 @@ const FRAG = /* glsl */ `
     vec4 D1 = texture(uDeriv1, uv1);
     vec4 D2 = texture(uDeriv2, uv2);
     vec2 s = slope(D0, amp.x) + slope(D1, amp.y) + slope(D2, amp.z);
+
+    // Raindrops: expanding rings in two staggered grids, close to the eye.
+    if (uRain > 0.01 && vViewDist < 70.0) {
+      float near = uRain * smoothstep(70.0, 15.0, vViewDist);
+      for (int k = 0; k < 2; k++) {
+        vec2 rp = p * 1.7 + float(k) * vec2(0.5, 0.37);
+        vec2 cell = floor(rp);
+        vec2 f = fract(rp) - 0.5;
+        float h = hash21(cell + float(k) * 17.0);
+        float ph = fract(uTime * (1.1 + h * 0.6) + h * 7.0);
+        vec2 c = (vec2(hash21(cell + 3.1), hash21(cell + 7.7)) - 0.5) * 0.5;
+        vec2 dv = f - c;
+        float dd = length(dv);
+        float ring = sin((dd - ph * 0.42) * 70.0) * exp(-pow((dd - ph * 0.42) * 14.0, 2.0)) * (1.0 - ph);
+        s += dv / max(dd, 1e-3) * ring * 0.5 * near;
+      }
+    }
     vec3 N = normalize(vec3(-s.x, 1.0, -s.y));
     vec3 V = normalize(uCameraPos - vWorldPos);
 
@@ -390,6 +408,7 @@ export class Ocean {
       uGustiness: { value: 0.6 },
       uSeaRough: { value: 0.3 },
       uFoamBias: { value: 0.5 },
+      uRain: { value: 0 },
       uTerrain: { value: terrainTexture(terrain) },
       uTerrainBox: { value: new THREE.Vector4(g.minX, g.minZ, 1 / tw, 1 / td) },
       uTerrainHalf: { value: new THREE.Vector2(0.5 / g.nx, 0.5 / g.nz) },
@@ -480,7 +499,7 @@ export class Ocean {
 
   applyPreset(p) {
     const u = this.uniforms;
-    u.uSunColor.value.setRGB(...p.sun.color);
+    u.uSunColor.value.setRGB(...p.sun.color).multiplyScalar(p.water.sunScale ?? 1);
     u.uDeep.value.setRGB(...p.water.deep);
     u.uShallow.value.setRGB(...p.water.shallow);
     u.uHorizon.value.setRGB(...p.water.horizon);

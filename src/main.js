@@ -2,6 +2,9 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 import { PRESETS, BOAT } from './config.js';
+import { Weather, resolve } from './world/Weather.js';
+import { CloudLayer } from './world/CloudLayer.js';
+import { Rain } from './world/Rain.js';
 import { Engine } from './core/Engine.js';
 import { SkyDome } from './world/SkyDome.js';
 import { Ocean } from './world/Ocean.js';
@@ -34,6 +37,12 @@ const terrain = new Terrain({ spacing: IS_TOUCH ? 12 : undefined });
 scene.add(terrain.mesh);
 const ocean = new Ocean({ renderer, terrain, mobile: IS_TOUCH });
 scene.add(ocean.mesh);
+const weather = new Weather();
+ocean.setState(weather.state.sea, true);
+const clouds = new CloudLayer();
+scene.add(clouds.mesh);
+const rain = new Rain({ count: IS_TOUCH ? 3000 : 7000 });
+scene.add(rain.mesh);
 const environment = new Environment(scene, { shadowMapSize: IS_TOUCH ? 1024 : 2048 });
 
 const instruments = new Instruments(terrain);
@@ -68,7 +77,7 @@ const HINTS = IS_TOUCH ? {
   helm: 'stick ◄ ► wheel · ▲ ▼ telegraph · drag right side to look · <b>leave helm</b> to walk',
   walk: 'stick to walk · drag right side to look · <b>take helm</b> at the wheel',
 } : {
-  '3p': '<b>W/S</b> telegraph · <b>A/D</b> wheel · <b>Z</b> midships · <b>F</b> go aboard · <b>C</b> orbit · <b>N</b> day/night · <b>B</b> sea state',
+  '3p': '<b>W/S</b> telegraph · <b>A/D</b> wheel · <b>Z</b> midships · <b>F</b> go aboard · <b>C</b> orbit · <b>N</b> day/night · <b>B</b> weather',
   helm: '<b>W/S</b> telegraph · <b>A/D</b> wheel · <b>Z</b> midships · <b>E</b> leave the helm · <b>F</b> 3rd person · click to look',
   walk: '<b>WASD</b> walk · <b>Shift</b> run · <b>E</b> take the helm (at the wheel) · <b>F</b> 3rd person · click to look',
 };
@@ -100,8 +109,11 @@ envSky.mesh.scale.setScalar(500);
 envScene.add(envSky.mesh);
 let envTarget = null;
 
+let sceneExposure = 0.55;
 function applyPreset(name) {
-  const p = PRESETS[name];
+  if (name && order.includes(name)) presetIndex = order.indexOf(name);
+  const p = resolve(PRESETS[order[presetIndex]], weather.v);
+  sceneExposure = p.exposure;
   engine.applyPreset(p);
   sky.applyPreset(p);
   ocean.applyPreset(p);
@@ -113,10 +125,43 @@ function applyPreset(name) {
   envTarget = pmrem.fromScene(envScene, 0.02, 0.1, 2000);
   scene.environment = envTarget.texture;
   scene.environmentIntensity = p.envIntensity ?? 0.6;
-  instruments.setNight(name === 'night');
+  clouds.applyPreset(p, sky.sunDirection);
+  rain.applyPreset(p);
+  instruments.setNight(order[presetIndex] === 'night');
 }
 applyPreset(order[presetIndex]);
 follow.snap(boat);
+
+// ---------------------------------------------------------------- weather
+// A front changes the light a few times a second while it passes (the
+// environment map is re-rendered each time); lightning flashes in a storm.
+let lastWeatherApply = 0;
+let flash = 0;
+let flashTimer = 8;
+let flashSeq = [];
+function updateWeather(dt) {
+  if (weather.state.sea !== ocean.state) ocean.setState(weather.state.sea);
+  const changed = weather.update(dt);
+  lastWeatherApply += dt;
+  if (changed && (lastWeatherApply > 0.33 || !weather.changing)) {
+    lastWeatherApply = 0;
+    applyPreset();
+  }
+  // lightning: a stroke is two or three quick flashes
+  flash *= Math.exp(-dt * 9);
+  if (weather.v.lightning > 0.5) {
+    flashTimer -= dt;
+    if (flashTimer <= 0) {
+      flashTimer = 6 + Math.random() * 20;
+      flashSeq = [0, 0.12, 0.3].slice(0, 2 + (Math.random() < 0.5 ? 1 : 0)).map((t) => t + Math.random() * 0.05);
+    }
+  }
+  flashSeq = flashSeq.filter((t) => {
+    if (t <= 0) { flash = Math.max(flash, 0.7 + Math.random() * 0.5); return false; }
+    return true;
+  }).map((t) => t - dt);
+  engine.renderer.toneMappingExposure = sceneExposure * (1 + flash * 1.4);
+}
 
 // ---------------------------------------------------------------- loop
 const clock = new THREE.Clock();
@@ -129,9 +174,10 @@ function tick() {
 
   if (input.pressed('n')) {
     presetIndex = (presetIndex + 1) % order.length;
-    applyPreset(order[presetIndex]);
+    applyPreset();
   }
-  if (input.pressed('b')) ocean.nextState(+1);
+  if (input.pressed('b')) weather.cycle();
+  updateWeather(dt);
   if (input.pressed('f')) setMode(mode === '3p' ? 'helm' : '3p');
   if (input.pressed('e')) {
     if (mode === 'helm') setMode('walk');
@@ -181,7 +227,10 @@ function tick() {
   instruments.update(dt, boat, onBridge);
   ocean.setBoat(boat);
   ocean.update(time, dt, camera, sky.sunDirection);
-  bridge.setSea(ocean);
+  bridge.setSea(ocean, weather);
+  clouds.update(time, camera, flash);
+  rain.update(dt, camera, weather.v.rain, weather.v.wind, boat.model);
+  ocean.uniforms.uRain.value = weather.v.rain;
   engine.render();
   input.endFrame();
 
@@ -193,4 +242,4 @@ function tick() {
 }
 tick();
 
-window.__scene = { engine, sky, ocean, boat, player, instruments, environment, terrain, follow, orbit, heightAt, applyPreset, setMode, input };
+window.__scene = { engine, sky, ocean, boat, player, instruments, weather, clouds, rain, environment, terrain, follow, orbit, heightAt, applyPreset, setMode, input };

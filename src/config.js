@@ -28,6 +28,20 @@ export const TERRAIN = {
 // given by significant height (m) and peak period (s). Beaufort numbers and
 // heights are what you would expect in the open sea; inside the fjord the
 // long waves are sheltered.
+// Weather: each state sets the sea (index into SEA.states), cloud cover and
+// darkness, rain, fog (density multiplier), sunlight (multiplier), wind (m/s)
+// and lightning. See world/Weather.js.
+export const WEATHER = {
+  initial: 1,
+  transition: 12,          // seconds for a front to come through
+  states: [
+    { name: 'clear', sea: 0, clouds: 0.2, dark: 0.0, rain: 0, fog: 0.85, sun: 1.0, wind: 3.5, lightning: 0 },
+    { name: 'fair', sea: 1, clouds: 0.5, dark: 0.06, rain: 0, fog: 1.0, sun: 0.95, wind: 7.5, lightning: 0 },
+    { name: 'overcast, showers', sea: 2, clouds: 0.93, dark: 0.5, rain: 0.35, fog: 1.45, sun: 0.28, wind: 12.5, lightning: 0 },
+    { name: 'storm', sea: 3, clouds: 1.0, dark: 0.82, rain: 1.0, fog: 2.6, sun: 0.1, wind: 19, lightning: 1 },
+  ],
+};
+
 export const SEA = {
   windDir: [0.3, -1.0],     // direction the wind sea travels (x, z); -z is north
   swellDir: [0.62, -0.78],

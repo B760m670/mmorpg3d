@@ -9,7 +9,7 @@ const BUTTONS = {
   leave: { label: 'leave helm', key: 'e' },
   view: { label: '1st / 3rd', key: 'f' },
   time: { label: 'day / night', key: 'n', top: true },
-  sea: { label: 'sea state', key: 'b', top: true },
+  sea: { label: 'weather', key: 'b', top: true },
 };
 
 // Scenery buttons live in the top-right corner, out of the way of the conn.

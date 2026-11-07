@@ -12,6 +12,8 @@ presets) is real and won't be thrown away as we raise fidelity.
 ![day](docs/day.png)
 
 ![sea states](docs/sea_states.jpg)
+
+![weather](docs/weather_states.jpg)
 ![night](docs/night.png)
 
 ## Run it (Windows / macOS / Linux)
@@ -40,11 +42,11 @@ You can command the ship from outside, stand at the wheel, or walk about her.
 | `Shift` | | run |
 | mouse | (click to capture) look around | look around |
 | `N` / `C` | day ↔ night / orbit camera (third person) | |
-| `B` | sea state: calm → moderate → rough → storm | sea state |
+| `B` | weather: clear → fair → overcast with showers → storm → changing on its own | weather |
 
 On a phone: the left stick turns the wheel (or walks), ▲ ▼ step the telegraph,
 drag the right half of the screen to look, buttons switch view and take or
-leave the helm; *day / night* and *sea state* are in the top-right corner.
+leave the helm; *day / night* and *weather* are in the top-right corner.
 
 ### Ship handling
 
@@ -105,6 +107,23 @@ The realism here is **not** the engine — it's the water shader + fog + post.
   appear where the summed surface folds over (Jacobian) and leave foam that
   fades. A gale blows foam into streaks along the wind, and there is surf at
   the foot of the cliffs.
+- **Weather** (`src/world/Weather.js`, `CloudLayer.js`, `Rain.js`): one
+  state drives the sky, light, fog, sea state, clouds and rain together, and
+  a front blends over 12 s. It has four states, plus *changing*, in which the
+  weather wanders by itself every few minutes:
+
+  | weather | sea | clouds | rain | sun | fog |
+  | --- | --- | --- | --- | --- | --- |
+  | clear | Bft 2 | few | none | full | light haze |
+  | fair | Bft 4 | broken cumulus | none | full | normal |
+  | overcast, showers | Bft 6 | grey deck | showers | weak | thicker |
+  | storm | Bft 8 | low dark ceiling | heavy, slanting | almost none | ~1.5 km visibility |
+
+  The clouds are a deck ray-cast in the sky shader. They drift with the wind,
+  the cloud base comes down as the weather worsens, and they fade into the
+  haze. Rain is wind-slanted streaks in a box around the camera, culled inside
+  the wheelhouse, plus rings on the water. A storm adds lightning. Under
+  cloud the sea reflects grey, the sun glitter goes and the shadows soften.
 - **Water shading**: Fresnel sky reflection, sun or moon glitter that widens
   with distance, light scattered through thin crests, the ship's bow wave,
   wake and Kelvin arms, and distance fog. The mesh is a polar grid centred
@@ -162,6 +181,9 @@ src/
     OceanSpectrum.js   # JONSWAP spectrum, cascades, CPU wave sampler
     OceanFFT.js        # GPU time evolution + inverse FFT + foam
     Ocean.js           # water mesh + shaders, sea states, shelter
+    Weather.js         # weather states, blending, preset resolution
+    CloudLayer.js      # cloud deck
+    Rain.js            # rain streaks
     SkyDome.js         # sky + sun direction
     Environment.js     # lights + scene fog
   entities/Boat.js     # placeholder boat + buoyancy/steering

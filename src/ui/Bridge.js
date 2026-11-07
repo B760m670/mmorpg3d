@@ -45,18 +45,20 @@ export class Bridge {
       <div class="wide"><div class="lbl">Engine order</div><div class="eng" data-k="eng">STOP</div></div>
       <div class="wide"><div class="lbl">Rudder <span data-k="rudtxt">0° MID</span></div>
         <div class="rud"><b data-k="wheel"></b><i data-k="rud"></i></div></div>
-      <div class="wide"><div class="lbl">Sea</div><div class="sea" data-k="sea">—</div></div>`;
+      <div class="wide"><div class="lbl">Weather</div><div class="sea" data-k="sea">—</div></div>`;
     document.body.appendChild(el);
     this.el = el;
     this.f = {};
     el.querySelectorAll('[data-k]').forEach((n) => { this.f[n.dataset.k] = n; });
   }
 
-  // ocean: { info: {name, bft}, hs, mix }
-  setSea(ocean) {
-    const st = ocean.info;
-    const building = ocean.mix < 1 ? ' (changing)' : '';
-    this.f.sea.textContent = `Bft ${st.bft} · ${st.name} · Hs ${ocean.hs.toFixed(1)} m${building}`;
+  // ocean: { info: {bft}, hs }, weather: { label }
+  setSea(ocean, weather) {
+    const text = `${weather.label} · Bft ${ocean.info.bft} · Hs ${ocean.hs.toFixed(1)} m`;
+    if (text !== this.seaText) {
+      this.seaText = text;
+      this.f.sea.textContent = text;
+    }
   }
 
   update(boat) {
