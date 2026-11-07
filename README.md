@@ -51,8 +51,8 @@ The realism here is **not** the engine — it's the water shader + fog + post.
   the sun direction drives the ocean shader and the directional light.
 - **Post** (`src/core/Engine.js`) — `ACESFilmicToneMapping` + `UnrealBloomPass`.
   This is ~half of the "filmic" look.
-- **Boat** (`src/entities/Boat.js`) — a primitive placeholder trawler with real
-  buoyancy & steering. **This is the one mesh we swap for a Blender glTF.**
+- **Boat** (`src/entities/Boat.js`) — loads the Blender-built trawler (below),
+  with thrust/drag physics, heel in turns and buoyancy over bow, stern and sides.
 - **Presets** (`src/config.js`) — day/night are presets of one scene. All
   tuning (colors, waves, fog, bloom, camera, boat) lives here.
 
