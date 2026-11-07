@@ -95,10 +95,11 @@ if (IS_TOUCH) document.body.classList.add('touch');
 //   walk  first person, moving about the ship (she keeps her last orders)
 let mode = '3p';
 let lastNear = null;
+let stickWas = false, stickStepT = 0;
 
 const HINTS = IS_TOUCH ? {
-  '3p': 'рычаг справа — ход · штурвал слева — крутите пальцем · палец по экрану — облёт, щипок — ближе/дальше',
-  helm: 'рычаг — ход · штурвал — руль · палец по экрану — осмотреться · «отойти» — пройтись по судну',
+  '3p': 'джойстик: ←→ руль, ↑↓ ход · рычаг справа — ход · палец по экрану — облёт, щипок — ближе/дальше',
+  helm: 'джойстик: ←→ руль, ↑↓ ход · рычаг — ход · палец по экрану — осмотреться · «отойти» — пройтись по судну',
   walk: 'джойстик — идти · палец — осмотреться · у штурвала — «к штурвалу»',
 } : {
   '3p': '<b>W/S</b> телеграф · <b>A/D</b> руль · <b>Z</b> руль прямо · мышь — облёт, колесо — ближе/дальше · <b>F</b> на борт · <b>N</b> день/ночь · <b>B</b> погода · <b>H</b> гудок · <b>M</b> звук · <b>I</b> приборы',
@@ -256,7 +257,21 @@ function tick() {
     if (input.telegraphSet !== null) boat.telegraph = input.telegraphSet;
     if (input.wheelSet !== null) boat.wheel = input.wheelSet;
     const turn = (input.held('a') || input.held('arrowleft') ? 1 : 0) - (input.held('d') || input.held('arrowright') ? 1 : 0);
-    boat.steer(dt, { turn, target: input.stickActive ? -input.touchX * BOAT.rudderMax : null });
+    // Helm joystick (phone): sideways = rudder in proportion, back to
+    // midships when released (follow-up steering); held up/down = step the
+    // engine order once, then again every 0.6 s while held.
+    let target = null;
+    if (input.stickActive) {
+      const x = input.touchX, ax = Math.abs(x);
+      target = ax < 0.12 ? 0 : -Math.sign(x) * ((ax - 0.12) / 0.88) * BOAT.rudderMax;
+      const y = input.touchY;
+      if (Math.abs(y) > 0.6 && Math.abs(y) > ax) {
+        stickStepT -= dt;
+        if (stickStepT <= 0) { boat.telegraphStep(y > 0 ? +1 : -1); stickStepT = 0.6; }
+      } else stickStepT = 0;
+    } else if (stickWas) boat.midships();
+    stickWas = input.stickActive;
+    boat.steer(dt, { turn, target });
   }
 
   boat.update(dt, time, isNavigable);
@@ -288,10 +303,11 @@ function tick() {
   const pp = player.pos;
   const onBridge = mode === 'helm' ||
     (mode === 'walk' && pp.y > 5.1 && pp.z > -6.3 && pp.z < 0.2 && Math.abs(pp.x) < 3.4);
-  // Below decks: 'tween deck (2.15), engine room and fish hold. Model z is
-  // aft-positive: station s = 11.975 - z.
+  // Below decks: 'tween deck (2.15), steering flat (0.0), engine room
+  // (-1.4, stations 3.0-9.4) and fishroom (-1.5). Model z is aft-positive:
+  // station s = 11.975 - z.
   const belowDecks = mode === 'walk' && pp.y < 3.9;
-  const engineRoom = belowDecks && pp.y < 1.0 && pp.z > 1.9 && pp.z < 8.0;
+  const engineRoom = belowDecks && pp.y < -0.3 && pp.z > 2.55 && pp.z < 9.0;
   ocean.uniforms.uHullMask.value = belowDecks ? 1 : 0;
   if (boat.interior) boat.interior.visible = mode !== '3p';
   if (belowDecks) {
@@ -330,7 +346,7 @@ function tick() {
     started = true;
     loading.classList.add('hidden');
     if (touch) {
-      touch.toast('<b>Как управлять</b><br>Рычаг справа — ход: вверх вперёд, вниз назад.<br>Штурвал слева — поверните пальцем влево/вправо, «прямо» — руль прямо.<br>'
+      touch.toast('<b>Как управлять</b><br>Джойстик слева: влево/вправо — руль (отпустите — руль прямо), вверх/вниз — прибавить/убавить ход.<br>Рычаг справа — ход сразу на нужное деление.<br>'
         + 'Проведите пальцем — облететь судно, щипок двумя пальцами — ближе/дальше.<br>«на борт» — встать к штурвалу, ☰ — меню.', 9);
     }
   }

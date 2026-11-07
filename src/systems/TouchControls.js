@@ -1,12 +1,15 @@
 import { TELEGRAPH } from '../config.js';
 
 // Phone controls, kept out of the way of the view:
-//   - bottom-left: a floating stick — the wheel (third person / at the
-//     helm) or walking (aboard);
+//   - bottom-left: a joystick, always visible. At the conn it is the helm
+//     joystick of a modern wheelhouse: left/right puts the rudder over in
+//     proportion and it comes back to midships when you let go (follow-up
+//     steering); holding it up or down steps the engine order. Aboard, the
+//     same stick walks;
 //   - everywhere else: drag to look (aboard) or to fly the camera around the
 //     ship (third person); pinch with two fingers to zoom;
 //   - bottom-right: the engine-order telegraph lever — slide it up for ahead,
-//     down for astern; a small "rudder midships" button below it;
+//     down for astern;
 //   - top-right: view switch, helm button when it applies, and a menu (☰)
 //     with day/night, weather, sound and the horn.
 // Buttons press the same keys as the keyboard, so every action has one code
@@ -18,7 +21,7 @@ export const ORDER_RU = [
 ];
 
 const CSS = `
-#touch-layer { left: 0 !important; top: auto !important; bottom: 0; width: 44% !important; height: 62% !important; z-index: 5; }
+#touch-layer { left: 0 !important; top: auto !important; bottom: 0; width: calc(210px + env(safe-area-inset-left, 0px)) !important; height: calc(240px + env(safe-area-inset-bottom, 0px)) !important; z-index: 5; }
 #look-layer { left: 0 !important; right: 0 !important; top: 0; width: 100% !important; height: 100% !important; z-index: 4; display: block !important; }
 #touch-buttons { display: none !important; }
 .tc { position: fixed; z-index: 6; font: 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace; color: #eaf2f6; }
@@ -40,15 +43,15 @@ const CSS = `
 #tc-knob { position: absolute; left: 50%; width: 46px; height: 22px; margin: -11px 0 0 -23px; border-radius: 8px;
   background: #ffcf7a; box-shadow: 0 1px 6px rgba(0,0,0,.5); pointer-events: none; }
 #tc-order { font-size: 10px; text-align: center; color: #ffcf7a; text-shadow: 0 1px 2px #000; width: 110px; }
-#tc-wheel { left: calc(14px + env(safe-area-inset-left, 0px)); bottom: calc(10px + env(safe-area-inset-bottom, 0px));
-  display: flex; flex-direction: column; align-items: center; gap: 4px; }
-#tc-wheel svg { touch-action: none; filter: drop-shadow(0 1px 3px rgba(0,0,0,.6)); }
-#tc-wheel-g { transition: transform .08s linear; transform-origin: 0 0; }
-#tc-rudder { font-size: 10px; color: #eaf2f6; text-shadow: 0 1px 2px #000; }
-#tc-wheel .row { display: flex; gap: 6px; align-items: center; }
-body.touch:not(.walking) #touch-layer { display: none; }
-body.touch.walking #joy-base { opacity: 0.55; }
-#joy-label { position: absolute; left: 50%; top: 100%; transform: translate(-50%, 6px); font: 10px ui-monospace, monospace;
+#joy-base { left: calc(38px + env(safe-area-inset-left, 0px)) !important; top: auto !important;
+  bottom: calc(70px + env(safe-area-inset-bottom, 0px)); margin: 0 !important; }
+body.touch #joy-base { opacity: 0.6; }
+body.touch #joy-base.active { opacity: 1; }
+#joy-knob { background: rgba(255, 207, 122, 0.75) !important; box-shadow: 0 1px 6px rgba(0,0,0,.45); }
+body.walking #joy-knob { background: rgba(235, 244, 248, 0.55) !important; }
+#joy-base i { position: absolute; font: 11px ui-monospace, monospace; font-style: normal; color: rgba(234,242,246,.7);
+  text-shadow: 0 1px 2px #000; transform: translate(-50%, -50%); }
+#joy-label { position: absolute; left: 50%; top: 100%; transform: translate(-50%, 6px); font: 11px ui-monospace, monospace;
   color: #eaf2f6; text-shadow: 0 1px 2px #000; white-space: nowrap; }
 #tc-toast { left: 50%; top: 38%; transform: translateX(-50%); max-width: min(560px, 86vw); padding: 12px 14px;
   border-radius: 12px; background: rgba(10,14,18,.72); font: 13px/1.45 system-ui, sans-serif; text-align: center;
@@ -75,12 +78,19 @@ export class TouchControls {
     this.knob = document.createElement('div');
     this.knob.id = 'joy-knob';
     this.base.appendChild(this.knob);
+    // arrows around the ring say what each direction does
+    this.marks = ['↑', '↓', '←', '→'].map((t, i) => {
+      const m = document.createElement('i');
+      m.textContent = t;
+      m.style.left = `${[50, 50, 9, 91][i]}%`;
+      m.style.top = `${[9, 91, 50, 50][i]}%`;
+      this.base.appendChild(m);
+      return m;
+    });
     const jl = document.createElement('div');
     jl.id = 'joy-label';
-    jl.textContent = 'идти';
     this.base.appendChild(jl);
-    this.parkStick();
-    window.addEventListener('resize', () => this.parkStick());
+    this.label = jl;
     left.appendChild(this.base);
     document.body.appendChild(left);
 
@@ -114,41 +124,6 @@ export class TouchControls {
     this.leverKnob = this.el('div', '', 'tc-knob', track);
     this.lever = lever;
 
-    // bottom-left: the ship's wheel. Drag sideways to put the wheel over;
-    // it stays where you leave it, like a real helm. "прямо" = midships.
-    const wheel = this.el('div', 'tc', 'tc-wheel');
-    let spokes = '';
-    for (let i = 0; i < 8; i++) {
-      const a = (i / 8) * Math.PI * 2, c = Math.cos(a), si = Math.sin(a);
-      spokes += `<line x1="${(c * 9).toFixed(1)}" y1="${(si * 9).toFixed(1)}" x2="${(c * 54).toFixed(1)}" y2="${(si * 54).toFixed(1)}" />`
-        + `<circle cx="${(c * 54).toFixed(1)}" cy="${(si * 54).toFixed(1)}" r="4.5" />`;
-    }
-    wheel.innerHTML = `<svg viewBox="-60 -60 120 120" width="112" height="112">
-      <g id="tc-wheel-g" stroke="rgba(214,170,110,0.92)" fill="rgba(214,170,110,0.92)" stroke-width="5" stroke-linecap="round">
-        <circle r="42" fill="none" stroke-width="7" />${spokes}<circle r="10" fill="rgba(120,90,50,0.95)" stroke-width="3" />
-        <line x1="0" y1="-42" x2="0" y2="-54" stroke="#ffcf7a" stroke-width="6" />
-      </g></svg>
-      <div class="row"><span id="tc-rudder">руль прямо</span></div>`;
-    this.wheelG = wheel.querySelector('#tc-wheel-g');
-    this.rudderTxt = wheel.querySelector('#tc-rudder');
-    this.button(wheel.querySelector('.row'), 'прямо', 'z');
-    this.wheelEl = wheel;
-    this.wheelOrder = 0;
-    const svg = wheel.querySelector('svg');
-    let wheelId = null, startX = 0, startOrder = 0;
-    svg.addEventListener('pointerdown', (e) => {
-      e.preventDefault(); e.stopPropagation();
-      wheelId = e.pointerId; startX = e.clientX; startOrder = this.wheelOrder;
-    });
-    window.addEventListener('pointermove', (e) => {
-      if (e.pointerId !== wheelId) return;
-      // drag right = starboard (negative wheel order), left = port
-      const order = Math.max(-35, Math.min(35, startOrder - (e.clientX - startX) * 0.25));
-      this.input.wheelSet = order;
-      this.wheelOrder = order;
-      this.drawWheel(order);
-    });
-    window.addEventListener('pointerup', (e) => { if (e.pointerId === wheelId) wheelId = null; });
     this.track = track;
     const setFromY = (clientY) => {
       const r = track.getBoundingClientRect();
@@ -168,10 +143,8 @@ export class TouchControls {
     left.addEventListener('pointerdown', (e) => {
       if (this.stickId !== null) return;
       this.stickId = e.pointerId;
-      this.origin = { x: e.clientX, y: e.clientY };
-      this.base.style.left = `${e.clientX}px`;
-      this.base.style.top = `${e.clientY}px`;
-      this.base.style.opacity = '1';
+      this.parkStick();
+      this.base.classList.add('active');
       this._stick(e.clientX, e.clientY);
       menu.classList.remove('open');
       e.preventDefault();
@@ -206,7 +179,7 @@ export class TouchControls {
         input.touchY = 0;
         input.stickActive = false;
         this.knob.style.transform = 'translate(-50%, -50%)';
-        this.parkStick();
+        this.base.classList.remove('active');
       }
       if (this.looks.delete(e.pointerId)) this.pinchDist = this.looks.size >= 2 ? this.spread() : 0;
     };
@@ -236,15 +209,11 @@ export class TouchControls {
     return b;
   }
 
-  // the walking stick rests bottom-left, visible, while walking
+  // the stick sits bottom-left, always in the same place (CSS); its centre
+  // is the origin
   parkStick() {
-    this.base.style.opacity = '';
-    this.base.style.left = '96px';
-    this.base.style.top = `${window.innerHeight - 120}px`;
-  }
-
-  drawWheel(order) {
-    this.wheelG.style.transform = `rotate(${(-order * 7).toFixed(1)}deg)`;
+    const r = this.base.getBoundingClientRect();
+    this.origin = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
   }
 
   spread() {
@@ -288,8 +257,11 @@ export class TouchControls {
   // mode: '3p' | 'helm' | 'walk'; telegraph: current order index
   setMode(mode, nearHelm) {
     this.lever.style.display = mode === 'walk' ? 'none' : 'flex';
-    this.wheelEl.style.display = mode === 'walk' ? 'none' : 'flex';
     document.body.classList.toggle('walking', mode === 'walk');
+    this.mode = mode;
+    const conn = mode !== 'walk';
+    if (!conn) this.label.textContent = 'идти';
+    this._lastRud = null;
     this.btnHelm.hidden = !(mode === 'helm' || (mode === 'walk' && nearHelm));
     this.btnHelm.textContent = mode === 'helm' ? 'отойти' : 'к штурвалу';
     this.btnView.textContent = mode === '3p' ? 'на борт' : 'со стороны';
@@ -300,14 +272,11 @@ export class TouchControls {
       this._lastOrder = boat.telegraph;
       this.showOrder(boat.telegraph);
     }
-    if (Math.abs(boat.wheel - this.wheelOrder) > 0.01) {      // keyboard / midships
-      this.wheelOrder = boat.wheel;
-      this.drawWheel(boat.wheel);
-    }
+    if (this.mode === 'walk') return;
     const r = Math.round(boat.rudder);
     if (r !== this._lastRud) {
       this._lastRud = r;
-      this.rudderTxt.textContent = r === 0 ? 'руль прямо' : `руль ${Math.abs(r)}° ${r > 0 ? 'влево' : 'вправо'}`;
+      this.label.textContent = r === 0 ? 'руль прямо' : `руль ${Math.abs(r)}° ${r > 0 ? 'влево' : 'вправо'}`;
     }
   }
 }

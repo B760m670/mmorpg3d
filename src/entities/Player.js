@@ -98,7 +98,7 @@ export class Player {
     let blocked = false;
     if (floor) {
       const rise = floor.point.y - this.pos.y;
-      const steep = floor.face && floor.face.normal.y < 0.72;
+      const steep = floor.face && floor.face.normal.y < 0.55;   // ship stairs are 42-57 deg
       if (rise > PLAYER.stepHeight || (steep && rise > 0.05)) blocked = true;
     }
     if (!blocked) {

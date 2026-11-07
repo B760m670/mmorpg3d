@@ -46,10 +46,12 @@ You can command the ship from outside, stand at the wheel, or walk about her.
 | `M` / `H` | sound on / off / ship's horn | sound on / off / horn |
 
 On a phone the interface is in Russian and kept out of the way:
-- **Bottom right**: the engine-order telegraph lever. Slide it up for ahead,
-  down for astern; *руль 0* sets the rudder midships.
-- **Bottom left**: a stick that turns the wheel, or walks you about when
-  aboard.
+- **Bottom left**: a joystick, always in the same place. At the conn it works
+  like the helm joystick of a modern wheelhouse: push it left or right and
+  the rudder goes over in proportion, let go and it comes back to midships;
+  hold it up or down to step the engine order. Aboard, it walks you about.
+- **Bottom right**: the engine-order telegraph lever, to go straight to an
+  order: slide it up for ahead, down for astern.
 - **Anywhere else**: drag to look around (aboard) or to fly the camera around
   the ship (third person). Pinch with two fingers to zoom.
 - **Top right**: *на борт / со стороны* switches view, *к штурвалу / отойти*
@@ -221,26 +223,63 @@ cp out/trawler.glb src/assets/trawler.glb
 
 ### Below decks
 
-The published drawing is an outboard profile only, so the arrangement below
-decks follows the usual one for Scottish stern trawlers of this size. It is
-fitted to the hull lines and to what shows outside: the side discharge door
-and the portholes put the main deck at 2.15 m. Everything is walkable.
+The published drawing is an outboard profile only, and no complete general
+arrangement of a 24 m Scottish trawler with its interiors is openly
+available. The arrangement is therefore worked out from how this boat works
+from outside, and from documented arrangements of comparable UK trawlers:
 
-- **'Tween deck (main deck)**: reached by a companion stair through a hatch on
-  the working deck. Aft is the net and rope store, then the fish-processing
-  deck (hopper, gutting table, conveyor, washer, boxes), a changing room with
-  oilskins and boots, the galley (stove, sink, fridge) and mess, and four
-  two-berth cabins off a centreline corridor. There are portholes, the
-  discharge door and deckhead lights.
-- **Engine room** (stair down from the processing deck): the main engine
-  (1500 hp, six in line, with turbo and exhaust), gearbox and shaft, two
-  generator sets, the switchboard, a day tank, a workbench and pipe runs.
-- **Fish hold** (about 150 m³; the data sheet says 160): insulated, with
-  aluminium pound boards, boxes and ice.
+- Parkol Marine (Whitby) yard descriptions of their 19-22 m trawlers
+  (e.g. *Sparkling Star*, *Our Lass II*, *Jubilee Quest*, *Day Dawn*):
+  below deck three watertight bulkheads divide aft accommodation with the
+  steering gear, the engine room, the fishroom with its ice locker and the
+  forepeak tank; on the main deck an athwartships casing holds galley, mess,
+  oilskins and washroom; fish handling, hopper and ice machine are in the
+  shelter.
+- FAO *Fishing boat designs* (Fisheries Technical Papers 188 and 239) for
+  the general practice: fishroom divided into pens about 1.5 m long by
+  stanchions and pound boards either side of a centre gangway, ice stowage,
+  steering gear over the rudder, engine room access.
 
-Below decks the sea is masked out of the hull, the rain does not fall, the
-outside light is shut out, the deckhead lights and your own lamp light the
-spaces, and the engine is loud in the engine room.
+How the spaces follow from the boat itself (stations s from the transom):
+
+- **The catch path.** The codend comes up the stern onto the working deck
+  and is emptied through the hatch in the deck (s 8.15). Below it, on the main
+  deck at 2.15 m, the reception hopper feeds a conveyor that carries the fish
+  aft past the crew; they gut standing inboard of it and put the fish on a
+  second conveyor that lifts them into the washer drum; from the washer a
+  chute goes down through its own hatch into the fishroom. Offal runs in the
+  floor gutter to the side discharge door (the door on the drawing). The ice
+  machine stands beside the chute and drops ice into the ice locker below.
+- **Fishroom** (s 9.4-16.4, about 160 m³ gross as on the data sheet), right
+  under the fish handling: insulated and white, aluminium stanchions and
+  pound boards in pens about 1.5 m long, boxed fish and bulk ice, the ice
+  locker aft, refrigeration grids on the deckhead, a stair down from the
+  hatch.
+- **Engine room** (s 3.0-9.4), aft of the fishroom so the shaft is short:
+  main engine (1500 hp, six in line) with gearbox aft, coupling and stern
+  gland, turbo and exhaust, a hydraulic pump for the winches and net drums,
+  two generator sets, switchboard, day tank, workbench, pipe runs with
+  valves. The exhaust goes up a lagged trunk on the port side, along the
+  deckhead, across the casing and up through a casing in the wheelhouse to
+  the funnel on its roof (which is where the drawing has it).
+- **Steering gear flat** (s 0.45-3.0) over the rudder, reached by its own
+  hatch from the aft store: rudder stock, tiller, two hydraulic rams, power
+  pack, emergency tiller, rudder-angle transmitter.
+- **Aft store** under the working deck: the companion from the deck lands
+  here; spare net under the stair, ropes, floats, the hatches down to the
+  steering flat and the engine room.
+- **Casing** (s 11.4-16.6), under the wheelhouse: changing room where the
+  crew come in off the deck (lockers, oilskins, boots, bench), washroom (WC,
+  shower, basin), galley (stove with fiddle rails, oven, hood, sink, fridge,
+  microwave) and mess (settee, table, TV), and the stair up to the
+  wheelhouse.
+- **Cabins** forward: four two-berth cabins off a centreline corridor, with
+  bunk curtains, reading lights and lockers.
+
+Every space is walkable; stairs are 42-57°, as on a working boat. Below decks
+the sea is masked out of the hull, the rain does not fall, the outside light
+is shut out, the deckhead lights and your own lamp light the spaces, and the
+engine is loud in the engine room.
 
 ![below decks](docs/below_decks.jpg)
 
