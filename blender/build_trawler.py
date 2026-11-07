@@ -46,6 +46,7 @@ T = 3.0            # assumed design draught
 FF_WL = 21.2       # stem at the design waterline (drawing)
 WD_Z = 4.3         # aft working deck (drawing: 1.1 m below bulwark top)
 SH0, SH1 = 10.9, 11.95  # sloped aft end of the shelter deck (drawing)
+STAIR_X = 3.85          # stair up to the starboard side deck
 WH0, WH1, WH_LEAN = 12.2, 18.3, 0.5  # wheelhouse (drawing)
 
 
@@ -158,7 +159,17 @@ for coll in (bpy.data.objects, bpy.data.meshes, bpy.data.materials, bpy.data.ima
 PARTS = []
 
 
-def material(name, color, rough=0.5, metal=0.0, emit=None, grime=0.0):
+def _sock(sockets, name, kind):
+    return next(x for x in sockets if x.name == name and x.type == kind)
+
+
+def material(name, color, rough=0.5, metal=0.0, emit=None, grime=0.0, rust=0.0, bump=0.0):
+    """Principled material with optional procedural weathering.
+
+    grime: rain streaks and blotches; rust: rusty edges (AO 'inside'), spots
+    and run-off streaks; bump: dents and orange-peel relief (metres). All of
+    it is baked into colour / normal / roughness maps later.
+    """
     m = bpy.data.materials.new(name)
     m.use_nodes = True
     nt = m.node_tree
@@ -169,42 +180,90 @@ def material(name, color, rough=0.5, metal=0.0, emit=None, grime=0.0):
     if emit:
         p.inputs["Emission Color"].default_value = (*emit, 1.0)
         p.inputs["Emission Strength"].default_value = 6.0
-    if grime > 0:
-        # Vertical rain streaks + blotches, baked into the atlas later.
-        tc = nt.nodes.new("ShaderNodeTexCoord")
-        mp = nt.nodes.new("ShaderNodeMapping")
-        mp.inputs["Scale"].default_value = (2.2, 2.2, 0.12)
-        streak = nt.nodes.new("ShaderNodeTexNoise")
-        streak.inputs["Scale"].default_value = 3.0
-        streak.inputs["Detail"].default_value = 4.0
-        blot = nt.nodes.new("ShaderNodeTexNoise")
-        blot.inputs["Scale"].default_value = 0.9
-        blot.inputs["Detail"].default_value = 6.0
-        r1 = nt.nodes.new("ShaderNodeMapRange")
-        r1.inputs["From Min"].default_value = 0.52
-        r1.inputs["From Max"].default_value = 0.75
-        r2 = nt.nodes.new("ShaderNodeMapRange")
-        r2.inputs["From Min"].default_value = 0.45
-        r2.inputs["From Max"].default_value = 0.8
-        add = nt.nodes.new("ShaderNodeMath")
-        add.operation = "ADD"
-        mul = nt.nodes.new("ShaderNodeMath")
-        mul.operation = "MULTIPLY"
-        mul.inputs[1].default_value = grime
-        mix = nt.nodes.new("ShaderNodeMix")
-        mix.data_type = "RGBA"
-        mix.inputs["A"].default_value = (*color, 1.0)
-        mix.inputs["B"].default_value = (color[0] * 0.62, color[1] * 0.58, color[2] * 0.5, 1.0)
-        nt.links.new(tc.outputs["Object"], mp.inputs["Vector"])
-        nt.links.new(mp.outputs["Vector"], streak.inputs["Vector"])
-        nt.links.new(tc.outputs["Object"], blot.inputs["Vector"])
-        nt.links.new(streak.outputs["Fac"], r1.inputs["Value"])
-        nt.links.new(blot.outputs["Fac"], r2.inputs["Value"])
-        nt.links.new(r1.outputs["Result"], add.inputs[0])
-        nt.links.new(r2.outputs["Result"], add.inputs[1])
-        nt.links.new(add.outputs["Value"], mul.inputs[0])
-        nt.links.new(mul.outputs["Value"], mix.inputs["Factor"])
-        nt.links.new(mix.outputs["Result"], p.inputs["Base Color"])
+    if not (grime or rust or bump):
+        return m
+
+    link = nt.links.new
+    tc = nt.nodes.new("ShaderNodeTexCoord")
+
+    def noise(scale, detail, vec=None, r=0.5):
+        n = nt.nodes.new("ShaderNodeTexNoise")
+        n.inputs["Scale"].default_value = scale
+        n.inputs["Detail"].default_value = detail
+        n.inputs["Roughness"].default_value = r
+        link(vec if vec is not None else tc.outputs["Object"], n.inputs["Vector"])
+        return n.outputs["Fac"]
+
+    def mrange(sock, a, b):
+        n = nt.nodes.new("ShaderNodeMapRange")
+        n.inputs["From Min"].default_value = a
+        n.inputs["From Max"].default_value = b
+        link(sock, n.inputs["Value"])
+        return n.outputs["Result"]
+
+    def op(kind, a, b):
+        n = nt.nodes.new("ShaderNodeMath")
+        n.operation = kind
+        n.use_clamp = kind in ("ADD", "MULTIPLY", "MAXIMUM")
+        for i, v in enumerate((a, b)):
+            if isinstance(v, (int, float)):
+                n.inputs[i].default_value = v
+            else:
+                link(v, n.inputs[i])
+        return n.outputs["Value"]
+
+    def stretched(sx, sy, sz):
+        n = nt.nodes.new("ShaderNodeMapping")
+        n.inputs["Scale"].default_value = (sx, sy, sz)
+        link(tc.outputs["Object"], n.inputs["Vector"])
+        return n.outputs["Vector"]
+
+    def mix(fac, a, b):
+        n = nt.nodes.new("ShaderNodeMix")
+        n.data_type = "RGBA"
+        link(fac, _sock(n.inputs, "Factor", "VALUE"))
+        for nm, v in (("A", a), ("B", b)):
+            sk = _sock(n.inputs, nm, "RGBA")
+            if isinstance(v, tuple):
+                sk.default_value = (*v, 1.0)
+            else:
+                link(v, sk)
+        return _sock(n.outputs, "Result", "RGBA")
+
+    streaks = stretched(2.2, 2.2, 0.12)
+    dirt = op("MULTIPLY", op("ADD", mrange(noise(3, 4, streaks), 0.52, 0.75),
+                             mrange(noise(0.9, 6), 0.45, 0.8)), grime)
+    col = mix(dirt, tuple(color), (color[0] * 0.6, color[1] * 0.56, color[2] * 0.48))
+    rmask = None
+    if rust:
+        spots = mrange(noise(5, 10, r=0.65), 0.64, 0.74)
+        ao = nt.nodes.new("ShaderNodeAmbientOcclusion")
+        ao.inside = True
+        ao.only_local = True
+        ao.samples = 8
+        ao.inputs["Distance"].default_value = 0.06
+        edge = mrange(op("SUBTRACT", 1.0, ao.outputs["AO"]), 0.25, 0.6)
+        edge = op("MULTIPLY", edge, mrange(noise(9, 4), 0.4, 0.6))
+        runoff = op("MULTIPLY", mrange(noise(4, 3, stretched(3, 3, 0.08)), 0.62, 0.82), 0.6)
+        rmask = op("MULTIPLY", op("MAXIMUM", op("MAXIMUM", spots, edge), runoff), rust)
+        rust_col = mix(noise(14, 6), (0.16, 0.06, 0.03), (0.46, 0.19, 0.07))
+        col = mix(rmask, col, rust_col)
+    link(col, p.inputs["Base Color"])
+
+    r_total = op("ADD", rough, op("MULTIPLY", dirt, 0.15))
+    if rmask is not None:
+        r_total = op("ADD", r_total, op("MULTIPLY", rmask, 0.35))
+    link(r_total, p.inputs["Roughness"])
+
+    if bump:
+        h = op("ADD", noise(0.7, 2), op("MULTIPLY", noise(30, 2), 0.15))
+        if rmask is not None:
+            h = op("ADD", h, op("MULTIPLY", rmask, 0.6))
+        b = nt.nodes.new("ShaderNodeBump")
+        b.inputs["Strength"].default_value = 1.0
+        b.inputs["Distance"].default_value = bump
+        link(h, b.inputs["Height"])
+        link(b.outputs["Normal"], p.inputs["Normal"])
     return m
 
 
@@ -345,28 +404,90 @@ def railing(name, pts, h, post_mat, rail_mat, closed=False, gap=1.25):
             cyl(f"{name}_mid", a + up * f, b + up * f, 0.012, post_mat, seg=5)
 
 
+def wall(name, origin, right, up, width, height, openings, mat, glass=None, thick=0.08):
+    """Wall in the plane origin + a*right + b*up with rectangular openings
+    (a0, a1, b0, b1, is_window). Windows get a glass pane; doors stay open."""
+    origin, right, up = Vector(origin), Vector(right).normalized(), Vector(up).normalized()
+    xs = sorted(set([0.0, width] + [o[0] for o in openings] + [o[1] for o in openings]))
+    ys = sorted(set([0.0, height] + [o[2] for o in openings] + [o[3] for o in openings]))
+    for i in range(len(xs) - 1):
+        for j in range(len(ys) - 1):
+            w, h = xs[i + 1] - xs[i], ys[j + 1] - ys[j]
+            if w < 1e-4 or h < 1e-4:
+                continue
+            cx, cy = (xs[i] + xs[i + 1]) / 2, (ys[j] + ys[j + 1]) / 2
+            hole = next((o for o in openings if o[0] <= cx <= o[1] and o[2] <= cy <= o[3]), None)
+            c = origin + right * cx + up * cy
+            if hole is None:
+                panel(name, c, right, up, w, h, mat, thick)
+            elif hole[4] and glass is not None:
+                panel(name + "_glass", c, right, up, w, h, glass, 0.012)
+    # rubber window frames
+    for o in openings:
+        if not o[4]:
+            continue
+        a0, a1, b0, b1 = o[:4]
+        for (ca, cb, w, h) in (((a0 + a1) / 2, b0, a1 - a0, 0.04), ((a0 + a1) / 2, b1, a1 - a0, 0.04),
+                               (a0, (b0 + b1) / 2, 0.04, b1 - b0), (a1, (b0 + b1) / 2, 0.04, b1 - b0)):
+            panel(name + "_frame", origin + right * ca + up * cb, right, up, w, h, M["dark"], thick + 0.02)
+
+
+def tri_x(name, pts_sz, x0, x1, mat):
+    """Triangle/polygon in the (s, z) plane extruded across x."""
+    return solid(name, [(x0, Y(sv), zv) for sv, zv in pts_sz], [(x1, Y(sv), zv) for sv, zv in pts_sz], mat)
+
+
+def plate_y(name, pts_xz, s, t, mat):
+    """Polygon in the (x, z) plane at station s, thickness t along the ship."""
+    return solid(name, [(xv, Y(s) - t / 2, zv) for xv, zv in pts_xz], [(xv, Y(s) + t / 2, zv) for xv, zv in pts_xz], mat)
+
+
+def ladder(name, p0, p1, half_width_vec, mat, rung=0.3):
+    p0, p1, hv = Vector(p0), Vector(p1), Vector(half_width_vec)
+    for sgn in (-1, 1):
+        cyl(name + "_rail", p0 + hv * sgn, p1 + hv * sgn, 0.025, mat, seg=6)
+    n = max(2, int((p1 - p0).length / rung))
+    for k in range(1, n):
+        p = p0.lerp(p1, k / n)
+        cyl(name + "_rung", p - hv, p + hv, 0.016, mat, seg=5)
+
+
 # ------------------------------------------------------------------ materials
 M = {
-    "hull": material("hull_livery", (1, 1, 1), rough=0.38),
-    "white": material("paint_white", (0.84, 0.85, 0.83), rough=0.42, grime=0.32),
-    "deck": material("deck_paint", (0.17, 0.23, 0.2), rough=0.85, grime=0.5),
-    "orange": material("paint_orange", (0.9, 0.33, 0.06), rough=0.45, grime=0.15),
-    "rail_white": material("rail_white", (0.86, 0.87, 0.85), rough=0.4),
+    "hull": material("hull_livery", (1, 1, 1), rough=0.45),
+    "white": material("paint_white", (0.84, 0.85, 0.83), rough=0.45, grime=0.32, rust=0.35, bump=0.004),
+    "deck": material("deck_paint", (0.17, 0.23, 0.2), rough=0.8, grime=0.5, rust=0.55, bump=0.003),
+    "orange": material("paint_orange", (0.9, 0.33, 0.06), rough=0.45, grime=0.15, rust=0.3, bump=0.003),
+    "rail_white": material("rail_white", (0.86, 0.87, 0.85), rough=0.42, grime=0.1, rust=0.3),
     "glass": material("glass", (0.025, 0.035, 0.045), rough=0.04, metal=0.3),
-    "steel": material("steel", (0.45, 0.46, 0.47), rough=0.38, metal=0.85),
-    "dark": material("dark_steel", (0.06, 0.06, 0.065), rough=0.6, metal=0.4),
-    "machinery": material("machinery", (0.18, 0.24, 0.3), rough=0.5, grime=0.3),
-    "net": material("net_green", (0.08, 0.26, 0.13), rough=0.95),
-    "drum": material("drum_grey", (0.62, 0.64, 0.64), rough=0.45, grime=0.25),
-    "antifoul": material("antifouling", (0.34, 0.11, 0.07), rough=0.8),
-    "red": material("paint_red", (0.48, 0.008, 0.005), rough=0.4),
+    "steel": material("steel", (0.45, 0.46, 0.47), rough=0.38, metal=0.85, rust=0.2),
+    "dark": material("dark_steel", (0.06, 0.06, 0.065), rough=0.6, metal=0.4, rust=0.4),
+    "machinery": material("machinery", (0.18, 0.24, 0.3), rough=0.5, grime=0.3, rust=0.45, bump=0.003),
+    "net": material("net_green", (0.08, 0.26, 0.13), rough=0.95, grime=0.2, bump=0.02),
+    "drum": material("drum_grey", (0.62, 0.64, 0.64), rough=0.45, grime=0.25, rust=0.35, bump=0.003),
+    "antifoul": material("antifouling", (0.34, 0.11, 0.07), rough=0.8, grime=0.3, bump=0.003),
+    "red": material("paint_red", (0.48, 0.008, 0.005), rough=0.45, rust=0.3),
     "radar": material("radar_black", (0.03, 0.03, 0.03), rough=0.35),
-    "yellow": material("searchlight", (0.85, 0.65, 0.08), rough=0.35),
+    "yellow": material("searchlight", (0.85, 0.65, 0.08), rough=0.35, grime=0.2),
     "flag": material("flag_red", (0.62, 0.05, 0.04), rough=0.8),
+    "doors": material("trawl_door", (0.07, 0.055, 0.05), rough=0.75, metal=0.3, grime=0.4, rust=0.9, bump=0.006),
+    "float": material("float_orange", (0.92, 0.36, 0.03), rough=0.5, grime=0.3),
+    "rope": material("rope", (0.5, 0.43, 0.3), rough=0.95, grime=0.4, bump=0.01),
+    "box": material("fish_box", (0.03, 0.14, 0.42), rough=0.55, grime=0.35),
+    "tyre": material("tyre", (0.025, 0.025, 0.025), rough=0.9, grime=0.2, bump=0.006),
+    "floor": material("bridge_floor", (0.12, 0.12, 0.13), rough=0.85, grime=0.2, bump=0.001),
+    "console": material("console", (0.1, 0.12, 0.14), rough=0.55),
+    "seat": material("seat", (0.03, 0.03, 0.035), rough=0.6),
+    "wood": material("chart_table", (0.36, 0.2, 0.09), rough=0.5, grime=0.15),
+    "screen": material("light_screen", (0.02, 0.04, 0.05), rough=0.2, emit=(0.05, 0.16, 0.24)),
+    "radar_screen": material("light_radar", (0.01, 0.04, 0.02), rough=0.2, emit=(0.06, 0.32, 0.1)),
     "red_light": material("light_red", (0.4, 0.02, 0.02), emit=(1.0, 0.08, 0.05)),
     "green_light": material("light_green", (0.02, 0.4, 0.05), emit=(0.1, 1.0, 0.2)),
     "white_light": material("light_white", (0.7, 0.7, 0.65), emit=(1.0, 0.95, 0.85)),
+    "collision": material("collision", (1.0, 0.0, 1.0)),
 }
+for _k in ("screen", "radar_screen"):
+    M[_k].node_tree.nodes["Principled BSDF"].inputs["Emission Strength"].default_value = 1.2
 
 
 # ------------------------------------------------------------------ hull livery texture
@@ -406,8 +527,8 @@ def stamp(img, mask, col_c, row_c, color):
     sub[:] = sub * (1 - mm) + np.array(color) * mm
 
 
-def paint_side(img, cols, side):
-    """Paint one side's livery into img[:, cols]; side +1 = starboard."""
+def paint_side(img, hgt, rgh, cols, side):
+    """Paint one side's livery, relief (height, m) and roughness; side +1 = starboard."""
     W = cols.stop - cols.start
     c = np.arange(W) + 0.5
     s_line = c / W * L if side > 0 else (1 - c / W) * L
@@ -486,6 +607,74 @@ def paint_side(img, cols, side):
     col *= (1 - 0.12 * grime_band[..., None] * np.array([1.0, 0.9, 1.1]))
     col *= (1 + rng.normal(0, 0.006, (TEX_H, W, 1))).astype(np.float32)
 
+    # ---------------- weathering (photo-real wear of a working hull)
+    rng2 = np.random.default_rng(23 if side > 0 else 29)
+    RA = np.zeros((TEX_H, W), np.float32)            # rust amount -> roughness
+    rust_c = np.array([0.46, 0.2, 0.08])
+
+    def streak(sx, z_top, length, width, strength):
+        m = (np.abs(S - sx) < width) & (Z < z_top) & (Z > z_top - length)
+        a = strength * np.clip((Z - (z_top - length)) / length, 0, 1) * np.clip(1 - np.abs(S - sx) / width, 0, 1)
+        a = np.where(m, a, 0.0)
+        col[:] = col * (1 - a[..., None]) + rust_c * a[..., None]
+        RA[:] = np.maximum(RA, a)
+
+    for _ in range(6):                                # anchor pocket bleed
+        streak(21.9 + rng2.uniform(-0.7, 0.7), 3.45, rng2.uniform(1.4, 3.3), rng2.uniform(0.03, 0.08), 0.6)
+    for sp in (8.6, 10.4, 11.9, 14.5):                # portholes
+        streak(sp + rng2.uniform(-0.05, 0.05), 3.22, rng2.uniform(0.6, 1.5), 0.03, 0.3)
+    for _ in range(34):                               # general run-off
+        streak(rng2.uniform(0.4, 21.5), rng2.uniform(1.8, 5.2), rng2.uniform(0.4, 2.0),
+               rng2.uniform(0.012, 0.04), rng2.uniform(0.12, 0.35))
+    for _ in range(150):                              # rust pits along strakes / boot-top
+        s0 = rng2.uniform(0.2, 22.5)
+        z0 = rng2.choice([red_z(s0), pin_z(s0) + 0.05, 0.12, top_z(s0) - 0.1]) + rng2.normal(0, 0.04)
+        r0 = rng2.uniform(0.015, 0.06)
+        d = ((S - s0) ** 2 + ((Z - z0) * 1.6) ** 2) / r0 ** 2
+        a = np.clip(1.2 - d, 0, 1) * rng2.uniform(0.5, 0.9)
+        col[:] = col * (1 - a[..., None]) + rust_c * 0.8 * a[..., None]
+        RA[:] = np.maximum(RA, a)
+    for _ in range(90):                               # scrapes from trawl doors / quays
+        s0 = rng2.uniform(0.1, 4.5) if rng2.random() < 0.6 else rng2.uniform(16.5, 21.5)
+        z0, ln, ang = rng2.uniform(0.5, 4.2), rng2.uniform(0.3, 1.8), rng2.uniform(-0.18, 0.18)
+        m = (np.abs((Z - z0) - ang * (S - s0)) < rng2.uniform(0.006, 0.02)) & (S > s0) & (S < s0 + ln)
+        col[m] = col[m] * 0.45 + np.array([0.3, 0.28, 0.26]) * 0.55
+        RA[m] = np.maximum(RA[m], 0.5)
+    # sun-faded, chalky patches on the red
+    fade = rng2.normal(0, 1, (TEX_H // 64 + 2, W // 64 + 2)).astype(np.float32)
+    fade = np.kron(fade, np.ones((64, 64), np.float32))[:TEX_H, :W]
+    kf = np.ones(61, np.float32) / 61
+    fade = np.apply_along_axis(lambda r: np.convolve(r, kf, "same"), 1, fade)
+    fade = np.apply_along_axis(lambda c: np.convolve(c, kf, "same"), 0, fade)
+    redm = np.broadcast_to((Z < red_l) & (Z > 0.16), Z.shape)
+    col[redm] *= (1 + 0.1 * np.clip(fade[redm], -1, 1))[:, None]
+    # green-brown slime at the waterline
+    slime = np.clip(1 - np.abs(Z - 0.05) / 0.22, 0, 1) * (0.55 + 0.45 * np.clip(fade * 2, 0, 1))
+    col[:] = col * (1 - 0.35 * slime[..., None]) + np.array([0.18, 0.2, 0.1]) * 0.35 * slime[..., None]
+
+    # ---------------- relief: plating sags between frames ("hungry horse"),
+    # weld beads, dents
+    fr = np.mod(S / 0.6, 1.0)
+    H = -0.008 * (1 - (2 * fr - 1) ** 2)
+    lg = np.mod((Z + 0.3) / 1.1, 1.0)
+    H += -0.003 * (1 - (2 * lg - 1) ** 2)
+    for sp in np.arange(2.4, L, 2.4):
+        H += 0.0015 * np.exp(-((S - sp) / 0.012) ** 2)
+    for zr in (1.0, 2.1, 4.75):
+        H += 0.0015 * np.exp(-((Z - zr) / 0.012) ** 2)
+    for _ in range(45):
+        s0 = rng2.uniform(0.2, 4.5) if rng2.random() < 0.5 else rng2.uniform(0.2, 22)
+        z0, rr, dp = rng2.uniform(0.3, 5.0), rng2.uniform(0.15, 0.6), rng2.uniform(0.004, 0.02)
+        H -= dp * np.exp(-((S - s0) ** 2 + (Z - z0) ** 2) / rr ** 2)
+    for sp in (8.6, 10.4, 11.9, 14.5):
+        dd = np.hypot(S - sp, Z - 3.42)
+        H += 0.012 * ((dd < 0.2) & (dd > 0.15)) - 0.01 * (dd <= 0.15)
+    R = 0.45 + 0.05 * np.clip(fade, -1, 1)
+    R = np.where(Z < -0.02, 0.82, R)
+    R = np.clip(R + 0.4 * RA, 0.05, 1.0)
+    hgt[:, cols] = H
+    rgh[:, cols] = R
+
     # lettering: registration aft and on the shelter side, name forward
     px_s, px_z = W / L, TEX_H / Z_SPAN
     aspect = px_s / px_z
@@ -503,7 +692,7 @@ def paint_side(img, cols, side):
     img[:, cols] = col
 
 
-def paint_transom(img, cols):
+def paint_transom(img, hgt, rgh, cols):
     W = cols.stop - cols.start
     xs = ((np.arange(W) + 0.5) / W - 0.5) * B
     zs = (np.arange(TEX_H) + 0.5) / TEX_H * Z_SPAN + Z_MIN
@@ -519,20 +708,61 @@ def paint_transom(img, cols):
     aspect = px_x / px_z
     stamp(col, text_mask(NAME, 0.42 * px_z, aspect), W / 2, (4.75 - Z_MIN) * px_z, (0.04, 0.04, 0.045))
     stamp(col, text_mask(PORT, 0.24 * px_z, aspect), W / 2, (3.6 - Z_MIN) * px_z, (0.04, 0.04, 0.045))
+    rng3 = np.random.default_rng(31)
+    for _ in range(14):                                # run-off from the stern rail
+        sx = rng3.uniform(-4.0, 4.0)
+        ln = rng3.uniform(0.5, 2.2)
+        m = (np.abs(X - sx) < 0.03) & (Z < top_z(0)) & (Z > top_z(0) - ln)
+        col[m] = col[m] * 0.7 + np.array([0.46, 0.2, 0.08]) * 0.3
+    fr = np.mod(X / 0.6, 1.0)
+    H = -0.007 * (1 - (2 * fr - 1) ** 2) - 0.003 * (1 - (2 * np.mod(Z / 1.1, 1.0) - 1) ** 2)
+    hgt[:, cols] = H
+    rgh[:, cols] = np.where(Z < -0.02, 0.82, 0.47)
     img[:, cols] = col
+
+
+def height_to_normal(Hm, px_u, px_v):
+    gx = np.gradient(Hm, axis=1) / px_u
+    gy = np.gradient(Hm, axis=0) / px_v
+    n = np.stack([-gx, -gy, np.ones_like(Hm)], -1)
+    n /= np.linalg.norm(n, axis=-1, keepdims=True)
+    return (n * 0.5 + 0.5).astype(np.float32)
+
+
+def half_res(a):
+    h, w = a.shape[:2]
+    return a.reshape(h // 2, 2, w // 2, 2, *a.shape[2:]).mean(axis=(1, 3))
+
+
+def make_image(name, arr, non_color=False):
+    if arr.ndim == 2:
+        arr = np.repeat(arr[..., None], 3, axis=2)
+    h, w = arr.shape[:2]
+    im = bpy.data.images.new(name, w, h, alpha=False)
+    if non_color:
+        im.colorspace_settings.name = "Non-Color"
+    im.pixels.foreach_set(np.concatenate([arr, np.ones((h, w, 1), np.float32)], axis=2).astype(np.float32).ravel())
+    im.pack()
+    return im
 
 
 def build_livery():
     img = np.zeros((TEX_H, TEX_W, 3), np.float32)
-    paint_side(img, slice(0, SIDE_W), +1)
-    paint_side(img, slice(SIDE_W, 2 * SIDE_W), -1)
-    paint_transom(img, slice(2 * SIDE_W, TEX_W))
+    hgt = np.zeros((TEX_H, TEX_W), np.float32)
+    rgh = np.zeros((TEX_H, TEX_W), np.float32)
+    paint_side(img, hgt, rgh, slice(0, SIDE_W), +1)
+    paint_side(img, hgt, rgh, slice(SIDE_W, 2 * SIDE_W), -1)
+    paint_transom(img, hgt, rgh, slice(2 * SIDE_W, TEX_W))
     img = np.clip(img, 0, 1)
-    rgba = np.concatenate([img, np.ones((TEX_H, TEX_W, 1), np.float32)], axis=2)
-    im = bpy.data.images.new("hull_livery", TEX_W, TEX_H, alpha=False)
-    im.pixels.foreach_set(rgba.ravel())
-    im.pack()
-    return im
+    pv = Z_SPAN / TEX_H
+    nrm = np.concatenate([
+        height_to_normal(hgt[:, :2 * SIDE_W], L / SIDE_W, pv),
+        height_to_normal(hgt[:, 2 * SIDE_W:], B / TR_W, pv),
+    ], axis=1)
+    global HULL_NORMAL, HULL_ROUGH
+    HULL_NORMAL = make_image("hull_normal", half_res(nrm), non_color=True)
+    HULL_ROUGH = make_image("hull_rough", half_res(rgh), non_color=True)
+    return make_image("hull_livery", img)
 
 
 LIVERY = build_livery()
@@ -700,19 +930,89 @@ def build_appendages():
                 cyl("strake", pts[i], pts[i + 1], 0.06, mat, seg=8)
 
 
+# ------------------------------------------------------------------ bridge interior
+def build_bridge(z0, z1, hw):
+    """Wheelhouse interior: forward console with screens, helm chair,
+    steering wheel and engine levers, overhead radios, chart table, bench."""
+    C = M["console"]
+    # forward console under the windows, top sloping up towards the glass
+    s_b, s_f = WH1 - 0.8, WH1 - 0.05
+    solid("console_fwd", [(-hw + 0.12, Y(s_b), z0), (hw - 0.12, Y(s_b), z0), (hw - 0.12, Y(s_f), z0), (-hw + 0.12, Y(s_f), z0)],
+          [(-hw + 0.12, Y(s_b), z0 + 0.82), (hw - 0.12, Y(s_b), z0 + 0.82), (hw - 0.12, Y(s_f), z0 + 0.98),
+           (-hw + 0.12, Y(s_f), z0 + 0.98)], C, bevel=0.02)
+    tilt = Vector((0, 0.45, 1)).normalized()
+    for i, x in enumerate((-2.3, -1.15, 0.0, 1.15, 2.3)):
+        c = Vector((x, Y(WH1 - 0.32), z0 + 1.17))
+        panel("screen_bezel", c, (1, 0, 0), tilt, 0.62, 0.42, C, 0.05)
+        panel("screen", c - Vector((0, 0.03, 0)), (1, 0, 0), tilt, 0.56, 0.36,
+              M["radar_screen"] if i == 2 else M["screen"], 0.02)
+    # helm: steering wheel on the console, engine levers to starboard
+    torus("helm_wheel", (0.0, Y(WH1 - 0.85), z0 + 1.05), (0, 0.6, 0.8), 0.24, 0.022, M["dark"])
+    cyl("helm_hub", (0.0, Y(WH1 - 0.85), z0 + 1.05), (0.0, Y(WH1 - 0.7), z0 + 0.95), 0.04, M["steel"], seg=8)
+    box("engine_stand", (0.75, Y(WH1 - 1.0), z0 + 0.45), (0.35, 0.35, 0.9), C, bevel=0.02)
+    for x in (0.68, 0.82):
+        cyl("engine_lever", (x, Y(WH1 - 1.0), z0 + 0.9), (x, Y(WH1 - 0.95), z0 + 1.15), 0.015, M["steel"], seg=5)
+        sphere("lever_knob", (x, Y(WH1 - 0.95), z0 + 1.17), 0.035, M["red"], seg=8)
+    # helm chair on a pedestal
+    for (cx, cs) in ((0.0, WH1 - 1.45), (1.7, WH1 - 1.35)):
+        cyl("chair_post", (cx, Y(cs), z0), (cx, Y(cs), z0 + 0.48), 0.06, M["steel"], seg=8)
+        cyl("chair_foot", (cx, Y(cs), z0), (cx, Y(cs), z0 + 0.04), 0.3, M["steel"], seg=12)
+        box("chair_seat", (cx, Y(cs), z0 + 0.53), (0.55, 0.55, 0.12), M["seat"], bevel=0.03)
+        box("chair_back", (cx, Y(cs) - 0.27, z0 + 0.95), (0.52, 0.1, 0.75), M["seat"], bevel=0.03)
+        for sx in (-0.3, 0.3):
+            box("chair_arm", (cx + sx, Y(cs) + 0.02, z0 + 0.75), (0.07, 0.42, 0.06), M["seat"])
+    # overhead console with radios
+    box("overhead", (0, Y(WH1 + 0.05), z1 - 0.1), (2 * hw - 1.2, 0.5, 0.18), C, bevel=0.01)
+    for i, x in enumerate(np.linspace(-2.2, 2.2, 7)):
+        panel("radio_face", (x, Y(WH1 - 0.21), z1 - 0.1), (1, 0, 0), (0, 0, 1), 0.5, 0.12,
+              M["radar_screen"] if i % 3 == 0 else M["dark"], 0.02)
+    # chart table (port aft) and bench (starboard aft)
+    box("chart_table", (-hw + 0.75, Y(WH0 + 0.55), z0 + 0.47), (1.2, 0.9, 0.94), M["wood"], bevel=0.02)
+    panel("chart_lamp", (-hw + 0.75, Y(WH0 + 0.55), z0 + 1.5), (1, 0, 0), (0, 1, 0), 0.25, 0.15, M["white_light"], 0.03)
+    box("bench_seat", (hw - 0.9, Y(WH0 + 0.4), z0 + 0.23), (1.4, 0.55, 0.46), M["seat"], bevel=0.03)
+    box("bench_back", (hw - 0.9, Y(WH0 + 0.15), z0 + 0.7), (1.4, 0.1, 0.5), M["seat"], bevel=0.03)
+
+
 # ------------------------------------------------------------------ superstructure
 def build_superstructure():
     W, O = M["white"], M["orange"]
     zr = top_z(WH0) - 0.15                     # shelter roof under the wheelhouse
     hw = 3.35
-    z0, z1 = zr + 0.75, 7.35
-    solid("wh_base", [(-hw + 0.2, Y(WH0), zr), (hw - 0.2, Y(WH0), zr), (hw - 0.2, Y(WH1 - 0.2), zr),
-                      (-hw + 0.2, Y(WH1 - 0.2), zr)],
-          [(-hw + 0.2, Y(WH0), z0), (hw - 0.2, Y(WH0), z0), (hw - 0.2, Y(WH1 - 0.2), z0),
-           (-hw + 0.2, Y(WH1 - 0.2), z0)], W, bevel=0.04)
-    solid("wheelhouse", [(-hw, Y(WH0), z0), (hw, Y(WH0), z0), (hw, Y(WH1), z0), (-hw, Y(WH1), z0)],
-          [(-hw, Y(WH0), z1), (hw, Y(WH0), z1), (hw * 0.97, Y(WH1 + WH_LEAN), z1), (-hw * 0.97, Y(WH1 + WH_LEAN), z1)],
-          W, bevel=0.05)
+    z0, z1 = zr + 0.15, 7.45                   # wheelhouse floor (door sill) and ceiling
+    H = z1 - z0
+    box("wh_plinth", (0, Y((WH0 + WH1) / 2), zr + 0.06), (2 * hw, WH1 - WH0, 0.12), W)
+    box("wh_floor", (0, Y((WH0 + WH1) / 2 + 0.1), z0 - 0.015), (2 * hw - 0.1, WH1 - WH0 + 0.2, 0.03), M["floor"])
+    wb0, wb1 = 0.95, 1.85                      # window band above the floor (drawing)
+    wall("wh_aft", (-hw, Y(WH0), z0), (1, 0, 0), (0, 0, 1), 2 * hw, H,
+         [(x + hw - 0.5, x + hw + 0.5, wb0, wb1, True) for x in (-2.1, -0.7, 0.7, 2.1)], W, M["glass"])
+    for side in (-1, 1):
+        ops = [(12.75 - WH0, 13.5 - WH0, 0.0, 1.95, False)] + \
+              [(sv - WH0 - 0.45, sv - WH0 + 0.45, wb0, wb1, True) for sv in (14.9, 15.95, 17.0)]
+        wall("wh_side", (side * hw, Y(WH0), z0), (0, 1, 0), (0, 0, 1), WH1 - WH0, H, ops, W, M["glass"])
+        tri_x("wh_side_front", [(WH1, z0), (WH1 + WH_LEAN, z1), (WH1, z1)], side * hw - 0.04, side * hw + 0.04, W)
+        # door leaf hooked open forward against the wall, with a porthole
+        panel("wh_door", (side * (hw + 0.07), Y(13.875), z0 + 0.975), (0, 1, 0), (0, 0, 1), 0.75, 1.95, W, 0.05)
+        panel("wh_door_win", (side * (hw + 0.1), Y(13.875), z0 + 1.45), (0, 1, 0), (0, 0, 1), 0.32, 0.38, M["glass"], 0.02)
+        for sv in (12.65, 13.6):
+            cyl("grab_rail", (side * (hw + 0.09), Y(sv), z0 + 0.4), (side * (hw + 0.09), Y(sv), z0 + 1.7), 0.02, M["steel"], seg=6)
+        box("nav_screen", (side * (hw + 0.2), Y(17.6), z1 - 0.15), (0.06, 0.6, 0.35), M["dark"])
+        box("nav_light", (side * (hw + 0.3), Y(17.75), z1 - 0.15), (0.12, 0.25, 0.22),
+            M["green_light"] if side > 0 else M["red_light"])
+    slope_len = math.hypot(WH_LEAN, H)
+    up_f = Vector((0, WH_LEAN, H)) / slope_len
+    k = slope_len / H
+    wins = 5
+    ww, gap = 1.15, 0.12
+    margin = (2 * hw - wins * ww - (wins - 1) * gap) / 2
+    front_ops = [(margin + i * (ww + gap), margin + i * (ww + gap) + ww, wb0 * k, (wb1 + 0.03) * k, True)
+                 for i in range(wins)]
+    wall("wh_front", (-hw, Y(WH1), z0), (1, 0, 0), up_f, 2 * hw, slope_len, front_ops, W, M["glass"])
+    # pantograph wipers on the front windows
+    nrm_f = Vector((1, 0, 0)).cross(up_f).normalized()
+    for (a0, a1, b0, b1, _) in front_ops:
+        base = Vector((-hw + (a0 + a1) / 2, Y(WH1), z0)) + up_f * (b0 + 0.08) - nrm_f * 0.05
+        cyl("wiper", base, base + up_f * 0.55 + Vector((0.18, 0, 0)), 0.012, M["dark"], seg=4)
+    box("wh_ceiling", (0, Y((WH0 + WH1) / 2 + 0.2), z1 - 0.02), (2 * hw - 0.1, WH1 - WH0 + 0.35, 0.03), M["rail_white"])
     ov = 0.28
     solid("wh_fascia", [(-hw - ov, Y(WH0 - ov), z1), (hw + ov, Y(WH0 - ov), z1),
                         (hw + ov, Y(WH1 + WH_LEAN + ov), z1), (-hw - ov, Y(WH1 + WH_LEAN + ov), z1)],
@@ -720,23 +1020,7 @@ def build_superstructure():
            (hw + ov, Y(WH1 + WH_LEAN + ov + 0.15), z1 + 0.42), (-hw - ov, Y(WH1 + WH_LEAN + ov + 0.15), z1 + 0.42)],
           O, bevel=0.03)
     zt = z1 + 0.42
-    fu = Vector((0, WH_LEAN, z1 - z0)).normalized()
-    for i in range(5):
-        x = -hw * 0.78 + i * (hw * 1.56 / 4)
-        c = Vector((x, Y(WH1) + WH_LEAN * 0.56 + 0.035, z0 + (z1 - z0) * 0.56))
-        panel("wh_front_win", c, (1, 0, 0), fu, 1.08, 0.95, M["glass"], 0.06)
-        if i < 4:
-            panel("wh_mullion", c + Vector((hw * 1.56 / 8, 0.0, 0.0)), (1, 0, 0), fu, 0.1, 1.05, W, 0.08)
-    for side in (-1, 1):
-        for s in (14.9, 15.95, 17.0):
-            panel("wh_side_win", (side * (hw + 0.025), Y(s), z0 + 0.72), (0, 1, 0), (0, 0, 1), 0.9, 0.85, M["glass"], 0.06)
-        panel("wh_door", (side * (hw + 0.02), Y(13.1), z0 + 0.35), (0, 1, 0), (0, 0, 1), 0.75, 1.5, M["dark"], 0.04)
-        panel("wh_door_win", (side * (hw + 0.045), Y(13.1), z0 + 0.8), (0, 1, 0), (0, 0, 1), 0.4, 0.4, M["glass"], 0.03)
-        box("nav_screen", (side * (hw + 0.2), Y(17.6), z1 - 0.15), (0.06, 0.6, 0.35), M["dark"])
-        box("nav_light", (side * (hw + 0.3), Y(17.75), z1 - 0.15), (0.12, 0.25, 0.22),
-            M["green_light"] if side > 0 else M["red_light"])
-    for x in (-2.1, -0.7, 0.7, 2.1):
-        panel("wh_aft_win", (x, Y(WH0) - 0.025, z0 + 0.72), (1, 0, 0), (0, 0, 1), 1.0, 0.8, M["glass"], 0.06)
+    build_bridge(z0, z1, hw)
     railing("wh_rail", [(-hw - 0.15, Y(WH0 - 0.15), zt), (hw + 0.15, Y(WH0 - 0.15), zt),
                         (hw + 0.15, Y(WH1 + WH_LEAN + 0.3), zt), (-hw - 0.15, Y(WH1 + WH_LEAN + 0.3), zt)],
             0.85, M["rail_white"], O, closed=True)
@@ -769,15 +1053,15 @@ def build_superstructure():
         cyl("whip", (x, Y(s), zt), (x, Y(s), zt + 4.6), 0.022, M["rail_white"], seg=5)
     cyl("searchlight_stand", (1.0, Y(18.0), zt), (1.0, Y(18.0), zt + 0.5), 0.07, M["dark"], seg=8)
     cyl("searchlight", (1.0, Y(17.8), zt + 0.65), (1.0, Y(18.35), zt + 0.65), 0.22, M["yellow"], seg=14)
-    cyl("exhaust", (2.0, Y(13.0), zt), (2.0, Y(13.0), zt + 1.1), 0.32, W, seg=14)
-    cyl("exhaust_top", (2.0, Y(13.0), zt + 1.1), (2.0, Y(13.0), zt + 1.35), 0.26, M["dark"], seg=14)
+    cyl("exhaust", (1.3, Y(12.9), zt), (1.3, Y(12.9), zt + 1.1), 0.32, W, seg=14)
+    cyl("exhaust_top", (1.3, Y(12.9), zt + 1.1), (1.3, Y(12.9), zt + 1.35), 0.26, M["dark"], seg=14)
     cyl("horn", (-0.8, Y(15.6), zt + 0.25), (-0.8, Y(16.1), zt + 0.32), 0.08, M["steel"], seg=8, r2=0.14)
 
     for x in (-3.9, 3.9):
         torus("lifebuoy", (x, Y(18.9), zr + 0.65), (1, 0, 0), 0.3, 0.07, O)
     for side in (-1, 1):
-        cyl("liferaft", (side * 2.8, Y(12.0), zr + 0.4), (side * 2.8, Y(12.0) + 1.1, zr + 0.4), 0.33, M["rail_white"], seg=16)
-        box("liferaft_cradle", (side * 2.8, Y(12.0) + 0.55, zr + 0.06), (0.6, 1.1, 0.12), M["steel"])
+        cyl("liferaft", (side * 2.6, Y(12.45), zt + 0.42), (side * 2.6, Y(13.55), zt + 0.42), 0.33, M["rail_white"], seg=16)
+        box("liferaft_cradle", (side * 2.6, Y(13.0), zt + 0.06), (0.6, 1.1, 0.12), M["steel"])
     slope = Vector((0, SH1 - SH0, top_z(SH1) - 0.15 - WD_Z)).normalized()
     for x in (-2.4, 2.4):
         c = Vector((x, Y((SH0 + SH1) / 2) - 0.06, (WD_Z + top_z(SH1) - 0.15) / 2 + 0.05))
@@ -839,11 +1123,178 @@ def build_gear():
         cyl("warp", (side * 2.6, Y(9.1) - 0.4, WD_Z + 0.9), (side * 2.5, Y(2.6), head - 1.6), 0.018, M["dark"], seg=4)
 
 
+# ------------------------------------------------------------------ working details
+def build_details():
+    W, O = M["white"], M["orange"]
+    head = 8.75
+    zc = WD_Z + 1.15
+    rng = np.random.default_rng(5)
+    # knees stiffening the working-deck bulwark
+    for side in (-1, 1):
+        for sv in np.arange(0.75, SH0 - 0.2, 0.6):
+            xi = side * (half_breadth(sv, top_z(sv)) - 0.2)
+            plate_y("bulwark_knee", [(xi, WD_Z), (xi, top_z(sv) - 0.06), (xi - side * 0.3, WD_Z)], sv, 0.02, W)
+    # stair from the working deck up to the shelter deck
+    rise = (top_z(SH1) - 0.15 - WD_Z) / 5
+    run = (SH1 - (SH0 - 0.6)) / 5
+    for kk in range(1, 6):
+        s_k = SH0 - 0.6 + run * (kk - 1)
+        box("stair_step", (STAIR_X, Y((s_k + SH1) / 2), WD_Z + rise * kk / 2), (0.8, SH1 - s_k, rise * kk), M["machinery"])
+    xs = STAIR_X - 0.44
+    cyl("stair_rail", (xs, Y(SH0 - 0.6), WD_Z + 1.0), (xs, Y(SH1), top_z(SH1) - 0.15 + 1.0), 0.025, M["rail_white"], seg=6)
+    cyl("stair_post", (xs, Y(SH0 - 0.6), WD_Z), (xs, Y(SH0 - 0.6), WD_Z + 1.0), 0.025, M["rail_white"], seg=6)
+    # vertical ladders: wheelhouse roof, gantry head
+    zr = top_z(WH0) - 0.15
+    ladder("wh_ladder", (2.75, Y(WH0) - 0.18, zr), (2.75, Y(WH0) - 0.18, 7.87 + 0.85), (0.2, 0, 0), M["steel"])
+    ladder("gantry_ladder", (3.3, Y(5.0), WD_Z + 0.2), (3.3, Y(2.75), head + 0.5), (0, 0.2, 0), M["steel"])
+    # hydraulic lines up the gantry legs and along the deck
+    for side in (-1, 1):
+        for kk in range(3):
+            cyl("hyd_pipe", (side * 3.43, Y(5.2) + kk * 0.07, WD_Z + 0.05), (side * 3.43, Y(2.85) + kk * 0.07, head - 0.05),
+                0.022, M["dark"], seg=5)
+        cyl("deck_pipe", (side * 1.0, Y(8.6), WD_Z + 0.06), (side * 1.0, Y(6.0), WD_Z + 0.06), 0.035, M["dark"], seg=6)
+    # trawl doors (otter boards) hanging at the stern quarters
+    for side in (-1, 1):
+        x = side * (half_breadth(2.4, 5.0) + 0.22)
+        box("trawl_door", (x, Y(2.4), 5.35), (0.1, 2.3, 1.3), M["doors"], bevel=0.02)
+        box("door_shoe", (x, Y(2.4), 4.68), (0.18, 2.35, 0.14), M["doors"])
+        for dy in (-0.7, 0.0, 0.7):
+            box("door_bracket", (x + side * 0.12, Y(2.4) + dy, 5.45), (0.14, 0.08, 0.9), M["doors"])
+        cyl("door_chain", (x + side * 0.15, Y(2.4), 6.0), (side * 3.6, Y(2.6), head - 0.2), 0.03, M["dark"], seg=5)
+    # floats and net bundles on the drums
+    for sv in (5.5, 6.95):
+        for side in (-1, 1):
+            for kk in range(6):
+                sphere("trawl_float", (side * (0.55 + kk * 0.33), Y(sv) + rng.uniform(-0.25, 0.25),
+                                       zc + 0.95 + rng.uniform(0, 0.05)), 0.11, M["float"], seg=10)
+            for kk in range(3):
+                sphere("net_bundle", (side * rng.uniform(0.6, 2.1), Y(sv) + rng.uniform(-0.4, 0.4), zc + 0.75),
+                       rng.uniform(0.35, 0.55), M["net"], seg=12, squash=0.45)
+    # stacked fish boxes by the shelter end
+    for side in (-1, 1):
+        for kk in range(4):
+            box("fish_box", (side * 2.4 + rng.uniform(-0.03, 0.03), Y(10.25) + rng.uniform(-0.03, 0.03),
+                             WD_Z + 0.15 + kk * 0.29), (0.55, 0.8, 0.27), M["box"], bevel=0.02)
+    # tyre fenders over the side
+    for side in (-1, 1):
+        for sv in (7.0, 13.5, 17.5):
+            zt = top_z(sv)
+            x_out = side * (half_breadth(sv, zt - 1.1) + 0.16)
+            torus("fender", (x_out, Y(sv), zt - 1.15), (1, 0, 0), 0.36, 0.12, M["tyre"])
+            cyl("fender_rope", (side * (half_breadth(sv, zt) - 0.1), Y(sv), zt + 0.05), (x_out, Y(sv), zt - 0.8),
+                0.015, M["rope"], seg=4)
+    # coiled mooring ropes
+    for (sv, side) in ((5.0, -1), (19.4, 1), (1.6, 1)):
+        zd = deck_z(sv)
+        x = side * (half_breadth(sv, top_z(sv)) - 1.25)
+        for kk, rr in enumerate((0.36, 0.31, 0.26)):
+            torus("rope_coil", (x, Y(sv), zd + 0.04 + kk * 0.07), (0, 0, 1), rr, 0.04, M["rope"])
+    # vents, scuttle and hatches
+    zf = top_z(20.0) - 0.15
+    for side in (-1, 1):
+        cyl("mushroom_vent", (side * 1.7, Y(19.7), zf), (side * 1.7, Y(19.7), zf + 0.5), 0.12, W, seg=12)
+        cyl("mushroom_cap", (side * 1.7, Y(19.7), zf + 0.5), (side * 1.7, Y(19.7), zf + 0.6), 0.26, W, seg=14)
+        cyl("goose_vent", (side * 3.3, Y(20.6), zf), (side * 3.3, Y(20.6), zf + 0.65), 0.07, W, seg=8)
+        cyl("goose_bend", (side * 3.3, Y(20.6), zf + 0.65), (side * 3.3, Y(20.6) - 0.22, zf + 0.5), 0.07, W, seg=8)
+        box("fire_box", (side * 3.45, Y(SH0) + 0.05, WD_Z + 0.75), (0.45, 0.22, 0.6), M["red"], bevel=0.02)
+        torus("lifebuoy_aft", (side * 3.95, Y(1.2), top_z(1.2) + 0.55), (1, 0, 0), 0.3, 0.07, O)
+    box("scuttle", (0, Y(19.0), zf + 0.18), (0.8, 0.8, 0.36), W, bevel=0.03)
+    box("hopper_hatch", (0.6, Y(8.15), WD_Z + 0.03), (1.4, 0.9, 0.06), M["dark"])
+    for (dx, dy) in ((-0.6, -0.38), (0.6, -0.38), (-0.6, 0.38), (0.6, 0.38)):
+        cyl("hatch_dog", (0.6 + dx, Y(8.15) + dy, WD_Z + 0.06), (0.6 + dx, Y(8.15) + dy, WD_Z + 0.14), 0.03, M["steel"], seg=6)
+    # anchors in the bow pockets
+    for side in (-1, 1):
+        xa = side * (half_breadth(21.95, 3.72) + 0.04)
+        cyl("anchor_shank", (xa, Y(21.95), 3.5), (xa, Y(21.95), 3.95), 0.05, M["dark"], seg=8)
+        for d in (-1, 1):
+            box("anchor_fluke", (xa, Y(21.95) + d * 0.16, 3.5), (0.08, 0.3, 0.1), M["dark"])
+        torus("anchor_ring", (xa, Y(21.95), 4.0), (1, 0, 0), 0.06, 0.015, M["dark"])
+    # mast stays, floodlights and antennas
+    zt = 7.87
+    for (x, sv) in ((-3.1, 12.4), (3.1, 12.4), (-3.1, 18.4), (3.1, 18.4)):
+        cyl("stay", (0, Y(14.0), 12.4), (x, Y(sv), zt + 0.05), 0.01, M["dark"], seg=4)
+    for (x, sv, z, face) in ((-0.7, 16.15, 8.75, 1), (0.7, 16.15, 8.75, 1), (-3.0, 12.0, zt + 0.35, -1),
+                             (3.0, 12.0, zt + 0.35, -1), (-2.2, 3.1, head - 0.15, 1), (2.2, 3.1, head - 0.15, 1)):
+        box("flood_housing", (x, Y(sv), z), (0.32, 0.22, 0.26), M["dark"], bevel=0.02)
+        panel("flood_lens", (x, Y(sv) + face * 0.115, z), (1, 0, 0), (0, 0, 1), 0.26, 0.2, M["white_light"], 0.01)
+    for (x, sv) in ((2.3, 18.7), (-2.3, 18.7), (0.6, 12.0)):
+        cyl("gps_post", (x, Y(sv), zt + 0.85), (x, Y(sv), zt + 1.15), 0.02, M["rail_white"], seg=5)
+        sphere("gps_dome", (x, Y(sv), zt + 1.2), 0.09, M["rail_white"], seg=10, squash=0.7)
+    # vertical rubbing bars at the transom corners
+    for side in (-1, 1):
+        x = side * (half_breadth(0.05, 2.5) - 0.02)
+        cyl("stern_fender", (x, Y(0.02), 0.6), (x, Y(0.02), top_z(0) - 0.1), 0.08, M["red"], seg=8)
+
+
+# ------------------------------------------------------------------ collision (walkable decks + walls)
+def build_collision():
+    """Invisible low-poly shapes the player walks on and bumps into."""
+    C = M["collision"]
+    zr = top_z(SH1) - 0.15
+
+    def deck_strip(name, s0, s1, zfun, n=14):
+        bm = bmesh.new()
+        rows = []
+        for sv in np.linspace(s0, s1, n):
+            z = zfun(sv)
+            y = max(0.05, half_breadth(sv, z) - 0.2)
+            rows.append((bm.verts.new((-y, Y(sv), z)), bm.verts.new((y, Y(sv), z))))
+        for i in range(len(rows) - 1):
+            f = bm.faces.new([rows[i][0], rows[i][1], rows[i + 1][1], rows[i + 1][0]])
+            if f.normal.z < 0:
+                f.normal_flip()
+        new_obj(name, bm, C)
+
+    deck_strip("col_working_deck", 0.0, SH0, lambda sv: WD_Z)
+    deck_strip("col_shelter_deck", SH1, L - 0.6, lambda sv: top_z(sv) - 0.15)
+    # stair ramp (33 deg) on the sloped shelter end
+    bm = bmesh.new()
+    a, b = Y(SH0 - 0.6), Y(SH1)
+    x0, x1 = STAIR_X - 0.42, STAIR_X + 0.5
+    vs = [bm.verts.new(p) for p in ((x0, a, WD_Z), (x1, a, WD_Z), (x1, b, zr), (x0, b, zr))]
+    f = bm.faces.new(vs)
+    if f.normal.z < 0:
+        f.normal_flip()
+    new_obj("col_stair", bm, C)
+    # bulwarks + rails (2.2 m tall walls along the hull sides)
+    for side in (-1, 1):
+        pts = [(sv, side * (half_breadth(sv, top_z(sv)) - 0.08)) for sv in np.linspace(0.0, L - 0.4, 40)]
+        for (s_a, x_a), (s_b, x_b) in zip(pts[:-1], pts[1:]):
+            zb = deck_z((s_a + s_b) / 2)
+            c = Vector(((x_a + x_b) / 2, Y((s_a + s_b) / 2), zb + 1.1))
+            d = Vector((x_b - x_a, s_b - s_a, 0))
+            panel("col_bulwark", c, d, (0, 0, 1), d.length + 0.05, 2.4, C, 0.16)
+    box("col_transom", (0, Y(0.1), WD_Z + 1.1), (2 * half_breadth(0.1, WD_Z), 0.2, 2.4), C)
+    # wheelhouse: walls with the two side door gaps, forward console, furniture
+    hw = 3.35
+    z0 = top_z(WH0)
+    box("col_wh_aft", (0, Y(WH0), z0 + 1.0), (2 * hw, 0.14, 2.2), C)
+    box("col_wh_front", (0, Y(WH1 + 0.15), z0 + 1.0), (2 * hw, 0.4, 2.2), C)
+    for side in (-1, 1):
+        box("col_wh_side", (side * hw, Y((WH0 + 12.75) / 2), z0 + 1.0), (0.14, 12.75 - WH0, 2.2), C)
+        box("col_wh_side", (side * hw, Y((13.5 + WH1 + 0.3) / 2), z0 + 1.0), (0.14, WH1 + 0.3 - 13.5, 2.2), C)
+    box("col_wh_floor", (0, Y((WH0 + WH1) / 2), z0 - 0.08), (2 * hw, WH1 - WH0, 0.16), C)
+    box("col_console", (0, Y(WH1 - 0.42), z0 + 0.5), (2 * hw, 0.85, 1.0), C)
+    box("col_chart", (-hw + 0.75, Y(WH0 + 0.55), z0 + 0.5), (1.25, 0.95, 1.0), C)
+    box("col_bench", (hw - 0.9, Y(WH0 + 0.4), z0 + 0.25), (1.45, 0.6, 0.5), C)
+    # deck machinery
+    box("col_drums", (0, Y(6.22), WD_Z + 1.1), (5.4, 3.9, 2.4), C)
+    box("col_winches", (0, Y(9.1), WD_Z + 0.5), (6.8, 1.1, 1.0), C)
+    for side in (-1, 1):
+        box("col_gantry", (side * 3.7, Y(4.8), WD_Z + 1.2), (0.55, 1.4, 2.4), C)
+        box("col_boxes", (side * 2.4, Y(10.25), WD_Z + 0.6), (0.6, 0.85, 1.2), C)
+    box("col_crane", (-2.9, Y(7.85), WD_Z + 1.2), (0.75, 0.75, 2.4), C)
+    box("col_windlass", (0, Y(21.0), top_z(21.0) - 0.15 + 0.4), (1.7, 1.0, 0.8), C)
+    box("col_scuttle", (0, Y(19.0), top_z(19.0) - 0.15 + 0.2), (0.85, 0.85, 0.4), C)
+
+
 build_hull()
 build_decks()
 build_appendages()
 build_superstructure()
 build_gear()
+build_details()
+build_collision()
 
 
 # ------------------------------------------------------------------ merge
@@ -879,9 +1330,12 @@ def merge(parts, name):
 
 
 _hull_parts = [o for o in PARTS if o.data.materials[0] == M["hull"]]
-_fit_parts = [o for o in PARTS if o.data.materials[0] != M["hull"]]
+_col_parts = [o for o in PARTS if o.data.materials[0] == M["collision"]]
+_fit_parts = [o for o in PARTS if o.data.materials[0] not in (M["hull"], M["collision"])]
 HULL = merge(_hull_parts, "hull")
 FIT = merge(_fit_parts, "fittings")
+COLL = merge(_col_parts, "collision")
+COLL.hide_render = True        # never occludes bakes or previews; exported for the game
 for o in (HULL, FIT):
     o.data.calc_loop_triangles()
 print("triangles", len(HULL.data.loop_triangles) + len(FIT.data.loop_triangles))
@@ -939,18 +1393,32 @@ def to_image(name, rgb):
     return im
 
 
-def use_texture(mat, image, uv_name):
+def use_maps(mat, uv_name, color=None, normal=None, rough=None):
     nt = mat.node_tree
     p = nt.nodes["Principled BSDF"]
-    for link in list(p.inputs["Base Color"].links):
-        nt.links.remove(link)
-    uvn = nt.nodes.new("ShaderNodeUVMap")
-    uvn.uv_map = uv_name
-    tex = nt.nodes.new("ShaderNodeTexImage")
-    tex.image = image
-    tex.extension = "EXTEND"
-    nt.links.new(uvn.outputs["UV"], tex.inputs["Vector"])
-    nt.links.new(tex.outputs["Color"], p.inputs["Base Color"])
+
+    def tex(image):
+        uvn = nt.nodes.new("ShaderNodeUVMap")
+        uvn.uv_map = uv_name
+        t = nt.nodes.new("ShaderNodeTexImage")
+        t.image = image
+        t.extension = "EXTEND"
+        nt.links.new(uvn.outputs["UV"], t.inputs["Vector"])
+        return t
+
+    for sock_name, image in (("Base Color", color), ("Roughness", rough)):
+        if image is None:
+            continue
+        for link in list(p.inputs[sock_name].links):
+            nt.links.remove(link)
+        nt.links.new(tex(image).outputs["Color"], p.inputs[sock_name])
+    if normal is not None:
+        for link in list(p.inputs["Normal"].links):
+            nt.links.remove(link)
+        nm = nt.nodes.new("ShaderNodeNormalMap")
+        nm.uv_map = uv_name
+        nt.links.new(tex(normal).outputs["Color"], nm.inputs["Color"])
+        nt.links.new(nm.outputs["Normal"], p.inputs["Normal"])
 
 
 bake_setup()
@@ -963,9 +1431,10 @@ liv = np.empty(TEX_W * TEX_H * 4, np.float32)
 LIVERY.pixels.foreach_get(liv)
 hull_rgb = shade_from_ao(liv.reshape(TEX_H, TEX_W, 4)[..., :3], hull_ao[..., :1])
 hull_img = to_image("hull_texture", hull_rgb)
-use_texture(M["hull"], hull_img, "UVMap")
+use_maps(M["hull"], "UVMap", color=hull_img, normal=HULL_NORMAL, rough=HULL_ROUGH)
 
-# Fittings: unwrap into one atlas, bake colour (incl. procedural grime) + AO.
+# Fittings: unwrap into one atlas; bake colour (incl. procedural grime and
+# rust), AO, tangent-space normals (dents, rust scale) and roughness.
 me = FIT.data
 uv = me.uv_layers.new(name="bake")
 me.uv_layers.active = uv
@@ -980,9 +1449,13 @@ bpy.ops.uv.smart_project(angle_limit=math.radians(60), island_margin=0.006, area
 bpy.ops.object.mode_set(mode="OBJECT")
 fit_col = bake(FIT, "DIFFUSE", ATLAS, ATLAS, 4, pass_filter={"COLOR"})
 fit_ao = bake(FIT, "AO", ATLAS, ATLAS, 48, non_color=True)
+fit_nrm = bake(FIT, "NORMAL", ATLAS, ATLAS, 4, non_color=True)
+fit_rgh = bake(FIT, "ROUGHNESS", ATLAS, ATLAS, 4, non_color=True)
 atlas = to_image("fittings_atlas", shade_from_ao(fit_col[..., :3], fit_ao[..., :1]))
+atlas_n = make_image("fittings_normal", fit_nrm[..., :3], non_color=True)
+atlas_r = make_image("fittings_rough", half_res(fit_rgh[..., :3]), non_color=True)
 for m in me.materials:
-    use_texture(m, atlas, "bake")
+    use_maps(m, "bake", color=atlas, normal=atlas_n, rough=atlas_r)
 for name in [n.name for n in me.uv_layers if n.name != "bake"]:
     me.uv_layers.remove(me.uv_layers[name])
 
@@ -992,14 +1465,15 @@ for im, fname in ((hull_img, "hull_texture.png"), (atlas, "fittings_atlas.png"))
     im.save()
 
 for ob in bpy.context.scene.objects:
-    ob.select_set(ob in (HULL, FIT))
+    ob.select_set(ob in (HULL, FIT, COLL))
 bpy.context.view_layer.objects.active = HULL
 glb = os.path.join(OUT, "trawler.glb")
-bpy.ops.export_scene.gltf(
-    filepath=glb, export_format="GLB", use_selection=True, export_yup=True, export_apply=True,
-    export_texcoords=True, export_normals=True, export_materials="EXPORT",
-    export_image_format="JPEG", export_jpeg_quality=90,
-)
+common = dict(filepath=glb, export_format="GLB", use_selection=True, export_yup=True, export_apply=True,
+              export_texcoords=True, export_normals=True, export_tangents=True, export_materials="EXPORT")
+try:
+    bpy.ops.export_scene.gltf(export_image_format="WEBP", export_image_quality=85, **common)
+except TypeError:
+    bpy.ops.export_scene.gltf(export_image_format="JPEG", export_jpeg_quality=88, **common)
 print("wrote", glb, os.path.getsize(glb) // 1024, "KB")
 
 

@@ -26,13 +26,40 @@ build: `npm run build` then `npm run preview`.
 
 ### Controls
 
-| Key | Action |
-| --- | --- |
-| `W` / `↑` | throttle forward |
-| `S` / `↓` | reverse |
-| `A` `D` / `← →` | steer |
-| `N` | toggle day / night |
-| `C` | toggle free-look camera (orbit) |
+You can command the ship from outside, stand at the wheel, or walk about her.
+
+| Key | Third person / at the helm | Walking aboard |
+| --- | --- | --- |
+| `W` / `S` | engine telegraph one step ahead / astern | walk |
+| `A` / `D` | wind the wheel to port / starboard | strafe |
+| `Z` | wheel midships | |
+| `E` | leave the helm | take the helm (standing at the wheel) |
+| `F` | switch third person ↔ first person at the helm | back to third person |
+| `Shift` | | run |
+| mouse | (click to capture) look around | look around |
+| `N` / `C` | day ↔ night / orbit camera (third person) | |
+
+On a phone: the left stick turns the wheel (or walks), ▲ ▼ step the telegraph,
+drag the right half of the screen to look, buttons switch view and take or
+leave the helm.
+
+### Ship handling
+
+The trawler is driven like a real vessel, not an arcade boat:
+
+- **Engine-order telegraph**: full / half / slow astern, stop, dead slow /
+  slow / half / full ahead. Engine rpm follows the order with a lag; thrust
+  scales with rpm² and falls off with speed (propeller in nozzle, 20 t bollard
+  pull per the data sheet).
+- **Mass and resistance**: ~450 t with added mass and quadratic hull
+  resistance: about 9 kn after 20 s at full ahead, 12 kn flat out; after
+  STOP she still carries ~4 kn half a minute later.
+- **Steering**: you wind a wheel order; the steering gear follows at
+  2.5 °/s up to 35°. A first-order Nomoto model turns rudder into rate of turn
+  and needs water flow (way on, or propeller wash). Full rudder at full
+  ahead gives a ~65 m turning radius, ~4° outward heel and some speed loss.
+- Instruments on screen: speed log (kn), gyro heading, telegraph and rpm,
+  rudder angle indicator with the wheel order.
 
 ## How it's built
 

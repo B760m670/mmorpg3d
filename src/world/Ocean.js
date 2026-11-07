@@ -62,6 +62,12 @@ const FRAG = /* glsl */ `
   uniform vec3  uFogColor;
   uniform float uFogDensity;
 
+  // The player's vessel, for hull foam, bow wave and wake.
+  uniform vec2  uBoatPos;
+  uniform vec2  uBoatFwd;
+  uniform float uBoatSpeed;
+  uniform vec2  uBoatHalf;   // half length, half beam (m)
+
   varying vec3  vWorldPos;
   varying vec3  vNormal;
   varying float vHeight;
@@ -73,8 +79,8 @@ const FRAG = /* glsl */ `
   vec2 ripple(vec2 p, float t) {
     vec2 g = vec2(0.0);
     float ang = 0.37;
-    float freq = 0.55;
-    float amp = 0.075;
+    float freq = 1.3;     // ~4.8 m down to ~0.4 m: wind waves at real scale
+    float amp = 0.045;
     for (int i = 0; i < 9; i++) {
       vec2 d = vec2(cos(ang), sin(ang));
       float ph = dot(d, p) * freq + t * sqrt(9.81 * freq) * 0.8;
@@ -84,6 +90,45 @@ const FRAG = /* glsl */ `
       amp *= 0.78;
     }
     return g;
+  }
+
+  float hash21(vec2 p) {
+    p = fract(p * vec2(234.34, 435.345));
+    p += dot(p, p + 34.23);
+    return fract(p.x * p.y);
+  }
+  float vnoise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(hash21(i), hash21(i + vec2(1.0, 0.0)), f.x),
+               mix(hash21(i + vec2(0.0, 1.0)), hash21(i + vec2(1.0, 1.0)), f.x), f.y);
+  }
+
+  // Whitewater around the hull: contact foam, bow wave, turbulent centre
+  // wake and the two Kelvin arms (19.5 deg) trailing astern.
+  float boatFoam(vec2 w) {
+    vec2 rel = w - uBoatPos;
+    vec2 fwd = uBoatFwd;
+    vec2 rgt = vec2(-fwd.y, fwd.x);
+    float a = dot(rel, fwd);
+    float c = dot(rel, rgt);
+    float hl = uBoatHalf.x;
+    float hb = uBoatHalf.y;
+    float spd = clamp(abs(uBoatSpeed) / 6.0, 0.0, 1.0);
+    float e = length(vec2(a / hl, c / hb));
+    float contact = smoothstep(1.32, 1.0, e) * (0.18 + 0.82 * spd);
+    float bow = smoothstep(0.35, 1.0, a / hl) * smoothstep(1.7, 1.0, e) * spd * 1.2;
+    float wake = 0.0;
+    float behind = -a - hl * 0.92;
+    if (behind > 0.0) {
+      float w2 = abs(c);
+      float centre = smoothstep(hb * 0.75 + behind * 0.04, hb * 0.1, w2) * exp(-behind / 120.0) * 0.75;
+      float arm = hb * 0.7 + behind * 0.354;
+      float kelvin = exp(-pow((w2 - arm) / (0.9 + behind * 0.025), 2.0)) * exp(-behind / 110.0) * 0.8;
+      wake = (centre + kelvin) * spd;
+    }
+    return clamp(contact + bow + wake, 0.0, 1.0);
   }
 
   vec3 skyColor(vec3 dir) {
@@ -98,7 +143,7 @@ const FRAG = /* glsl */ `
     vec3 N = normalize(vNormal);
 
     // Ripple detail, faded with distance to avoid shimmering.
-    float fade = exp(-vViewDist * 0.004);
+    float fade = exp(-vViewDist * 0.006);
     vec2 rg = ripple(vWorldPos.xz, uTime);
     N = normalize(N + vec3(-rg.x, 0.0, -rg.y) * fade);
 
@@ -133,6 +178,16 @@ const FRAG = /* glsl */ `
     float foam = smoothstep(2.3, 3.0, vHeight) * smoothstep(0.08, 0.2, length(rg));
     col = mix(col, uFoam, foam * 0.6);
 
+    // Whitewater from the vessel, broken up by drifting noise.
+    float fa = boatFoam(vWorldPos.xz);
+    if (fa > 0.001) {
+      vec2 flow = -uBoatFwd * uTime * 0.6;
+      float n = vnoise(vWorldPos.xz * 1.3 + flow) * 0.6 + vnoise(vWorldPos.xz * 4.1 - flow * 1.7) * 0.4;
+      float pattern = smoothstep(0.62, 0.92, n * 1.1 + fa * 0.4) * fa;
+      col = mix(col, uShallow * 1.8 + uFoam * 0.05, fa * 0.25);  // aerated, lighter water
+      col = mix(col, uFoam * 1.05, pattern);
+    }
+
     // Distance fog — melt into the haze.
     float fog = 1.0 - exp(-uFogDensity * vViewDist);
     col = mix(col, uFogColor, clamp(fog, 0.0, 1.0));
@@ -160,6 +215,10 @@ export class Ocean {
       uSpecStrength: { value: 2.6 },
       uFogColor: { value: new THREE.Color() },
       uFogDensity: { value: 0.00085 },
+      uBoatPos: { value: new THREE.Vector2(0, 0) },
+      uBoatFwd: { value: new THREE.Vector2(0, -1) },
+      uBoatSpeed: { value: 0 },
+      uBoatHalf: { value: new THREE.Vector2(11.9, 4.6) },
     };
 
     this.material = new THREE.ShaderMaterial({
@@ -195,3 +254,11 @@ export class Ocean {
     this.mesh.position.set(camera.position.x, 0, camera.position.z);
   }
 }
+
+// Feed the vessel's state for hull foam and wake.
+Ocean.prototype.setBoat = function setBoat(boat) {
+  const u = this.uniforms;
+  u.uBoatPos.value.set(boat.position.x, boat.position.z);
+  u.uBoatFwd.value.set(-Math.sin(boat.heading), -Math.cos(boat.heading));
+  u.uBoatSpeed.value = boat.speed;
+};

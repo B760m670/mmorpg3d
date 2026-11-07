@@ -22,8 +22,12 @@
 
       /* Touch controls (created only on touch devices) */
       #touch-layer {
-        position: fixed; left: 0; top: 0; width: 62%; height: 100%;
+        position: fixed; left: 0; top: 0; width: 52%; height: 100%;
         touch-action: none; z-index: 5;
+      }
+      #look-layer {
+        position: fixed; right: 0; top: 0; width: 48%; height: 100%;
+        touch-action: none; z-index: 5; display: none;
       }
       #joy-base {
         position: fixed; width: 124px; height: 124px;

@@ -87,20 +87,60 @@ export const PRESETS = {
 };
 
 export const BOAT = {
-  // Principal dimensions of the modelled vessel (23.95 m stern trawler).
+  // Principal dimensions of the modelled vessel (Macduff 23.95 m stern trawler).
   length: 23.95,
   beam: 9.2,
-  maxSpeed: 11,        // m/s at full throttle (~21 kn; tuned for play)
-  acceleration: 1.6,   // m/s^2 of thrust at full throttle
-  turnRate: 0.35,      // rad/s at full rudder and speed
-  heelFactor: 0.025,   // roll per (rad/s x m/s) in a turn
-  rideHeight: 0.35,    // model lift above the design waterline (light ship)
+  rideHeight: 0.35,      // model lift above the design waterline (light ship)
+
+  // Propulsion & resistance. Data sheet: 1500 hp, 2.7 m propeller in nozzle,
+  // 20 t bollard pull. Mass ~ displacement (~410 t) plus surge added mass.
+  mass: 450000,          // kg
+  bollardPull: 196000,   // N (20 t)
+  maxSpeed: 6.2,         // m/s at full ahead (~12 kn)
+  asternEfficiency: 0.55,
+  rpmMax: 1200,          // engine rpm at full
+  rpmLag: 2.2,           // s, engine response to a telegraph order
+
+  // Steering: rudder limits per SOLAS (35 deg, ~2.5 deg/s steering gear),
+  // first-order Nomoto yaw model tuned for a ~100 m turning circle at 12 kn.
+  rudderMax: 35,         // deg
+  rudderRate: 2.5,       // deg/s
+  wheelRate: 14,         // deg/s the helmsman winds the wheel order
+  yawGain: 0.1,          // rad/s per rad of rudder at refSpeed
+  yawTime: 7,            // s
+  refSpeed: 6,           // m/s
+  heelFactor: 0.18,      // heel (rad) per (m/s x rad/s) in a turn
+
+  // Where the helmsman stands on the bridge (model space: x, y up, z aft).
+  helm: [0, 5.4, -4.75],
+  bridgeSpawn: [0, 5.4, -2.2],
+};
+
+// Engine-order telegraph, astern to ahead.
+export const TELEGRAPH = [
+  { name: 'FULL ASTERN', power: -1.0 },
+  { name: 'HALF ASTERN', power: -0.6 },
+  { name: 'SLOW ASTERN', power: -0.35 },
+  { name: 'STOP', power: 0 },
+  { name: 'DEAD SLOW AHEAD', power: 0.2 },
+  { name: 'SLOW AHEAD', power: 0.4 },
+  { name: 'HALF AHEAD', power: 0.7 },
+  { name: 'FULL AHEAD', power: 1.0 },
+];
+
+export const PLAYER = {
+  eyeHeight: 1.65,
+  radius: 0.3,
+  walkSpeed: 1.4,        // m/s
+  runSpeed: 2.8,
+  stepHeight: 0.45,
+  lookSensitivity: 0.0022,
 };
 
 export const CAMERA = {
-  distance: 44,
-  height: 14,
-  lookHeight: 5,
+  distance: 34,
+  height: 9,
+  lookHeight: 5.5,
   damping: 2.2,
   fov: 55,
 };
