@@ -19,6 +19,7 @@ const CSS = `
 #bridge .val { font-size: 18px; color: #f2f7f9; }
 #bridge .wide { grid-column: 1 / span 2; }
 #bridge .eng { font-size: 13px; color: #ffcf7a; }
+#bridge .sea { font-size: 12px; color: #bfe3f2; }
 #bridge .rud { position: relative; height: 10px; width: 180px; border-radius: 5px;
   background: linear-gradient(90deg, rgba(255,80,60,.25), rgba(255,255,255,.08) 50%, rgba(60,220,110,.25)); }
 #bridge .rud i { position: absolute; top: -2px; width: 4px; height: 14px; border-radius: 2px; background: #f2f7f9; }
@@ -43,11 +44,19 @@ export class Bridge {
       <div><div class="lbl">Heading</div><div class="val" data-k="hdg">000°</div></div>
       <div class="wide"><div class="lbl">Engine order</div><div class="eng" data-k="eng">STOP</div></div>
       <div class="wide"><div class="lbl">Rudder <span data-k="rudtxt">0° MID</span></div>
-        <div class="rud"><b data-k="wheel"></b><i data-k="rud"></i></div></div>`;
+        <div class="rud"><b data-k="wheel"></b><i data-k="rud"></i></div></div>
+      <div class="wide"><div class="lbl">Sea</div><div class="sea" data-k="sea">—</div></div>`;
     document.body.appendChild(el);
     this.el = el;
     this.f = {};
     el.querySelectorAll('[data-k]').forEach((n) => { this.f[n.dataset.k] = n; });
+  }
+
+  // ocean: { info: {name, bft}, hs, mix }
+  setSea(ocean) {
+    const st = ocean.info;
+    const building = ocean.mix < 1 ? ' (changing)' : '';
+    this.f.sea.textContent = `Bft ${st.bft} · ${st.name} · Hs ${ocean.hs.toFixed(1)} m${building}`;
   }
 
   update(boat) {

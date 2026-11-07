@@ -1,15 +1,17 @@
 # Open World — Ocean
 
 Atmospheric open-world ocean prototype in the browser, built with **three.js**.
-Inspired by the filmic "boat sailing through a fjord" look — a procedural
-Gerstner ocean, hazy distance fog, a chase camera, and a drivable boat, all
-graded with ACES tone mapping + bloom.
+Inspired by the filmic "boat sailing through a fjord" look: a spectral (FFT)
+ocean, hazy distance fog, a chase camera and a drivable trawler, all graded
+with ACES tone mapping and bloom.
 
 This is **Phase 1**: a correct, extensible skeleton. The visuals are deliberately
 achieved with cheap shader tricks so the architecture (systems, physics, camera,
 presets) is real and won't be thrown away as we raise fidelity.
 
 ![day](docs/day.png)
+
+![sea states](docs/sea_states.jpg)
 ![night](docs/night.png)
 
 ## Run it (Windows / macOS / Linux)
@@ -38,10 +40,11 @@ You can command the ship from outside, stand at the wheel, or walk about her.
 | `Shift` | | run |
 | mouse | (click to capture) look around | look around |
 | `N` / `C` | day ↔ night / orbit camera (third person) | |
+| `B` | sea state: calm → moderate → rough → storm | sea state |
 
 On a phone: the left stick turns the wheel (or walks), ▲ ▼ step the telegraph,
 drag the right half of the screen to look, buttons switch view and take or
-leave the helm.
+leave the helm; *day / night* and *sea state* are in the top-right corner.
 
 ### Ship handling
 
@@ -84,18 +87,33 @@ drawn into canvas textures from the game state while you are on the bridge:
 
 The realism here is **not** the engine — it's the water shader + fog + post.
 
-- **Ocean** (`src/world/`) — a large grid displaced by a set of **Gerstner
-  waves** in the vertex shader. The fragment shader fakes water cheaply:
-  Fresnel sky-gradient reflection, a sharp sun/moon specular glitter, depth
-  color, foam on crests, and distance fog so the water melts into the haze.
-  Wind ripples come from a generated, tileable slope map (random directional
-  spectrum, mipmapped) at three scales, so there is no moire at a distance.
-  The hull has contact foam, a bow wave, a turbulent wake and Kelvin arms.
-  The plane re-centers on the camera each frame and waves are evaluated in
-  **world space**, so the ocean is effectively infinite.
-- **Single source of truth for waves** (`src/world/waves.js`) — the GLSL is
-  *generated* from the same `WAVES` array the JS buoyancy sampler reads, so the
-  boat floats on exactly the surface you see (pitch/roll included).
+- **Ocean waves** (`src/world/OceanSpectrum.js`, `OceanFFT.js`): a spectral
+  sea after Tessendorf, the method used for film and AAA oceans. Wave
+  amplitudes are drawn at random from a **JONSWAP** spectrum (fetch-limited
+  wind sea from wind speed and fetch) plus a long swell, with Mitsuyasu
+  directional spreading. The GPU advances the spectrum in time and runs an
+  inverse FFT every frame for three cascades (patches of 2000 m, 120 m and
+  19 m; 1000 m on phones), so wavelengths from ~1 km down to 30 cm are
+  covered without visible tiling. The output is displacement (including
+  choppy horizontal motion) and slope derivatives. Sea states run from
+  Beaufort 2 to 8. The simulated significant wave height matches the
+  spectrum (Hs 1.5 m at Bft 4, 6.7 m at Bft 8), and the sea builds up or
+  calms over a few seconds when you change it.
+- **Not uniform, like a real sea** (`src/world/Ocean.js`): the long waves die
+  down going up the fjord and the swell is damped near the cliffs. Drifting
+  wind gusts (cat's paws) roughen the small waves in patches. Whitecaps
+  appear where the summed surface folds over (Jacobian) and leave foam that
+  fades. A gale blows foam into streaks along the wind, and there is surf at
+  the foot of the cliffs.
+- **Water shading**: Fresnel sky reflection, sun or moon glitter that widens
+  with distance, light scattered through thin crests, the ship's bow wave,
+  wake and Kelvin arms, and distance fog. The mesh is a polar grid centred
+  under the camera, about 1 m spacing close in.
+- **Seakeeping** (`src/entities/Boat.js`): the water height at five points
+  under the hull is summed on the CPU from the same spectrum (the ≈1800 most
+  energetic wave trains), so the ship rides the rendered sea. Heave, pitch and roll are second-order
+  responses with the trawler's natural periods (roll ~8 s), so she rolls
+  hardest when the waves meet her rhythm.
 - **Sky** (`src/world/SkyDome.js`) — three's physically-based (Preetham) sky;
   the sun direction drives the ocean shader and the directional light.
 - **Post** (`src/core/Engine.js`) — `ACESFilmicToneMapping` + `UnrealBloomPass`.
@@ -141,8 +159,9 @@ src/
   config.js            # all tunable values + day/night presets
   core/Engine.js       # renderer, camera, post-processing
   world/
-    waves.js           # Gerstner waves: GLSL generator + JS sampler
-    Ocean.js           # water mesh + shaders
+    OceanSpectrum.js   # JONSWAP spectrum, cascades, CPU wave sampler
+    OceanFFT.js        # GPU time evolution + inverse FFT + foam
+    Ocean.js           # water mesh + shaders, sea states, shelter
     SkyDome.js         # sky + sun direction
     Environment.js     # lights + scene fog
   entities/Boat.js     # placeholder boat + buoyancy/steering

@@ -30,14 +30,15 @@ const { scene, camera, renderer } = engine;
 
 const sky = new SkyDome();
 scene.add(sky.mesh);
-const ocean = new Ocean({ segments: IS_TOUCH ? 220 : undefined });
-scene.add(ocean.mesh);
 const terrain = new Terrain({ spacing: IS_TOUCH ? 12 : undefined });
 scene.add(terrain.mesh);
+const ocean = new Ocean({ renderer, terrain, mobile: IS_TOUCH });
+scene.add(ocean.mesh);
 const environment = new Environment(scene, { shadowMapSize: IS_TOUCH ? 1024 : 2048 });
 
 const instruments = new Instruments(terrain);
 const boat = new Boat();
+boat.water = (x, z, t) => ocean.sampleWater(x, z, t);
 boat.load(trawlerUrl, () => instruments.attach(boat.model));
 scene.add(boat.object);
 
@@ -67,7 +68,7 @@ const HINTS = IS_TOUCH ? {
   helm: 'stick ◄ ► wheel · ▲ ▼ telegraph · drag right side to look · <b>leave helm</b> to walk',
   walk: 'stick to walk · drag right side to look · <b>take helm</b> at the wheel',
 } : {
-  '3p': '<b>W/S</b> telegraph · <b>A/D</b> wheel · <b>Z</b> midships · <b>F</b> go aboard · <b>C</b> orbit · <b>N</b> day/night',
+  '3p': '<b>W/S</b> telegraph · <b>A/D</b> wheel · <b>Z</b> midships · <b>F</b> go aboard · <b>C</b> orbit · <b>N</b> day/night · <b>B</b> sea state',
   helm: '<b>W/S</b> telegraph · <b>A/D</b> wheel · <b>Z</b> midships · <b>E</b> leave the helm · <b>F</b> 3rd person · click to look',
   walk: '<b>WASD</b> walk · <b>Shift</b> run · <b>E</b> take the helm (at the wheel) · <b>F</b> 3rd person · click to look',
 };
@@ -130,6 +131,7 @@ function tick() {
     presetIndex = (presetIndex + 1) % order.length;
     applyPreset(order[presetIndex]);
   }
+  if (input.pressed('b')) ocean.nextState(+1);
   if (input.pressed('f')) setMode(mode === '3p' ? 'helm' : '3p');
   if (input.pressed('e')) {
     if (mode === 'helm') setMode('walk');
@@ -178,7 +180,8 @@ function tick() {
     (mode === 'walk' && pp.y > 5.1 && pp.z > -6.3 && pp.z < 0.2 && Math.abs(pp.x) < 3.4);
   instruments.update(dt, boat, onBridge);
   ocean.setBoat(boat);
-  ocean.update(time, camera, sky.sunDirection);
+  ocean.update(time, dt, camera, sky.sunDirection);
+  bridge.setSea(ocean);
   engine.render();
   input.endFrame();
 

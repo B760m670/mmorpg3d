@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { BOAT, TELEGRAPH } from '../config.js';
-import { sampleWater } from '../world/waves.js';
 
 // The 23.95 m stern trawler: a Blender-built model (blender/build_trawler.py)
 // and the ship-handling model that drives it.
@@ -44,7 +43,12 @@ export class Boat {
     this.heading = 0;   // rad; forward = (-sin, 0, -cos); + turns to port
     this.speed = 0;     // m/s through the water (negative = astern)
     this.yawRate = 0;   // rad/s
-    this.heel = 0;      // rad
+    this.heel = 0;      // rad, from turning
+    this.pitch = 0;     // rad, bow up +
+    this.roll = 0;      // rad, starboard up +
+    this.pitchV = 0;
+    this.rollV = 0;
+    this.heaveV = 0;
 
     // Controls & machinery
     this.telegraph = STOP_INDEX;
@@ -55,14 +59,8 @@ export class Boat {
     this.model = null;
     this.collider = null; // invisible walk/collision mesh, in model space
 
-    this._up = new THREE.Vector3();
+    this._euler = new THREE.Euler();
     this._q = new THREE.Quaternion();
-    this._qHeel = new THREE.Quaternion();
-    this._m = new THREE.Matrix4();
-    this._fwd = new THREE.Vector3();
-    this._right = new THREE.Vector3();
-    this._fwdPlane = new THREE.Vector3();
-    this._zAxis = new THREE.Vector3(0, 0, 1);
   }
 
   get object() {
@@ -191,32 +189,37 @@ export class Boat {
       this.yawRate *= 0.5;
     }
 
-    // Buoyancy: average the wave surface under bow, stern and both sides.
-    const lh = BOAT.length * 0.38;
-    const bh = BOAT.beam * 0.42;
-    const cw = sampleWater(this.position.x, this.position.z, time);
-    const up = this._up.set(cw.normal.x, cw.normal.y, cw.normal.z);
-    let hSum = cw.height;
-    const pts = [[-fx * lh, -fz * lh], [fx * lh, fz * lh], [fz * bh, -fx * bh], [-fz * bh, fx * bh]];
-    for (const [ox, oz] of pts) {
-      const w = sampleWater(this.position.x + ox, this.position.z + oz, time);
-      hSum += w.height;
-      up.x += w.normal.x; up.y += w.normal.y; up.z += w.normal.z;
-    }
-    up.y *= 1.8;  // a 400 t hull averages the waves
-    up.normalize();
-    this.position.y += (hSum / 5 - this.position.y) * (1 - Math.exp(-dt * 3));
+    // Seakeeping. Heave follows the mean water level under the hull; pitch
+    // and roll are driven by the slope of the water between bow and stern and
+    // between the two sides, through second-order responses with the ship's
+    // natural periods (roll ~8 s, lightly damped: she rolls hardest when the
+    // waves meet her at her own rhythm, as real ships do).
+    const lh = BOAT.length * 0.4;
+    const bh = BOAT.beam * 0.45;
+    const water = this.water;
+    const px = this.position.x, pz = this.position.z;
+    const rx = fz, rz = -fx;                       // starboard
+    const hC = water(px, pz, time).height;
+    const hBow = water(px - fx * lh, pz - fz * lh, time).height;
+    const hStern = water(px + fx * lh, pz + fz * lh, time).height;
+    const hStbd = water(px + rx * bh, pz + rz * bh, time).height;
+    const hPort = water(px - rx * bh, pz - rz * bh, time).height;
+    const hMean = (hC * 2 + hBow + hStern + hStbd + hPort) / 6;
+    const sm = BOAT.seakeeping;
+    this.heaveV += ((sm.heaveW ** 2) * (hMean - this.position.y) - 2 * sm.heaveZeta * sm.heaveW * this.heaveV) * dt;
+    this.position.y += this.heaveV * dt;
+    const pitchT = Math.atan2(hBow - hStern, 2 * lh);
+    const rollT = Math.atan2(hStbd - hPort, 2 * bh);
+    this.pitchV += ((sm.pitchW ** 2) * (pitchT - this.pitch) - 2 * sm.pitchZeta * sm.pitchW * this.pitchV) * dt;
+    this.pitch += this.pitchV * dt;
+    this.rollV += ((sm.rollW ** 2) * (rollT - this.roll) - 2 * sm.rollZeta * sm.rollW * this.rollV) * dt;
+    this.roll = THREE.MathUtils.clamp(this.roll + this.rollV * dt, -0.6, 0.6);
 
-    this._fwd.set(-fx, 0, -fz);
-    this._right.crossVectors(this._fwd, up).normalize();
-    this._fwdPlane.crossVectors(up, this._right).normalize();
-    this._m.makeBasis(this._right, up, this._fwdPlane.multiplyScalar(-1));
-    this._q.setFromRotationMatrix(this._m);
-    this._qHeel.setFromAxisAngle(this._zAxis, this.heel);
-    this._q.multiply(this._qHeel);
+    this._euler.set(this.pitch, this.heading, this.roll + this.heel, 'YXZ');
+    this._q.setFromEuler(this._euler);
 
     this.group.position.copy(this.position);
-    this.group.quaternion.slerp(this._q, 1 - Math.exp(-dt * 2.5));
+    this.group.quaternion.copy(this._q);
     this.group.updateMatrixWorld(true);
   }
 

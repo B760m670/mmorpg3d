@@ -22,22 +22,24 @@ export const TERRAIN = {
   mountainHeight: 260, // extra rise of the land further from the channel
 };
 
-export const OCEAN = {
-  size: 2600,       // world units across the water plane
-  segments: 400,    // vertex density (segments x segments)
-};
 
-// Gerstner wave set. One source of truth: the GLSL is generated from this
-// (see world/waves.js) and the JS buoyancy sampler reads the same array,
-// so the boat always floats on exactly the surface you see.
-// dir: wave travel direction (xz). wavelength/amplitude in world units.
-// steepness (0..1): crest sharpness. speed: phase-speed multiplier.
-export const WAVES = [
-  { dir: [1.0, 0.65], wavelength: 150, amplitude: 1.45, steepness: 0.55, speed: 0.9 },
-  { dir: [-0.7, 1.0], wavelength: 86, amplitude: 0.85, steepness: 0.55, speed: 1.0 },
-  { dir: [0.45, -1.0], wavelength: 52, amplitude: 0.42, steepness: 0.6, speed: 1.2 },
-  { dir: [-1.0, -0.5], wavelength: 31, amplitude: 0.24, steepness: 0.7, speed: 1.45 },
-];
+// Sea states (see world/OceanSpectrum.js). The wind sea follows the JONSWAP
+// fetch-limited relations from wind speed (m/s) and fetch (m); the swell is
+// given by significant height (m) and peak period (s). Beaufort numbers and
+// heights are what you would expect in the open sea; inside the fjord the
+// long waves are sheltered.
+export const SEA = {
+  windDir: [0.3, -1.0],     // direction the wind sea travels (x, z); -z is north
+  swellDir: [0.62, -0.78],
+  initial: 1,
+  transition: 9,           // seconds for the sea to build or calm down
+  states: [
+    { name: 'calm', bft: 2, wind: 3.5, fetch: 20000, swell: { hs: 0.6, tp: 11 }, chop: 0.75, foamBias: 0.3 },
+    { name: 'moderate', bft: 4, wind: 7.5, fetch: 60000, swell: { hs: 0.8, tp: 10 }, chop: 0.9, foamBias: 0.7 },
+    { name: 'rough', bft: 6, wind: 12.5, fetch: 150000, swell: { hs: 1.1, tp: 12 }, chop: 1.0, foamBias: 0.8 },
+    { name: 'storm', bft: 8, wind: 19, fetch: 300000, swell: { hs: 1.6, tp: 13 }, chop: 1.05, foamBias: 0.87 },
+  ],
+};
 
 // Visual presets. Colors are linear-ish sRGB triples (0..1).
 export const PRESETS = {
@@ -110,6 +112,9 @@ export const BOAT = {
   yawTime: 7,            // s
   refSpeed: 6,           // m/s
   heelFactor: 0.18,      // heel (rad) per (m/s x rad/s) in a turn
+  // Natural frequencies (rad/s) and damping ratios of the ship's motions:
+  // roll period ~8 s, pitch ~5 s, heave ~5.5 s for a 24 m trawler.
+  seakeeping: { rollW: 0.785, rollZeta: 0.12, pitchW: 1.25, pitchZeta: 0.45, heaveW: 1.15, heaveZeta: 0.55 },
 
   // Where the helmsman stands on the bridge (model space: x, y up, z aft).
   helm: [0, 5.4, -4.75],

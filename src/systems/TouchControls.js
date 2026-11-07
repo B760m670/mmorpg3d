@@ -8,8 +8,19 @@ const BUTTONS = {
   helm: { label: 'take helm', key: 'e' },
   leave: { label: 'leave helm', key: 'e' },
   view: { label: '1st / 3rd', key: 'f' },
-  time: { label: 'day / night', key: 'n' },
+  time: { label: 'day / night', key: 'n', top: true },
+  sea: { label: 'sea state', key: 'b', top: true },
 };
+
+// Scenery buttons live in the top-right corner, out of the way of the conn.
+const TOP_CSS = `
+#touch-top {
+  position: fixed; z-index: 6; display: flex; flex-direction: column; align-items: stretch; gap: 8px;
+  top: calc(10px + env(safe-area-inset-top, 0px));
+  right: calc(12px + env(safe-area-inset-right, 0px));
+}
+#touch-top .tbtn { padding: 10px 12px; font-size: 11px; }
+`;
 
 export class TouchControls {
   constructor(input) {
@@ -37,16 +48,22 @@ export class TouchControls {
 
     const col = document.createElement('div');
     col.id = 'touch-buttons';
+    const top = document.createElement('div');
+    top.id = 'touch-top';
+    const style = document.createElement('style');
+    style.textContent = TOP_CSS;
+    document.head.appendChild(style);
     this.buttons = {};
     for (const [id, b] of Object.entries(BUTTONS)) {
       const el = document.createElement('button');
       el.className = 'tbtn';
       el.textContent = b.label;
       el.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); input.press(b.key); });
-      col.appendChild(el);
+      (b.top ? top : col).appendChild(el);
       this.buttons[id] = el;
     }
     document.body.appendChild(col);
+    document.body.appendChild(top);
 
     left.addEventListener('pointerdown', (e) => {
       if (this.stickId !== null) return;
@@ -110,6 +127,7 @@ export class TouchControls {
       leave: mode === 'helm',
       view: true,
       time: true,
+      sea: true,
     };
     for (const [id, el] of Object.entries(this.buttons)) el.hidden = !show[id];
     this.lookLayer.style.display = mode === '3p' ? 'none' : 'block';
