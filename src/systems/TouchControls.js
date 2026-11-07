@@ -10,6 +10,7 @@ const BUTTONS = {
   view: { label: '1st / 3rd', key: 'f' },
   time: { label: 'day / night', key: 'n', top: true },
   sea: { label: 'weather', key: 'b', top: true },
+  sound: { label: 'sound', key: 'm', top: true },
 };
 
 // Scenery buttons live in the top-right corner, out of the way of the conn.
@@ -128,6 +129,7 @@ export class TouchControls {
       view: true,
       time: true,
       sea: true,
+      sound: true,
     };
     for (const [id, el] of Object.entries(this.buttons)) el.hidden = !show[id];
     this.lookLayer.style.display = mode === '3p' ? 'none' : 'block';

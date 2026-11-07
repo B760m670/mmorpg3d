@@ -43,10 +43,13 @@ You can command the ship from outside, stand at the wheel, or walk about her.
 | mouse | (click to capture) look around | look around |
 | `N` / `C` | day ↔ night / orbit camera (third person) | |
 | `B` | weather: clear → fair → overcast with showers → storm → changing on its own | weather |
+| `M` | sound on / off | sound on / off |
 
 On a phone: the left stick turns the wheel (or walks), ▲ ▼ step the telegraph,
 drag the right half of the screen to look, buttons switch view and take or
-leave the helm; *day / night* and *weather* are in the top-right corner.
+leave the helm; *day / night*, *weather* and *sound* are in the top-right corner.
+Sound starts with your first tap (browser rule). On an iPhone the ring/silent
+switch must be on ring to hear it.
 
 ### Ship handling
 
@@ -124,6 +127,17 @@ The realism here is **not** the engine — it's the water shader + fog + post.
   haze. Rain is wind-slanted streaks in a box around the camera, culled inside
   the wheelhouse, plus rings on the water. A storm adds lightning. Under
   cloud the sea reflects grey, the sun glitter goes and the shadows soften.
+- **Sound** (`src/systems/Sound.js`): fully procedural Web Audio, with no
+  sound files. The diesel is a six-cylinder four-stroke at 600–1200 rpm
+  (firing pulses, lowpass and mechanical clatter). You also hear the sea and
+  the bow wash with speed and sea state, gusting wind with rigging whistle in
+  a gale, rain, the boom of the bow slamming into a sea, and thunder delayed
+  after each flash. From the wheelhouse the outside is muffled and the rain
+  drums on the roof.
+- **Bow spray** (`src/world/Spray.js`): the bow plunging into a rising sea
+  (water rising fast against the bow) throws a sheet of spray to both sides.
+  It carries with the ship, blows downwind and falls back; light spray runs
+  off the bow wave at speed in a seaway.
 - **Water shading**: Fresnel sky reflection, sun or moon glitter that widens
   with distance, light scattered through thin crests, the ship's bow wave,
   wake and Kelvin arms, and distance fog. The mesh is a polar grid centred
@@ -184,6 +198,8 @@ src/
     Weather.js         # weather states, blending, preset resolution
     CloudLayer.js      # cloud deck
     Rain.js            # rain streaks
+    Spray.js           # bow spray particles
+  systems/Sound.js     # procedural soundscape
     SkyDome.js         # sky + sun direction
     Environment.js     # lights + scene fog
   entities/Boat.js     # placeholder boat + buoyancy/steering

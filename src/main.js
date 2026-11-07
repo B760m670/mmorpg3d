@@ -5,6 +5,8 @@ import { PRESETS, BOAT } from './config.js';
 import { Weather, resolve } from './world/Weather.js';
 import { CloudLayer } from './world/CloudLayer.js';
 import { Rain } from './world/Rain.js';
+import { Spray } from './world/Spray.js';
+import { SoundScape } from './systems/Sound.js';
 import { Engine } from './core/Engine.js';
 import { SkyDome } from './world/SkyDome.js';
 import { Ocean } from './world/Ocean.js';
@@ -43,6 +45,15 @@ const clouds = new CloudLayer();
 scene.add(clouds.mesh);
 const rain = new Rain({ count: IS_TOUCH ? 3000 : 7000 });
 scene.add(rain.mesh);
+const spray = new Spray({ count: IS_TOUCH ? 600 : 1000 });
+scene.add(spray.mesh);
+spray.resize(window.innerHeight);
+window.addEventListener('resize', () => spray.resize(window.innerHeight));
+
+// Sound starts with the first tap or key press (browser autoplay rules).
+const sound = new SoundScape();
+const startSound = () => sound.start();
+for (const ev of ['pointerdown', 'keydown', 'touchend']) window.addEventListener(ev, startSound, { passive: true });
 const environment = new Environment(scene, { shadowMapSize: IS_TOUCH ? 1024 : 2048 });
 
 const instruments = new Instruments(terrain);
@@ -77,7 +88,7 @@ const HINTS = IS_TOUCH ? {
   helm: 'stick ◄ ► wheel · ▲ ▼ telegraph · drag right side to look · <b>leave helm</b> to walk',
   walk: 'stick to walk · drag right side to look · <b>take helm</b> at the wheel',
 } : {
-  '3p': '<b>W/S</b> telegraph · <b>A/D</b> wheel · <b>Z</b> midships · <b>F</b> go aboard · <b>C</b> orbit · <b>N</b> day/night · <b>B</b> weather',
+  '3p': '<b>W/S</b> telegraph · <b>A/D</b> wheel · <b>Z</b> midships · <b>F</b> go aboard · <b>C</b> orbit · <b>N</b> day/night · <b>B</b> weather · <b>M</b> sound',
   helm: '<b>W/S</b> telegraph · <b>A/D</b> wheel · <b>Z</b> midships · <b>E</b> leave the helm · <b>F</b> 3rd person · click to look',
   walk: '<b>WASD</b> walk · <b>Shift</b> run · <b>E</b> take the helm (at the wheel) · <b>F</b> 3rd person · click to look',
 };
@@ -127,6 +138,7 @@ function applyPreset(name) {
   scene.environmentIntensity = p.envIntensity ?? 0.6;
   clouds.applyPreset(p, sky.sunDirection);
   rain.applyPreset(p);
+  spray.applyPreset(p);
   instruments.setNight(order[presetIndex] === 'night');
 }
 applyPreset(order[presetIndex]);
@@ -153,6 +165,7 @@ function updateWeather(dt) {
     flashTimer -= dt;
     if (flashTimer <= 0) {
       flashTimer = 6 + Math.random() * 20;
+      sound.thunder(1.2 + Math.random() * 4.5, 0.55 + Math.random() * 0.45);
       flashSeq = [0, 0.12, 0.3].slice(0, 2 + (Math.random() < 0.5 ? 1 : 0)).map((t) => t + Math.random() * 0.05);
     }
   }
@@ -177,6 +190,7 @@ function tick() {
     applyPreset();
   }
   if (input.pressed('b')) weather.cycle();
+  if (input.pressed('m')) sound.toggle();
   updateWeather(dt);
   if (input.pressed('f')) setMode(mode === '3p' ? 'helm' : '3p');
   if (input.pressed('e')) {
@@ -230,6 +244,12 @@ function tick() {
   bridge.setSea(ocean, weather);
   clouds.update(time, camera, flash);
   rain.update(dt, camera, weather.v.rain, weather.v.wind, boat.model);
+  spray.update(dt, boat, weather.v.wind);
+  if (boat.slam > 0) sound.slam(boat.slam);
+  sound.update(dt, {
+    rpm: boat.rpm, speed: boat.speed, sea: ocean.uniforms.uSeaRough.value, wind: weather.v.wind,
+    rain: weather.v.rain, inside: onBridge, far: mode === '3p', heave: boat.heaveV,
+  });
   ocean.uniforms.uRain.value = weather.v.rain;
   engine.render();
   input.endFrame();
@@ -242,4 +262,4 @@ function tick() {
 }
 tick();
 
-window.__scene = { engine, sky, ocean, boat, player, instruments, weather, clouds, rain, environment, terrain, follow, orbit, heightAt, applyPreset, setMode, input };
+window.__scene = { engine, sky, ocean, boat, player, instruments, weather, clouds, rain, spray, sound, environment, terrain, follow, orbit, heightAt, applyPreset, setMode, input };

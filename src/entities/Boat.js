@@ -49,6 +49,10 @@ export class Boat {
     this.pitchV = 0;
     this.rollV = 0;
     this.heaveV = 0;
+    this.bowImm = 0;      // water above the bow's waterline point (m)
+    this.slam = 0;        // 0..1 on the frame the bow slams into a wave
+    this.slamCooldown = 0;
+    this.bowSpray = 0;    // 0..1 continuous bow spray
 
     // Controls & machinery
     this.telegraph = STOP_INDEX;
@@ -214,6 +218,20 @@ export class Boat {
     this.pitch += this.pitchV * dt;
     this.rollV += ((sm.rollW ** 2) * (rollT - this.roll) - 2 * sm.rollZeta * sm.rollW * this.rollV) * dt;
     this.roll = THREE.MathUtils.clamp(this.roll + this.rollV * dt, -0.6, 0.6);
+
+    // Bow impact: the water rising fast against a plunging bow. Drives the
+    // spray and the slam you hear and feel.
+    const bowY = this.position.y + Math.sin(this.pitch) * lh;
+    const imm = hBow - bowY;
+    const immRate = dt > 0 ? (imm - this.bowImm) / dt : 0;
+    this.bowImm = imm;
+    this.slamCooldown -= dt;
+    this.slam = 0;
+    if (imm > -0.5 && immRate > 2.1 && this.slamCooldown <= 0 && this.speed > 0.5) {
+      this.slam = Math.min(1, (immRate - 2.1) / 3 + 0.2) * Math.min(1, this.speed / 4);
+      this.slamCooldown = 0.9;
+    }
+    this.bowSpray = Math.min(1, Math.max(0, this.speed) / 6) * Math.min(1, Math.max(0, immRate) / 2.5);
 
     this._euler.set(this.pitch, this.heading, this.roll + this.heel, 'YXZ');
     this._q.setFromEuler(this._euler);
