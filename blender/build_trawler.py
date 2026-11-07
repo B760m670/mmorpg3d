@@ -73,8 +73,8 @@ ER_STAIR = (-3.0, -2.25, 6.2, 3.4)         # 'tween -> engine room: x0, x1, s_bo
 HOLD_STAIR = (10.5, 11.3, -0.3, 3.7)       # 'tween -> fishroom: s0, s1, x_bottom, x_top
 CHUTE = (1.7, 2.4, 9.55, 10.3)             # fish chute hatch from the washer: x0, x1, s0, s1
 SG_STAIR = (1.6, 2.4, -2.2, -0.6)          # 'tween -> steering flat: s0, s1, x_bottom, x_top
-WH_STAIR = (-3.1, -2.35, 14.0, 16.1)       # wheelhouse -> casing: x0, x1, s_bottom, s_top
-WH_HOLE = (-3.1, -2.35, 14.6, 16.1)        # the opening it needs in the wheelhouse floor
+WH_STAIR = (-3.1, -2.35, 13.8, 16.1)       # wheelhouse -> casing: x0, x1, s_bottom, s_top (55 deg)
+WH_HOLE = (-3.1, -2.35, 14.5, 16.1)        # the opening it needs in the wheelhouse floor
 HOPPER = (-0.1, 1.3, 7.7, 8.6)             # deck hatch / reception hopper: x0, x1, s0, s1
 UPTAKE = (0.95, 1.65)                      # exhaust trunk, x range (funnel at x 1.3)
 
@@ -339,7 +339,13 @@ def box_hole(name, x0, x1, s0, s1, zc, h, mat, hole=None):
         (x0, x1, s0, hole[2]), (x0, x1, hole[3], s1), (x0, hole[0], hole[2], hole[3]), (hole[1], x1, hole[2], hole[3])]
     for a0, a1, b0, b1 in pieces:
         if a1 - a0 > 1e-3 and b1 - b0 > 1e-3:
-            box(name, ((a0 + a1) / 2, Y((b0 + b1) / 2), zc), (a1 - a0, b1 - b0, h), mat)
+            if h > 0:
+                box(name, ((a0 + a1) / 2, Y((b0 + b1) / 2), zc), (a1 - a0, b1 - b0, h), mat)
+            else:       # a plane facing up (walking surfaces: no edge to stub a toe on)
+                bm = bmesh.new()
+                bm.faces.new([bm.verts.new((a0, Y(b0), zc)), bm.verts.new((a1, Y(b0), zc)),
+                              bm.verts.new((a1, Y(b1), zc)), bm.verts.new((a0, Y(b1), zc))])
+                new_obj(name, bm, mat)
 
 
 def cyl(name, p0, p1, r, mat, seg=10, cap=True, r2=None):
@@ -2037,7 +2043,7 @@ def build_collision():
     for side in (-1, 1):
         box("col_wh_side", (side * hw, Y((WH0 + 12.75) / 2), z0 + 1.0), (0.14, 12.75 - WH0, 2.2), C)
         box("col_wh_side", (side * hw, Y((13.5 + WH1 + 0.3) / 2), z0 + 1.0), (0.14, WH1 + 0.3 - 13.5, 2.2), C)
-    box_hole("col_wh_floor", -hw, hw, WH0, WH1, z0 - 0.08, 0.16, C, WH_HOLE)
+    box_hole("col_wh_floor", -hw, hw, WH0, WH1, z0, 0.0, C, WH_HOLE)
     box("col_uptake", (sum(UPTAKE) / 2, Y(12.925), z0 + 1.0), (UPTAKE[1] - UPTAKE[0] + 0.1, 0.8, 2.2), C)
     box("col_console", (0, Y(WH1 - 0.42), z0 + 0.5), (2 * hw, 0.85, 1.0), C)
     box("col_chart", (-hw + 0.75, Y(WH0 + 0.55), z0 + 0.5), (1.25, 0.95, 1.0), C)

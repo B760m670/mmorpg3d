@@ -54,6 +54,18 @@ export class Player {
     return hits.length ? hits[0] : null;
   }
 
+  // First thing in the way that is a wall, not a stair or ramp: a steep ship's
+  // stair (up to ~57 deg) meets the knee ray before the feet get there, but
+  // the floor test below decides whether it can be climbed.
+  _castWall(origin, dir, far, collider) {
+    this.ray.set(origin, dir);
+    this.ray.far = far;
+    for (const h of this.ray.intersectObject(collider, false)) {
+      if (!h.face || h.face.normal.y < 0.5) return h;
+    }
+    return null;
+  }
+
   // moveX/moveY in -1..1 (right / forward), run: boolean
   update(dt, moveX, moveY, run, collider) {
     if (!collider) return;
@@ -75,7 +87,7 @@ export class Player {
       let hit = null;
       for (const h of [0.35, 1.0, 1.6]) {
         _tmp.copy(this.pos).y += h;
-        const r = this._cast(_tmp, _dir, mv.length() + PLAYER.radius, collider);
+        const r = this._castWall(_tmp, _dir, mv.length() + PLAYER.radius, collider);
         if (r && (!hit || r.distance < hit.distance)) hit = r;
       }
       if (!hit || !hit.face) break;
@@ -98,7 +110,7 @@ export class Player {
     let blocked = false;
     if (floor) {
       const rise = floor.point.y - this.pos.y;
-      const steep = floor.face && floor.face.normal.y < 0.55;   // ship stairs are 42-57 deg
+      const steep = floor.face && floor.face.normal.y < 0.52;   // ship stairs are 42-57 deg
       if (rise > PLAYER.stepHeight || (steep && rise > 0.05)) blocked = true;
     }
     if (!blocked) {
