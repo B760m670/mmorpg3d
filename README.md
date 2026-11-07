@@ -153,6 +153,11 @@ The realism here is **not** the engine — it's the water shader + fog + post.
   (water rising fast against the bow) throws a sheet of spray to both sides.
   It carries with the ship, blows downwind and falls back; light spray runs
   off the bow wave at speed in a seaway.
+- **Waterfalls** (`src/world/Waterfalls.js`): six falls on the fjord walls,
+  placed where the terrain has high, steep stretches of wall, alternating
+  sides. Each is two crossed curtains hugging the cliff from lip to sea, with
+  streaks accelerating as they fall and mist where they land. They run
+  fuller in the rain. The two nearest roar from their foot (spatial sound).
 - **Night sky** (`src/world/NightSky.js`): a dark gradient with airglow at
   the horizon, twinkling stars in two layers, the Milky Way with its denser
   star field, and the moon with maria and a halo. The moon lays a path of
@@ -217,6 +222,7 @@ src/
     Weather.js         # weather states, blending, preset resolution
     CloudLayer.js      # cloud deck
     NightSky.js        # stars, Milky Way, moon
+    Waterfalls.js      # waterfalls on the fjord walls
     Rain.js            # rain streaks
     Spray.js           # bow spray particles
   systems/Sound.js     # procedural soundscape

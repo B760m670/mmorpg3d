@@ -5,6 +5,7 @@ import { PRESETS, BOAT } from './config.js';
 import { Weather, resolve } from './world/Weather.js';
 import { CloudLayer } from './world/CloudLayer.js';
 import { NightSky } from './world/NightSky.js';
+import { Waterfalls } from './world/Waterfalls.js';
 import { Rain } from './world/Rain.js';
 import { Spray } from './world/Spray.js';
 import { SoundScape } from './systems/Sound.js';
@@ -42,6 +43,10 @@ const ocean = new Ocean({ renderer, terrain, mobile: IS_TOUCH });
 scene.add(ocean.mesh);
 const weather = new Weather();
 ocean.setState(weather.state.sea, true);
+const falls = new Waterfalls(terrain);
+scene.add(falls.group);
+falls.resize(window.innerHeight);
+window.addEventListener('resize', () => falls.resize(window.innerHeight));
 const nightSky = new NightSky();
 scene.add(nightSky.mesh);
 const clouds = new CloudLayer();
@@ -55,6 +60,7 @@ window.addEventListener('resize', () => spray.resize(window.innerHeight));
 
 // Sound starts with the first tap or key press (browser autoplay rules).
 const sound = new SoundScape({ terrain, mobile: IS_TOUCH });
+sound.falls = falls.spots;
 const startSound = () => sound.start();
 for (const ev of ['pointerdown', 'keydown', 'touchend']) window.addEventListener(ev, startSound, { passive: true });
 const environment = new Environment(scene, { shadowMapSize: IS_TOUCH ? 1024 : 2048 });
@@ -143,6 +149,7 @@ function applyPreset(name) {
   nightSky.applyPreset(p, sky.sunDirection, weather.v.clouds);
   rain.applyPreset(p);
   spray.applyPreset(p);
+  falls.applyPreset(p);
   instruments.setNight(order[presetIndex] === 'night');
 }
 applyPreset(order[presetIndex]);
@@ -249,6 +256,7 @@ function tick() {
   bridge.setSea(ocean, weather);
   clouds.update(time, camera, flash);
   nightSky.update(time, camera);
+  falls.update(time, camera, weather.v.rain);
   rain.update(dt, camera, weather.v.rain, weather.v.wind, boat.model);
   spray.update(dt, boat, weather.v.wind);
   if (boat.slam > 0) sound.slam(boat.slam);
@@ -256,7 +264,7 @@ function tick() {
     camera, ship: boat.model, rpm: boat.rpm, speed: boat.speed, heave: boat.heaveV, rollRate: boat.rollV,
     sea: ocean.uniforms.uSeaRough.value, exposure: Math.min(1, Math.max(0, (boat.position.z + 1600) / 1400)),
     wind: weather.v.wind, rain: weather.v.rain, dark: weather.v.dark, night: order[presetIndex] === 'night',
-    inside: onBridge, aboard: mode !== '3p',
+    inside: onBridge, aboard: mode !== '3p', fallFlow: falls.flow,
   });
   ocean.uniforms.uRain.value = weather.v.rain;
   engine.render();
@@ -270,4 +278,4 @@ function tick() {
 }
 tick();
 
-window.__scene = { engine, sky, ocean, boat, player, instruments, weather, clouds, rain, spray, sound, environment, terrain, follow, orbit, heightAt, applyPreset, setMode, input };
+window.__scene = { engine, sky, ocean, boat, player, instruments, weather, clouds, rain, spray, sound, falls, environment, terrain, follow, orbit, heightAt, applyPreset, setMode, input };

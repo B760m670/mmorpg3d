@@ -134,6 +134,15 @@ export class SoundScape {
       this.surf.push({ sp, b, phase: Math.random() * 6.28, period: 6 + Math.random() * 5 });
     }
 
+    // waterfalls: the two nearest roar from where they hit the water
+    this.fallVoices = [];
+    for (let i = 0; i < 2; i++) {
+      const sp = this.spatial({ ref: 45, rolloff: 1, reverb: 0.5 });
+      const roar = bed('lowpass', 2400, 0.5, sp.input);
+      const rumble = bed('bandpass', 260, 0.8, sp.input);
+      this.fallVoices.push({ sp, roar, rumble });
+    }
+
     // gulls: a few voices that move around
     this.gulls = [];
     for (let i = 0; i < 3; i++) this.gulls.push({ sp: this.spatial({ ref: 12, reverb: 0.3 }), busy: 0 });
@@ -332,6 +341,19 @@ export class SoundScape {
       const surge = 0.3 + 0.7 * Math.pow(Math.max(0, Math.sin(v.phase)), 3);
       set(v.b.g.gain, (0.25 + 0.9 * s.sea) * surge, 0.3);
     });
+
+    // --- waterfalls
+    if (this.falls && this.falls.length) {
+      const near2 = this.falls.map((f) => ({ f, d: Math.hypot(f.base.x - L.x, f.base.z - L.z) }))
+        .sort((a, b) => a.d - b.d);
+      this.fallVoices.forEach((v, i) => {
+        const n2 = near2[i];
+        if (!n2) { set(v.roar.g.gain, 0); set(v.rumble.g.gain, 0); return; }
+        this.place(v.sp, n2.f.base.x, 3, n2.f.base.z, L);
+        set(v.roar.g.gain, 0.5 * (s.fallFlow ?? 0.5), 0.5);
+        set(v.rumble.g.gain, 0.6 * (s.fallFlow ?? 0.5), 0.5);
+      });
+    }
 
     // --- gulls: fair weather, daylight, more near the shore
     this.gullTimer -= dt;
