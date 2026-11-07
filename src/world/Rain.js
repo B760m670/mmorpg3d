@@ -26,7 +26,9 @@ const VERT = /* glsl */ `
     vec3 p = seed.xyz * uBox + uOffset;
     p = mod(p - uCam, uBox) - uBox * 0.5 + uCam;
     vec3 ls = (uShipInv * vec4(p, 1.0)).xyz;     // wheelhouse, model space
-    if (abs(ls.x) < 3.5 && ls.y > 5.0 && ls.y < 8.3 && ls.z > -6.5 && ls.z < 0.2) {
+    bool wheelhouse = abs(ls.x) < 3.5 && ls.y > 5.0 && ls.y < 8.3 && ls.z > -6.5 && ls.z < 0.2;
+    bool belowDecks = abs(ls.x) < 4.7 && abs(ls.z) < 12.2 && ls.y < (ls.z < 0.0 ? 5.2 : 4.25);
+    if (wheelhouse || belowDecks) {
       gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return;
     }
     vec3 dir = normalize(uVel);

@@ -219,6 +219,31 @@ python3.13 -m venv .blenv && .blenv/bin/pip install bpy==5.2.3 pillow
 cp out/trawler.glb src/assets/trawler.glb
 ```
 
+### Below decks
+
+The published drawing is an outboard profile only, so the arrangement below
+decks follows the usual one for Scottish stern trawlers of this size. It is
+fitted to the hull lines and to what shows outside: the side discharge door
+and the portholes put the main deck at 2.15 m. Everything is walkable.
+
+- **'Tween deck (main deck)**: reached by a companion stair through a hatch on
+  the working deck. Aft is the net and rope store, then the fish-processing
+  deck (hopper, gutting table, conveyor, washer, boxes), a changing room with
+  oilskins and boots, the galley (stove, sink, fridge) and mess, and four
+  two-berth cabins off a centreline corridor. There are portholes, the
+  discharge door and deckhead lights.
+- **Engine room** (stair down from the processing deck): the main engine
+  (1500 hp, six in line, with turbo and exhaust), gearbox and shaft, two
+  generator sets, the switchboard, a day tank, a workbench and pipe runs.
+- **Fish hold** (about 150 m³; the data sheet says 160): insulated, with
+  aluminium pound boards, boxes and ice.
+
+Below decks the sea is masked out of the hull, the rain does not fall, the
+outside light is shut out, the deckhead lights and your own lamp light the
+spaces, and the engine is loud in the engine room.
+
+![below decks](docs/below_decks.jpg)
+
 ## Project layout
 
 ```

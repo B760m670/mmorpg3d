@@ -91,6 +91,8 @@ export class Boat {
           this.collider.updateMatrixWorld(true);
           return;
         }
+        const below = o.name === 'interior' || (o.parent && o.parent.name === 'interior');
+        if (below) this.interior = o.name === 'interior' ? o : o.parent;
         o.castShadow = true;
         o.receiveShadow = true;
         const mats = Array.isArray(o.material) ? o.material : [o.material];
@@ -107,7 +109,8 @@ export class Boat {
           } else if (m.name.startsWith('light_')) {
             m.toneMapped = false;
           } else {
-            m.envMapIntensity = 0.55;
+            // below decks there is no sky to reflect
+            m.envMapIntensity = below ? 0.08 : 0.55;
           }
         }
       });

@@ -47,6 +47,10 @@ const falls = new Waterfalls(terrain);
 scene.add(falls.group);
 falls.resize(window.innerHeight);
 window.addEventListener('resize', () => falls.resize(window.innerHeight));
+// The player's own light below decks (fluorescent tubes are emissive only).
+const lamp = new THREE.PointLight(0xfff1dc, 1.3, 9, 1.2);
+lamp.visible = false;
+scene.add(lamp);
 const nightSky = new NightSky();
 scene.add(nightSky.mesh);
 const clouds = new CloudLayer();
@@ -144,6 +148,8 @@ envScene.add(envSky.mesh);
 let envTarget = null;
 
 let sceneExposure = 0.55;
+let sunBase = 2.4, ambientBase = 1;
+let insideK = 0;
 function applyPreset(name) {
   if (name && order.includes(name)) presetIndex = order.indexOf(name);
   const p = resolve(PRESETS[order[presetIndex]], weather.v);
@@ -152,6 +158,9 @@ function applyPreset(name) {
   sky.applyPreset(p);
   ocean.applyPreset(p);
   environment.applyPreset(p, sky.sunDirection);
+  sunBase = environment.sun.intensity;
+  ambientBase = environment.ambient.intensity;
+  insideK = -1;      // re-apply the below-decks dimming
   sky.mesh.visible = p.showSkyDome !== false;
   scene.background = new THREE.Color().setRGB(...p.fog.color);
   envSky.applyPreset(p);
@@ -279,6 +288,24 @@ function tick() {
   const pp = player.pos;
   const onBridge = mode === 'helm' ||
     (mode === 'walk' && pp.y > 5.1 && pp.z > -6.3 && pp.z < 0.2 && Math.abs(pp.x) < 3.4);
+  // Below decks: 'tween deck (2.15), engine room and fish hold. Model z is
+  // aft-positive: station s = 11.975 - z.
+  const belowDecks = mode === 'walk' && pp.y < 3.9;
+  const engineRoom = belowDecks && pp.y < 1.0 && pp.z > 1.9 && pp.z < 8.0;
+  ocean.uniforms.uHullMask.value = belowDecks ? 1 : 0;
+  if (boat.interior) boat.interior.visible = mode !== '3p';
+  if (belowDecks) {
+    lamp.visible = true;
+    lamp.position.copy(camera.position);
+  } else lamp.visible = false;
+  // Below decks only the deckhead lights and your lamp light the spaces: the
+  // sun and the open sky are shut out (they would leak through the plating).
+  const inK = belowDecks ? 1 : 0;
+  if (inK !== insideK) {
+    insideK = inK;
+    environment.sun.intensity = sunBase * (inK ? 0.03 : 1);
+    environment.ambient.intensity = ambientBase * (inK ? 0.28 : 1);
+  }
   instruments.update(dt, boat, onBridge);
   ocean.setBoat(boat);
   ocean.update(time, dt, camera, sky.sunDirection);
@@ -293,7 +320,7 @@ function tick() {
     camera, ship: boat.model, rpm: boat.rpm, speed: boat.speed, heave: boat.heaveV, rollRate: boat.rollV,
     sea: ocean.uniforms.uSeaRough.value, exposure: Math.min(1, Math.max(0, (boat.position.z + 1600) / 1400)),
     wind: weather.v.wind, rain: weather.v.rain, dark: weather.v.dark, night: order[presetIndex] === 'night',
-    inside: onBridge, aboard: mode !== '3p', fallFlow: falls.flow,
+    inside: onBridge || belowDecks, engineRoom, aboard: mode !== '3p', fallFlow: falls.flow,
   });
   ocean.uniforms.uRain.value = weather.v.rain;
   engine.render();

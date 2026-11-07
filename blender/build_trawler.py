@@ -48,6 +48,18 @@ WD_Z = 4.3         # aft working deck (drawing: 1.1 m below bulwark top)
 SH0, SH1 = 10.9, 11.95  # sloped aft end of the shelter deck (drawing)
 STAIR_X = 3.85          # stair up to the starboard side deck
 WH0, WH1, WH_LEAN = 12.2, 18.3, 0.5  # wheelhouse (drawing)
+# Below decks. The drawing is an outboard profile only, so the arrangement is
+# the usual one for Scottish stern trawlers of this size, fitted to the hull
+# and to what shows outside: the main ('tween) deck sits just under the side
+# discharge door (sill 2.3) with the portholes at 1.3 m above it.
+TW_Z = 2.15             # 'tween deck floor (main deck)
+TW_CEIL = 4.1           # under the working deck; 5.0 under the shelter deck
+TW_S0, TW_S1 = 0.7, 20.3
+ER_Z, ER_S0, ER_S1 = -1.4, 4.0, 10.0      # engine room floor plates
+HOLD_Z, HOLD_S0, HOLD_S1 = -1.5, 10.0, 15.6  # fish hold (about 150 m3)
+COMP = (2.7, 3.5, 1.2, 3.55)              # working-deck companion: x0, x1, s_bottom, s_top
+ER_STAIR = (-3.0, -2.2, 6.0, 9.9)         # 'tween -> engine room: x0, x1, s_bottom, s_top
+HOLD_STAIR = (10.15, 10.95, -0.3, 3.7)    # 'tween -> hold: s0, s1, x_bottom, x_top
 
 
 def clamp(x, a=0.0, b=1.0):
@@ -876,7 +888,31 @@ def build_decks():
         bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-4)
         return new_obj(name, bm, mat)
 
-    surface("working_deck", 0.0, SH0, M["deck"])
+    # working deck: cambered plating with the companion opening cut out
+    bm = bmesh.new()
+    cx0, cx1, cs0, cs1 = COMP
+    rows_s = sorted(set([s for s in sts if s <= SH0 + 1e-6] + [cs0, cs1]))
+
+    def zc(x, y):
+        return WD_Z + 0.12 * (1 - min(1.0, abs(x) / max(y, 1e-3)))
+
+    for i in range(len(rows_s) - 1):
+        sa, sb = rows_s[i], rows_s[i + 1]
+        ya = max(0.0, half_breadth(sa, WD_Z) - t)
+        yb = max(0.0, half_breadth(sb, WD_Z) - t)
+        hole = sa >= cs0 - 1e-6 and sb <= cs1 + 1e-6
+        xa = [-ya, 0.0] + ([cx0, cx1] if hole else []) + [ya]
+        xb = [-yb, 0.0] + ([cx0, cx1] if hole else []) + [yb]
+        for k in range(len(xa) - 1):
+            if hole and abs(xa[k] - cx0) < 1e-6:
+                continue                                  # the opening
+            v = [bm.verts.new((xa[k], Y(sa), zc(xa[k], ya))), bm.verts.new((xa[k + 1], Y(sa), zc(xa[k + 1], ya))),
+                 bm.verts.new((xb[k + 1], Y(sb), zc(xb[k + 1], yb))), bm.verts.new((xb[k], Y(sb), zc(xb[k], yb)))]
+            f = bm.faces.new(v)
+            if f.normal.z < 0:
+                f.normal_flip()
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-4)
+    new_obj("working_deck", bm, M["deck"])
     surface("shelter_end", SH0, SH1, M["white"])
     surface("shelter_roof", SH1, L, M["deck"])
     yi = half_breadth(0.0, WD_Z) - t
@@ -1230,6 +1266,433 @@ def build_details():
 
 
 # ------------------------------------------------------------------ collision (walkable decks + walls)
+
+# ------------------------------------------------------------------ below decks
+INTERIOR = set()
+
+
+def plain(name, color, rough=0.6, metal=0.0, emit=None, strength=1.0):
+    """Untextured material for the interior (not baked into the atlas)."""
+    m = bpy.data.materials.new(name)
+    m.use_nodes = True
+    p = m.node_tree.nodes["Principled BSDF"]
+    p.inputs["Base Color"].default_value = (*color, 1)
+    p.inputs["Roughness"].default_value = rough
+    p.inputs["Metallic"].default_value = metal
+    if emit:
+        p.inputs["Emission Color"].default_value = (*emit, 1)
+        p.inputs["Emission Strength"].default_value = strength
+    INTERIOR.add(m)
+    return m
+
+
+MI = {
+    "lining": plain("int_lining", (0.74, 0.76, 0.73), 0.6),
+    "er_wall": plain("int_er_wall", (0.5, 0.58, 0.54), 0.55),
+    "hold": plain("int_hold", (0.86, 0.88, 0.88), 0.35),
+    "ceiling": plain("int_ceiling", (0.82, 0.82, 0.8), 0.7),
+    "floor": plain("int_floor_steel", (0.2, 0.25, 0.23), 0.8),
+    "plate": plain("int_floor_plate", (0.27, 0.28, 0.29), 0.45, 0.6),
+    "lino": plain("int_lino", (0.3, 0.2, 0.13), 0.5),
+    "wood": plain("int_wood", (0.52, 0.35, 0.2), 0.5),
+    "ss": plain("int_stainless", (0.7, 0.72, 0.73), 0.3, 0.9),
+    "engine": plain("int_engine", (0.16, 0.3, 0.24), 0.45, 0.2),
+    "cast": plain("int_cast", (0.5, 0.5, 0.52), 0.45, 0.6),
+    "black": plain("int_black", (0.035, 0.035, 0.04), 0.6),
+    "fabric": plain("int_fabric", (0.1, 0.17, 0.38), 0.9),
+    "oilskin": plain("int_oilskin", (0.95, 0.62, 0.04), 0.5),
+    "box": plain("int_fishbox", (0.04, 0.16, 0.48), 0.5),
+    "box2": plain("int_fishbox_white", (0.85, 0.86, 0.84), 0.5),
+    "ice": plain("int_ice", (0.86, 0.93, 0.98), 0.15),
+    "white": plain("int_appliance", (0.9, 0.9, 0.88), 0.35),
+    "red": plain("int_red", (0.65, 0.05, 0.04), 0.45),
+    "yellow": plain("int_safety_yellow", (0.88, 0.66, 0.04), 0.5),
+    "blue_pipe": plain("int_pipe_blue", (0.08, 0.25, 0.55), 0.5),
+    "net": plain("int_net", (0.06, 0.22, 0.11), 0.95),
+    "float": plain("int_float", (0.92, 0.36, 0.03), 0.5),
+    "rope": plain("int_rope", (0.5, 0.43, 0.3), 0.95),
+    "tube": plain("light_int_tube", (0.9, 0.9, 0.85), 0.5, emit=(1.0, 0.97, 0.9), strength=4.0),
+    "porthole": plain("light_int_porthole", (0.6, 0.7, 0.8), 0.1, emit=(0.72, 0.82, 0.95), strength=1.2),
+    "led_g": plain("light_int_led_green", (0.1, 0.5, 0.1), 0.4, emit=(0.2, 1.0, 0.3), strength=3.0),
+    "led_r": plain("light_int_led_red", (0.5, 0.1, 0.1), 0.4, emit=(1.0, 0.15, 0.1), strength=3.0),
+    "tv": plain("light_int_tv", (0.05, 0.08, 0.12), 0.2, emit=(0.15, 0.3, 0.5), strength=1.5),
+}
+CM = None   # collision material, set in build_interior
+
+
+def hbi(sv, z, inset=0.12):
+    return max(0.0, half_breadth(sv, z) - inset)
+
+
+def cbox(c, size):
+    box("col_int", c, size, CM)
+
+
+def fbox(name, c, size, mat, col=True, bevel=0.0):
+    box(name, c, size, mat, bevel=bevel)
+    if col:
+        cbox(c, size)
+
+
+def lining(name, s0, s1, zf, zc, mat, inset=0.12, step=0.4, col=True):
+    """The ship's side seen from inside, both sides, facing the centreline."""
+    n = max(2, int(math.ceil((s1 - s0) / step)) + 1)
+    ss = np.linspace(s0, s1, n)
+    zs = np.linspace(zf, zc, 5)
+    for side in (-1, 1):
+        bm = bmesh.new()
+        grid = [[bm.verts.new((side * hbi(sv, zv, inset), Y(sv), zv)) for zv in zs] for sv in ss]
+        for i in range(n - 1):
+            for k in range(len(zs) - 1):
+                f = bm.faces.new([grid[i][k], grid[i + 1][k], grid[i + 1][k + 1], grid[i][k + 1]])
+                f.normal_update()
+                if f.normal.x * side > 0:
+                    f.normal_flip()
+        new_obj(name, bm, mat)
+        if col:   # walls for walking: at the height of the player's rays
+            pts = [(sv, side * (hbi(sv, zf + 1.0, inset) + 0.02)) for sv in ss]
+            for (sa, xa), (sb, xb) in zip(pts[:-1], pts[1:]):
+                c = Vector(((xa + xb) / 2, Y((sa + sb) / 2), zf + 1.2))
+                d = Vector((xb - xa, sb - sa, 0))
+                panel("col_lining", c, d, (0, 0, 1), d.length + 0.06, 2.4, CM, 0.2)
+
+
+def floor_grid(name, s0, s1, z, mat, holes=(), inset=0.12, up=True, step=0.5, zw=None):
+    """Deck plating between the sides at height z, with rectangular holes
+    (x0, x1, sA, sB). zw: height at which the hull width is taken."""
+    zw = z if zw is None else zw
+    cuts = set(np.linspace(s0, s1, max(2, int(math.ceil((s1 - s0) / step)) + 1)).tolist())
+    for h in holes:
+        for sv in (h[2], h[3]):
+            if s0 < sv < s1:
+                cuts.add(sv)
+    ss = sorted(cuts)
+    bm = bmesh.new()
+    for i in range(len(ss) - 1):
+        sa, sb = ss[i], ss[i + 1]
+        ya, yb = hbi(sa, zw, inset), hbi(sb, zw, inset)
+        if ya < 0.05 and yb < 0.05:
+            continue
+        act = [h for h in holes if h[2] - 1e-6 <= sa and sb <= h[3] + 1e-6]
+        lim = min(ya, yb)
+        inner = sorted(set(x for h in act for x in (h[0], h[1]) if -lim < x < lim))
+        xa = [-ya] + inner + [ya]
+        xb = [-yb] + inner + [yb]
+        for k in range(len(xa) - 1):
+            xm = (xa[k] + xa[k + 1]) / 2
+            if any(h[0] - 1e-6 <= xm <= h[1] + 1e-6 for h in act):
+                continue
+            v = [bm.verts.new((xa[k], Y(sa), z)), bm.verts.new((xa[k + 1], Y(sa), z)),
+                 bm.verts.new((xb[k + 1], Y(sb), z)), bm.verts.new((xb[k], Y(sb), z))]
+            f = bm.faces.new(v)
+            f.normal_update()
+            if (f.normal.z < 0) == up:
+                f.normal_flip()
+    return new_obj(name, bm, mat)
+
+
+def bulkhead(name, sv, zf, zc, mat, door=None, inset=0.12, t=0.06, col=True):
+    """Transverse bulkhead filling the hull section, with an optional door
+    opening (x0, x1, height)."""
+    zs = np.linspace(zf, zc, 6)
+    left = [(-hbi(sv, z, inset), z) for z in zs]
+    right = [(hbi(sv, z, inset), z) for z in zs]
+    polys = []
+    if door is None:
+        polys.append(left + list(reversed(right)))
+    else:
+        x0, x1, h = door
+        polys.append(left + [(x0, zc), (x0, zf)])
+        polys.append([(x1, zf), (x1, zc)] + list(reversed(right)))
+        polys.append([(x0, zf + h), (x1, zf + h), (x1, zc), (x0, zc)])
+        # door frame
+        for xx in (x0, x1):
+            box(name + "_frame", (xx, Y(sv), zf + h / 2), (0.06, t + 0.06, h), MI["black"])
+        box(name + "_frame", ((x0 + x1) / 2, Y(sv), zf + h), (x1 - x0 + 0.06, t + 0.06, 0.06), MI["black"])
+    for poly in polys:
+        plate_y(name, poly, sv, t, mat)
+        if col:
+            plate_y("col_bulkhead", poly, sv, 0.24, CM)
+
+
+def stair(name, top, bot, half_w, col=True, rail=True):
+    """Ship's stair (about 42 deg), treads + stringers + handrails, and its
+    walking ramp. Axis-aligned along x or along the ship."""
+    top, bot = Vector(top), Vector(bot)
+    d = top - bot
+    run = Vector((d.x, d.y, 0.0))
+    rd = run.normalized()
+    side = Vector((-rd.y, rd.x, 0.0))
+    n = max(3, int(math.ceil(abs(d.z) / 0.21)))
+    for k in range(n):
+        c = bot + run * ((k + 0.5) / n) + Vector((0, 0, d.z * (k + 1) / n - 0.025))
+        sx = abs(rd.x) * run.length / n + abs(side.x) * 2 * half_w
+        sy = abs(rd.y) * run.length / n + abs(side.y) * 2 * half_w
+        box(name + "_tread", c, (sx + 0.02, sy + 0.02, 0.05), MI["plate"])
+    for sg in (-1, 1):
+        o = side * (half_w + 0.03) * sg
+        cyl(name + "_stringer", bot + o + Vector((0, 0, -0.08)), top + o + Vector((0, 0, -0.08)), 0.05, MI["yellow"], seg=6)
+        if rail:
+            cyl(name + "_rail", bot + o + Vector((0, 0, 0.9)), top + o + Vector((0, 0, 0.9)), 0.025, MI["yellow"], seg=6)
+            for f in (0.08, 0.5, 0.92):
+                p = bot.lerp(top, f) + o
+                cyl(name + "_post", p, p + Vector((0, 0, 0.9)), 0.02, MI["yellow"], seg=5)
+    if col:
+        bm = bmesh.new()
+        hw = side * (half_w + 0.05)
+        vs = [bm.verts.new(p) for p in (bot - hw, bot + hw, top + hw, top - hw)]
+        f = bm.faces.new(vs)
+        f.normal_update()
+        if f.normal.z < 0:
+            f.normal_flip()
+        new_obj("col_stair", bm, CM)
+        # side walls so you cannot step off the stair halfway
+        for sg in (-1, 1):
+            o = side * (half_w + 0.12) * sg
+            mid = (top + bot) / 2 + o + Vector((0, 0, 0.6))
+            panel("col_stair_side", mid, d.normalized(), Vector((0, 0, 1)), d.length + 0.2, 1.8, CM, 0.12)
+
+
+def hole_guard(name, x0, x1, s0, s1, z, open_side, mat_rail):
+    """Rails (and walls for walking) round a deck opening, open on one side
+    ('s0', 's1', 'x0', 'x1') where the stair starts."""
+    edges = {
+        "s0": ((x0, s0), (x1, s0)), "s1": ((x0, s1), (x1, s1)),
+        "x0": ((x0, s0), (x0, s1)), "x1": ((x1, s0), (x1, s1)),
+    }
+    for k, ((xa, sa), (xb, sb)) in edges.items():
+        # a rim plate down to the deck below's ceiling
+        c = Vector(((xa + xb) / 2, Y((sa + sb) / 2), z - 0.08))
+        dvec = Vector((xb - xa, sb - sa, 0))
+        panel(name + "_rim", c, dvec, (0, 0, 1), dvec.length, 0.18, MI["black"], 0.04)
+        if k == open_side:
+            continue
+        railing(name + "_rail", [(xa, Y(sa), z), (xb, Y(sb), z)], 1.0, MI["yellow"], MI["yellow"], gap=0.9)
+        panel("col_guard", Vector(((xa + xb) / 2, Y((sa + sb) / 2), z + 0.6)), dvec, (0, 0, 1),
+              dvec.length + 0.1, 1.2, CM, 0.12)
+
+
+def tube_light(x, sv, z, along_s=True):
+    box("int_light", (x, Y(sv), z), (0.16, 1.2, 0.05) if along_s else (1.2, 0.16, 0.05), MI["tube"])
+
+
+def porthole_in(sv, side):
+    z = 3.42
+    x = side * (hbi(sv, z) - 0.015)
+    cyl("int_porthole_rim", (x - side * 0.01, Y(sv), z), (x - side * 0.05, Y(sv), z), 0.21, MI["black"], seg=16)
+    cyl("int_porthole", (x - side * 0.05, Y(sv), z), (x - side * 0.06, Y(sv), z), 0.15, MI["porthole"], seg=16)
+
+
+def build_interior():
+    global CM
+    CM = M["collision"]
+    zf = TW_Z
+    # ---------------------------------------------------------------- 'tween deck
+    er_hole = (ER_STAIR[0], ER_STAIR[1], ER_STAIR[2], ER_STAIR[3])
+    hs0, hs1, hxb, hxt = HOLD_STAIR
+    hold_hole = (hxb, hxt, hs0, hs1)
+    floor_grid("int_tw_floor", TW_S0, 11.4, zf, MI["floor"], holes=(er_hole, hold_hole))
+    floor_grid("int_tw_floor", 11.4, TW_S1, zf, MI["lino"])
+    floor_grid("col_tw_floor", TW_S0, TW_S1, zf, CM, holes=(er_hole, hold_hole), inset=0.0)
+    cx0, cx1, cs0, cs1 = COMP
+    floor_grid("int_tw_ceiling", TW_S0, SH1, TW_CEIL, MI["ceiling"], holes=((cx0, cx1, cs0, cs1),), up=False)
+    floor_grid("int_tw_ceiling", SH1, TW_S1, 5.0, MI["ceiling"], up=False)
+    bulkhead("int_step", SH1, TW_CEIL, 5.0, MI["ceiling"], col=False)
+    lining("int_tw_side", TW_S0, SH1, zf, TW_CEIL, MI["lining"])
+    lining("int_tw_side", SH1, 12.4, zf, 5.0, MI["lining"])
+    lining("int_tw_side", 12.4, TW_S1, zf, 5.0, MI["wood"])
+    bulkhead("int_tw_aft", TW_S0, zf, TW_CEIL, MI["lining"])
+    bulkhead("int_tw_bh1", 11.4, zf, TW_CEIL, MI["lining"], door=(-1.4, -0.55, 1.9))
+    bulkhead("int_tw_bh2", 12.4, zf, 5.0, MI["wood"], door=(-0.45, 0.45, 1.95))
+    bulkhead("int_tw_bh3", 16.6, zf, 5.0, MI["wood"], door=(-0.5, 0.5, 1.95))
+    bulkhead("int_tw_fwd", TW_S1, zf, 5.0, MI["wood"])
+    for sp in (8.6, 10.4, 11.9, 14.5):
+        for side in (-1, 1):
+            porthole_in(sp, side)
+    for side in (-1, 1):   # discharge door (drawing), from inside
+        x = side * (hbi(8.4, 3.2) - 0.03)
+        panel("int_discharge_door", (x, Y(8.4), 3.17), (0, 1, 0), (0, 0, 1), 0.9, 1.75, MI["cast"], 0.05)
+        cyl("int_door_dog", (x - side * 0.05, Y(8.0), 3.2), (x - side * 0.12, Y(8.0), 3.2), 0.03, MI["red"], seg=6)
+    # working-deck companion: stair down from the working deck to the 'tween
+    stair("int_comp_stair", ((cx0 + cx1) / 2, Y(cs1), WD_Z), ((cx0 + cx1) / 2, Y(cs0), zf), (cx1 - cx0) / 2 - 0.05)
+    # net and rope store aft
+    sphere("int_net_pile", (-1.6, Y(2.2), zf + 0.25), 1.1, MI["net"], seg=14, squash=0.42)
+    for i, (x, sv) in enumerate(((-2.8, 3.4), (-0.4, 3.6))):
+        torus("int_rope_coil", (x, Y(sv), zf + 0.1), (0, 0, 1), 0.45, 0.1, MI["rope"])
+        torus("int_rope_coil", (x, Y(sv), zf + 0.28), (0, 0, 1), 0.42, 0.1, MI["rope"])
+        cbox((x, Y(sv), zf + 0.3), (1.1, 1.1, 0.6))
+    for k in range(5):
+        sphere("int_float", (0.6 + (k % 3) * 0.42, Y(1.3 + (k // 3) * 0.42), zf + 0.2), 0.2, MI["float"], seg=10)
+    cbox((-1.6, Y(2.2), zf + 0.3), (2.0, 2.0, 0.6))
+    # fish processing
+    fbox("int_hopper", (-0.8, Y(6.4), zf + 0.55), (1.6, 1.6, 1.1), MI["ss"])
+    box("int_hopper_fish", (-0.8, Y(6.4), zf + 1.08), (1.45, 1.45, 0.04), MI["cast"])
+    fbox("int_gut_table", (2.8, Y(6.6), zf + 0.88), (0.8, 4.0, 0.06), MI["ss"], col=False)
+    cbox((2.8, Y(6.6), zf + 0.45), (0.8, 4.0, 0.9))
+    for sv in (4.75, 6.6, 8.45):
+        for xx in (2.45, 3.15):
+            cyl("int_leg", (xx, Y(sv), zf), (xx, Y(sv), zf + 0.86), 0.025, MI["ss"], seg=6)
+    box("int_conveyor", (1.45, Y(6.9), zf + 0.8), (0.55, 4.6, 0.12), MI["ss"])
+    box("int_belt", (1.45, Y(6.9), zf + 0.87), (0.45, 4.6, 0.02), MI["black"])
+    cbox((1.45, Y(6.9), zf + 0.45), (0.55, 4.6, 0.9))
+    for sv in (4.8, 6.9, 9.0):
+        for xx in (1.25, 1.65):
+            cyl("int_leg", (xx, Y(sv), zf), (xx, Y(sv), zf + 0.74), 0.025, MI["ss"], seg=6)
+    cyl("int_washer", (2.7, Y(8.9), zf + 0.85), (2.7, Y(10.0), zf + 0.85), 0.5, MI["ss"], seg=16)
+    cbox((2.7, Y(9.45), zf + 0.6), (1.05, 1.15, 1.2))
+    for k in range(4):       # fish boxes stacked
+        for j in range(2):
+            fbox("int_fishbox", (-1.45 + j * 0.0, Y(4.55 + j * 0.55), zf + 0.13 + k * 0.26), (0.8, 0.5, 0.25),
+                 MI["box"], col=(k == 0))
+    cbox((-1.45, Y(4.82), zf + 0.6), (0.85, 1.1, 1.2))
+    cyl("int_hose_reel", (-hbi(10.6, 3.0) + 0.05, Y(10.6), zf + 1.0), (-hbi(10.6, 3.0) + 0.3, Y(10.6), zf + 1.0),
+        0.3, MI["red"], seg=12)
+    for sv in (2.0, 4.4, 6.8, 9.2):
+        for xx in (-1.6, 1.6):
+            tube_light(xx, sv, TW_CEIL - 0.03)
+    hole_guard("int_er_hole", er_hole[0], er_hole[1], er_hole[2], er_hole[3], zf, "s1", None)
+    hole_guard("int_hold_hole", hxb, hxt, hs0, hs1, zf, "x1", None)
+    # changing room: lockers, oilskins, boots
+    for k in range(3):
+        fbox("int_locker", (-hbi(11.9, 3.0) + 0.3, Y(11.55 + k * 0.32), zf + 0.95), (0.5, 0.3, 1.9), MI["cast"],
+             col=(k == 1))
+    cbox((-hbi(11.9, 3.0) + 0.3, Y(11.87), zf + 0.95), (0.5, 0.96, 1.9))
+    fbox("int_bench", (0.9, Y(11.9), zf + 0.22), (1.2, 0.4, 0.44), MI["wood"])
+    for k in range(4):
+        xx = hbi(11.9, 3.4) - 0.12
+        box("int_oilskin", (xx, Y(11.55 + k * 0.27), zf + 1.25), (0.12, 0.22, 1.0), MI["oilskin"])
+        box("int_boot", (xx - 0.15, Y(11.55 + k * 0.27), zf + 0.18), (0.28, 0.12, 0.36), MI["black"])
+    tube_light(0.0, 11.9, TW_CEIL - 0.03, along_s=False)
+    # galley (port) and mess (starboard)
+    zc = 5.0
+    gx = -hbi(14.5, 2.6)
+    fbox("int_counter", (gx + 0.33, Y(14.0), zf + 0.45), (0.66, 3.0, 0.9), MI["wood"])
+    box("int_worktop", (gx + 0.33, Y(14.0), zf + 0.92), (0.7, 3.04, 0.04), MI["ss"])
+    box("int_stove", (gx + 0.33, Y(13.1), zf + 0.96), (0.6, 0.62, 0.05), MI["black"])
+    for dx, ds in ((-0.13, -0.14), (0.13, -0.14), (-0.13, 0.14), (0.13, 0.14)):
+        torus("int_burner", (gx + 0.33 + dx, Y(13.1 + ds), zf + 0.995), (0, 0, 1), 0.07, 0.012, MI["cast"])
+    box("int_sink", (gx + 0.33, Y(14.4), zf + 0.9), (0.45, 0.5, 0.06), MI["cast"])
+    cyl("int_tap", (gx + 0.12, Y(14.4), zf + 0.94), (gx + 0.12, Y(14.4), zf + 1.2), 0.015, MI["ss"], seg=6)
+    fbox("int_fridge", (gx + 0.38, Y(15.95), zf + 0.9), (0.72, 0.7, 1.8), MI["white"])
+    for k in range(3):
+        box("int_cupboard", (gx + 0.2, Y(12.9 + k * 0.85), zf + 1.75), (0.38, 0.8, 0.6), MI["wood"])
+    mx = hbi(14.2, 2.6)
+    fbox("int_mess_table", (mx - 1.25, Y(14.2), zf + 0.74), (1.1, 2.3, 0.05), MI["wood"], col=False)
+    cyl("int_table_leg", (mx - 1.25, Y(14.2), zf), (mx - 1.25, Y(14.2), zf + 0.72), 0.06, MI["ss"], seg=8)
+    cbox((mx - 1.25, Y(14.2), zf + 0.37), (1.1, 2.3, 0.74))
+    fbox("int_bench_seat", (mx - 0.33, Y(14.2), zf + 0.22), (0.55, 2.8, 0.44), MI["fabric"])
+    box("int_bench_back", (mx - 0.08, Y(14.2), zf + 0.75), (0.1, 2.8, 0.6), MI["fabric"])
+    for sv in (12.85, 15.55):
+        fbox("int_bench_seat", (mx - 1.0, Y(sv), zf + 0.22), (1.6, 0.5, 0.44), MI["fabric"])
+    box("int_tv", (mx - 0.9, Y(12.45), zf + 1.85), (0.75, 0.05, 0.45), MI["black"])
+    box("int_tv_screen", (mx - 0.9, Y(12.48), zf + 1.85), (0.68, 0.01, 0.38), MI["tv"])
+    for sv in (13.3, 15.3):
+        for xx in (-1.6, 1.6):
+            tube_light(xx, sv, zc - 0.03)
+    # cabins: corridor on the centreline, two cabins each side, two-tier bunks
+    for side in (-1, 1):
+        xw = side * 0.5
+        # partition along the corridor with two door openings
+        wall("int_cabin_wall", (xw, Y(16.6), zf), (0, 1, 0), (0, 0, 1), TW_S1 - 16.6, zc - zf,
+             [(0.8, 1.5, 0.0, 1.95, False), (2.15, 2.85, 0.0, 1.95, False)], MI["wood"], thick=0.05)
+        for a0, a1 in ((0.0, 0.8), (1.5, 2.15), (2.85, TW_S1 - 16.6)):
+            cbox((xw, Y(16.6 + (a0 + a1) / 2), zf + 1.2), (0.12, a1 - a0, 2.4))
+        # partition between the two cabins
+        x1 = side * hbi(18.45, zf + 1.0)
+        box("int_cabin_split", ((xw + x1) / 2, Y(18.45), (zf + zc) / 2), (abs(x1 - xw), 0.05, zc - zf), MI["wood"])
+        cbox(((xw + x1) / 2, Y(18.45), zf + 1.2), (abs(x1 - xw), 0.14, 2.4))
+        for c0, c1 in ((16.7, 18.35), (18.55, TW_S1 - 0.1)):
+            sm = (c0 + c1) / 2
+            xb = side * (hbi(sm, zf + 0.5) - 0.38)
+            for zb in (zf + 0.35, zf + 1.45):
+                box("int_bunk", (xb, Y(sm), zb), (0.76, c1 - c0, 0.1), MI["wood"])
+                box("int_mattress", (xb, Y(sm), zb + 0.1), (0.7, c1 - c0 - 0.06, 0.12), MI["fabric"])
+            box("int_bunk_side", (xb - side * 0.37, Y(sm), zf + 1.0), (0.04, c1 - c0, 0.25), MI["wood"])
+            cbox((xb, Y(sm), zf + 0.9), (0.76, c1 - c0, 1.8))
+            tube_light(side * 1.6, sm, zc - 0.03)
+    tube_light(0.0, 17.6, zc - 0.03)
+    tube_light(0.0, 19.4, zc - 0.03)
+
+    # ---------------------------------------------------------------- engine room
+    ez, ec = ER_Z, TW_Z - 0.15
+    floor_grid("int_er_floor", ER_S0, ER_S1, ez, MI["plate"])
+    floor_grid("col_er_floor", ER_S0, ER_S1, ez, CM, inset=0.0)
+    floor_grid("int_er_ceiling", ER_S0, ER_S1, ec, MI["ceiling"], holes=(er_hole,), up=False)
+    lining("int_er_side", ER_S0, ER_S1, ez, ec, MI["er_wall"])
+    bulkhead("int_er_aft", ER_S0, ez, ec, MI["er_wall"])
+    panel("int_sg_door", (1.3, Y(ER_S0 + 0.05), ez + 0.95), (1, 0, 0), (0, 0, 1), 0.7, 1.6, MI["cast"], 0.04)
+    bulkhead("int_er_fwd", ER_S1, HOLD_Z, ec, MI["er_wall"])
+    stair("int_er_stair", ((ER_STAIR[0] + ER_STAIR[1]) / 2, Y(ER_STAIR[3]), TW_Z),
+          ((ER_STAIR[0] + ER_STAIR[1]) / 2, Y(ER_STAIR[2]), ez), (ER_STAIR[1] - ER_STAIR[0]) / 2 - 0.05)
+    # main engine (1500 hp, six in line) on its bed, gearbox, shaft
+    box("int_engine_bed", (0, Y(6.7), ez + 0.2), (1.8, 3.9, 0.4), MI["black"])
+    box("int_engine_block", (0, Y(6.7), ez + 1.1), (1.3, 3.4, 1.4), MI["engine"], bevel=0.04)
+    for k in range(6):
+        box("int_cyl_head", (0, Y(5.25 + k * 0.58), ez + 1.95), (0.85, 0.5, 0.32), MI["engine"], bevel=0.03)
+        box("int_rocker", (0, Y(5.25 + k * 0.58), ez + 2.16), (0.6, 0.42, 0.12), MI["cast"], bevel=0.02)
+    cyl("int_manifold", (0.62, Y(5.0), ez + 1.85), (0.62, Y(8.3), ez + 1.85), 0.13, MI["cast"], seg=10)
+    cyl("int_turbo", (0.3, Y(8.65), ez + 1.9), (0.95, Y(8.65), ez + 1.9), 0.32, MI["cast"], seg=14)
+    cyl("int_exhaust", (0.7, Y(8.65), ez + 2.2), (0.7, Y(8.65), ec), 0.22, MI["lining"], seg=12)
+    box("int_flywheel", (0, Y(4.75), ez + 1.0), (1.4, 0.55, 1.4), MI["engine"], bevel=0.04)
+    box("int_gearbox", (0, Y(4.3), ez + 0.75), (1.0, 0.5, 0.9), MI["cast"], bevel=0.03)
+    cyl("int_shaft", (0, Y(4.05), ez + 0.5), (0, Y(4.3), ez + 0.5), 0.12, MI["ss"], seg=10)
+    cbox((0, Y(6.5), ez + 1.2), (1.9, 4.6, 2.4))
+    # generators (starboard), switchboard (forward), day tank, workbench
+    for sv in (5.35, 7.55):
+        box("int_genset", (2.7, Y(sv), ez + 0.6), (0.8, 1.6, 1.0), MI["engine"], bevel=0.03)
+        box("int_alternator", (2.7, Y(sv - 0.95), ez + 0.6), (0.65, 0.35, 0.75), MI["cast"], bevel=0.03)
+        cbox((2.7, Y(sv - 0.15), ez + 0.6), (0.85, 2.0, 1.2))
+    fbox("int_switchboard", (1.7, Y(ER_S1 - 0.25), ez + 1.0), (2.2, 0.45, 2.0), MI["cast"])
+    for k in range(8):
+        box("int_led", (0.8 + k * 0.26, Y(ER_S1 - 0.48), ez + 1.55), (0.06, 0.02, 0.06), MI["led_g"] if k % 3 else MI["led_r"])
+    fbox("int_day_tank", (-hbi(9.3, 0.0) + 0.55, Y(9.3), ez + 1.0), (0.8, 0.9, 2.0), MI["cast"])
+    fbox("int_workbench", (-hbi(5.0, -0.6) + 0.4, Y(4.95), ez + 0.85), (0.7, 1.4, 0.06), MI["wood"], col=False)
+    cbox((-hbi(5.0, -0.6) + 0.4, Y(4.95), ez + 0.45), (0.7, 1.4, 0.9))
+    box("int_vice", (-hbi(5.0, -0.6) + 0.55, Y(4.6), ez + 0.95), (0.2, 0.15, 0.15), MI["blue_pipe"])
+    for side, mat, zz in ((-1, MI["red"], 1.2), (1, MI["blue_pipe"], 1.2), (-1, MI["yellow"], 1.45)):
+        x = side * (hbi(7.0, zz) - 0.12)
+        cyl("int_pipe", (x, Y(ER_S0 + 0.2), zz), (x, Y(ER_S1 - 0.2), zz), 0.055, mat, seg=8)
+    for sv in (5.2, 7.4, 9.4):
+        for xx in (-1.5, 1.5):
+            tube_light(xx, sv, ec - 0.03)
+
+    # ---------------------------------------------------------------- fish hold
+    hz, hc = HOLD_Z, TW_Z - 0.15
+    floor_grid("int_hold_floor", HOLD_S0, HOLD_S1, hz, MI["hold"])
+    floor_grid("col_hold_floor", HOLD_S0, HOLD_S1, hz, CM, inset=0.0)
+    floor_grid("int_hold_ceiling", HOLD_S0, HOLD_S1, hc, MI["hold"], holes=(hold_hole,), up=False)
+    lining("int_hold_side", HOLD_S0, HOLD_S1, hz, hc, MI["hold"])
+    bulkhead("int_hold_fwd", HOLD_S1, hz, hc, MI["hold"])
+    stair("int_hold_stair", (hxt, Y((hs0 + hs1) / 2), TW_Z), (hxb, Y((hs0 + hs1) / 2), hz), (hs1 - hs0) / 2 - 0.05)
+    # aluminium pound boards with a gangway down the middle
+    for sv in (12.4, 14.2):
+        for side in (-1, 1):
+            x0 = side * 0.6
+            x1 = side * hbi(sv, hz + 0.6)
+            fbox("int_pound_board", ((x0 + x1) / 2, Y(sv), hz + 0.55), (abs(x1 - x0), 0.06, 1.1), MI["ss"])
+    for (x, sv, n) in ((-2.4, 11.4, 3), (-1.6, 11.4, 4), (1.6, 13.1, 3), (2.4, 13.1, 2), (-1.8, 14.9, 3)):
+        for k in range(n):
+            box("int_hold_box", (x, Y(sv), hz + 0.13 + k * 0.26), (0.75, 0.5, 0.25), MI["box2"] if k % 2 else MI["box"])
+        cbox((x, Y(sv), hz + 0.4), (0.8, 0.55, 0.8))
+    sphere("int_ice", (1.9, Y(11.2), hz + 0.1), 0.9, MI["ice"], seg=12, squash=0.35)
+    sphere("int_ice", (2.2, Y(15.0), hz + 0.05), 0.7, MI["ice"], seg=12, squash=0.3)
+    for sv in (11.3, 13.4, 14.9):
+        tube_light(0.0, sv, hc - 0.03)
+
+    # ---------------------------------------------------------------- the companion on deck
+    zt = WD_Z
+    for (xa, sa), (xb, sb) in (((cx0, cs0), (cx0, cs1)), ((cx1, cs0), (cx1, cs1)), ((cx0, cs0), (cx1, cs0))):
+        c = Vector(((xa + xb) / 2, Y((sa + sb) / 2), (TW_CEIL + zt + 0.45) / 2))
+        dvec = Vector((xb - xa, sb - sa, 0))
+        panel("comp_coaming", c, dvec, (0, 0, 1), dvec.length + 0.06, zt + 0.45 - TW_CEIL, M["white"], 0.05)
+        panel("col_comp", Vector(((xa + xb) / 2, Y((sa + sb) / 2), zt + 0.6)), dvec, (0, 0, 1), dvec.length + 0.1, 1.2,
+              CM, 0.14)
+    railing("comp_rail", [(cx0, Y(cs1), zt + 0.45), (cx0, Y(cs0), zt + 0.45), (cx1, Y(cs0), zt + 0.45),
+                          (cx1, Y(cs1), zt + 0.45)], 0.6, M["steel"], M["rail_white"], gap=0.8)
+    panel("comp_lid", ((cx0 + cx1) / 2, Y(cs0 - 0.05), zt + 0.95), (1, 0, 0), (0, 0, 1), cx1 - cx0 + 0.05, 0.9,
+          M["white"], 0.05)
+
+
 def build_collision():
     """Invisible low-poly shapes the player walks on and bumps into."""
     C = M["collision"]
@@ -1248,7 +1711,8 @@ def build_collision():
                 f.normal_flip()
         new_obj(name, bm, C)
 
-    deck_strip("col_working_deck", 0.0, SH0, lambda sv: WD_Z)
+    cx0, cx1, cs0, cs1 = COMP
+    floor_grid("col_working_deck", 0.0, SH0, WD_Z, C, holes=((cx0, cx1, cs0, cs1),), inset=-0.05)
     deck_strip("col_shelter_deck", SH1, L - 0.15, lambda sv: top_z(sv) - 0.15, n=20)
     # the sloped aft end of the shelter: solid, with the rail along its top
     # edge, open only where the stair comes up
@@ -1305,6 +1769,7 @@ build_superstructure()
 build_gear()
 build_details()
 build_collision()
+build_interior()
 
 
 # ------------------------------------------------------------------ merge
@@ -1341,11 +1806,14 @@ def merge(parts, name):
 
 _hull_parts = [o for o in PARTS if o.data.materials[0] == M["hull"]]
 _col_parts = [o for o in PARTS if o.data.materials[0] == M["collision"]]
-_fit_parts = [o for o in PARTS if o.data.materials[0] not in (M["hull"], M["collision"])]
+_int_parts = [o for o in PARTS if o.data.materials[0] in INTERIOR]
+_fit_parts = [o for o in PARTS if o.data.materials[0] not in (M["hull"], M["collision"]) and o.data.materials[0] not in INTERIOR]
 HULL = merge(_hull_parts, "hull")
 FIT = merge(_fit_parts, "fittings")
 COLL = merge(_col_parts, "collision")
+INT = merge(_int_parts, "interior")
 COLL.hide_render = True        # never occludes bakes or previews; exported for the game
+INT.hide_render = True         # below decks: plain materials, not part of the bakes
 for o in (HULL, FIT):
     o.data.calc_loop_triangles()
 print("triangles", len(HULL.data.loop_triangles) + len(FIT.data.loop_triangles))
@@ -1475,7 +1943,7 @@ for im, fname in ((hull_img, "hull_texture.png"), (atlas, "fittings_atlas.png"))
     im.save()
 
 for ob in bpy.context.scene.objects:
-    ob.select_set(ob in (HULL, FIT, COLL))
+    ob.select_set(ob in (HULL, FIT, COLL, INT))
 bpy.context.view_layer.objects.active = HULL
 glb = os.path.join(OUT, "trawler.glb")
 common = dict(filepath=glb, export_format="GLB", use_selection=True, export_yup=True, export_apply=True,

@@ -102,6 +102,7 @@ const FRAG = /* glsl */ `
   uniform float uSeaRough;      // 0 calm .. 1 storm
   uniform float uFoamBias;      // Jacobian below which crests break
   uniform float uRain;          // 0..1, rings from raindrops
+  uniform float uHullMask;      // 1 while the camera is below decks
 
   // The player's vessel, for hull foam, bow wave and wake.
   uniform vec2  uBoatPos;
@@ -172,6 +173,15 @@ const FRAG = /* glsl */ `
   }
 
   void main() {
+    // Below decks the sea must not show inside the hull.
+    if (uHullMask > 0.5) {
+      vec2 rel = vWorldPos.xz - uBoatPos;
+      float a = dot(rel, uBoatFwd);
+      float c = dot(rel, vec2(-uBoatFwd.y, uBoatFwd.x));
+      float t = clamp((a - 0.15 * uBoatHalf.x) / (0.85 * uBoatHalf.x), 0.0, 1.0);
+      float w = uBoatHalf.y * 1.02 * sqrt(max(0.0, 1.0 - t * t));
+      if (a > -uBoatHalf.x * 1.03 && a < uBoatHalf.x * 1.02 && abs(c) < w) discard;
+    }
     vec2 p = vFlat;
     vec2 uv0 = p / uL.x + 0.5 / uN.x;
     vec2 uv1 = p / uL.y + 0.5 / uN.y;
@@ -409,6 +419,7 @@ export class Ocean {
       uSeaRough: { value: 0.3 },
       uFoamBias: { value: 0.5 },
       uRain: { value: 0 },
+      uHullMask: { value: 0 },
       uTerrain: { value: terrainTexture(terrain) },
       uTerrainBox: { value: new THREE.Vector4(g.minX, g.minZ, 1 / tw, 1 / td) },
       uTerrainHalf: { value: new THREE.Vector2(0.5 / g.nx, 0.5 / g.nz) },

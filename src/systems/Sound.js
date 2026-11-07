@@ -302,7 +302,8 @@ export class SoundScape {
     set(this.engLP.frequency, 260 + n * 380, 0.4);
     set(this.engOut.gain, 0.14 + 0.3 * n * n, 0.3);
     set(this.clatter.g.gain, 0.05 + 0.08 * n, 0.3);
-    set(this.hullGain.gain, s.aboard ? 0.7 : 0, 0.3);
+    set(this.hullGain.gain, s.engineRoom ? 2.2 : s.aboard ? 0.7 : 0, 0.3);
+    set(this.hull.frequency, s.engineRoom ? 900 : 190, 0.3);
     let p = this.shipPoint(ship, 1.3, 9.5, -1.5);
     this.place(this.exhaust, p.x, p.y, p.z, L);
 
