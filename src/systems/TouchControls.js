@@ -40,6 +40,16 @@ const CSS = `
 #tc-knob { position: absolute; left: 50%; width: 46px; height: 22px; margin: -11px 0 0 -23px; border-radius: 8px;
   background: #ffcf7a; box-shadow: 0 1px 6px rgba(0,0,0,.5); pointer-events: none; }
 #tc-order { font-size: 10px; text-align: center; color: #ffcf7a; text-shadow: 0 1px 2px #000; width: 110px; }
+#tc-wheel { left: calc(14px + env(safe-area-inset-left, 0px)); bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+  display: flex; flex-direction: column; align-items: center; gap: 4px; }
+#tc-wheel svg { touch-action: none; filter: drop-shadow(0 1px 3px rgba(0,0,0,.6)); }
+#tc-wheel-g { transition: transform .08s linear; transform-origin: 0 0; }
+#tc-rudder { font-size: 10px; color: #eaf2f6; text-shadow: 0 1px 2px #000; }
+#tc-wheel .row { display: flex; gap: 6px; align-items: center; }
+body.touch:not(.walking) #touch-layer { display: none; }
+body.touch.walking #joy-base { opacity: 0.55; }
+#joy-label { position: absolute; left: 50%; top: 100%; transform: translate(-50%, 6px); font: 10px ui-monospace, monospace;
+  color: #eaf2f6; text-shadow: 0 1px 2px #000; white-space: nowrap; }
 #tc-toast { left: 50%; top: 38%; transform: translateX(-50%); max-width: min(560px, 86vw); padding: 12px 14px;
   border-radius: 12px; background: rgba(10,14,18,.72); font: 13px/1.45 system-ui, sans-serif; text-align: center;
   opacity: 0; transition: opacity .5s ease; pointer-events: none; }
@@ -65,6 +75,12 @@ export class TouchControls {
     this.knob = document.createElement('div');
     this.knob.id = 'joy-knob';
     this.base.appendChild(this.knob);
+    const jl = document.createElement('div');
+    jl.id = 'joy-label';
+    jl.textContent = 'идти';
+    this.base.appendChild(jl);
+    this.parkStick();
+    window.addEventListener('resize', () => this.parkStick());
     left.appendChild(this.base);
     document.body.appendChild(left);
 
@@ -96,8 +112,43 @@ export class TouchControls {
       track.appendChild(tick);
     }
     this.leverKnob = this.el('div', '', 'tc-knob', track);
-    this.button(lever, 'руль 0', 'z');
     this.lever = lever;
+
+    // bottom-left: the ship's wheel. Drag sideways to put the wheel over;
+    // it stays where you leave it, like a real helm. "прямо" = midships.
+    const wheel = this.el('div', 'tc', 'tc-wheel');
+    let spokes = '';
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2, c = Math.cos(a), si = Math.sin(a);
+      spokes += `<line x1="${(c * 9).toFixed(1)}" y1="${(si * 9).toFixed(1)}" x2="${(c * 54).toFixed(1)}" y2="${(si * 54).toFixed(1)}" />`
+        + `<circle cx="${(c * 54).toFixed(1)}" cy="${(si * 54).toFixed(1)}" r="4.5" />`;
+    }
+    wheel.innerHTML = `<svg viewBox="-60 -60 120 120" width="112" height="112">
+      <g id="tc-wheel-g" stroke="rgba(214,170,110,0.92)" fill="rgba(214,170,110,0.92)" stroke-width="5" stroke-linecap="round">
+        <circle r="42" fill="none" stroke-width="7" />${spokes}<circle r="10" fill="rgba(120,90,50,0.95)" stroke-width="3" />
+        <line x1="0" y1="-42" x2="0" y2="-54" stroke="#ffcf7a" stroke-width="6" />
+      </g></svg>
+      <div class="row"><span id="tc-rudder">руль прямо</span></div>`;
+    this.wheelG = wheel.querySelector('#tc-wheel-g');
+    this.rudderTxt = wheel.querySelector('#tc-rudder');
+    this.button(wheel.querySelector('.row'), 'прямо', 'z');
+    this.wheelEl = wheel;
+    this.wheelOrder = 0;
+    const svg = wheel.querySelector('svg');
+    let wheelId = null, startX = 0, startOrder = 0;
+    svg.addEventListener('pointerdown', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      wheelId = e.pointerId; startX = e.clientX; startOrder = this.wheelOrder;
+    });
+    window.addEventListener('pointermove', (e) => {
+      if (e.pointerId !== wheelId) return;
+      // drag right = starboard (negative wheel order), left = port
+      const order = Math.max(-35, Math.min(35, startOrder - (e.clientX - startX) * 0.25));
+      this.input.wheelSet = order;
+      this.wheelOrder = order;
+      this.drawWheel(order);
+    });
+    window.addEventListener('pointerup', (e) => { if (e.pointerId === wheelId) wheelId = null; });
     this.track = track;
     const setFromY = (clientY) => {
       const r = track.getBoundingClientRect();
@@ -154,8 +205,8 @@ export class TouchControls {
         input.touchX = 0;
         input.touchY = 0;
         input.stickActive = false;
-        this.base.style.opacity = '0';
         this.knob.style.transform = 'translate(-50%, -50%)';
+        this.parkStick();
       }
       if (this.looks.delete(e.pointerId)) this.pinchDist = this.looks.size >= 2 ? this.spread() : 0;
     };
@@ -183,6 +234,17 @@ export class TouchControls {
     }
     parent.appendChild(b);
     return b;
+  }
+
+  // the walking stick rests bottom-left, visible, while walking
+  parkStick() {
+    this.base.style.opacity = '';
+    this.base.style.left = '96px';
+    this.base.style.top = `${window.innerHeight - 120}px`;
+  }
+
+  drawWheel(order) {
+    this.wheelG.style.transform = `rotate(${(-order * 7).toFixed(1)}deg)`;
   }
 
   spread() {
@@ -226,15 +288,26 @@ export class TouchControls {
   // mode: '3p' | 'helm' | 'walk'; telegraph: current order index
   setMode(mode, nearHelm) {
     this.lever.style.display = mode === 'walk' ? 'none' : 'flex';
+    this.wheelEl.style.display = mode === 'walk' ? 'none' : 'flex';
+    document.body.classList.toggle('walking', mode === 'walk');
     this.btnHelm.hidden = !(mode === 'helm' || (mode === 'walk' && nearHelm));
     this.btnHelm.textContent = mode === 'helm' ? 'отойти' : 'к штурвалу';
     this.btnView.textContent = mode === '3p' ? 'на борт' : 'со стороны';
   }
 
-  update(telegraph) {
-    if (telegraph !== this._lastOrder) {
-      this._lastOrder = telegraph;
-      this.showOrder(telegraph);
+  update(boat) {
+    if (boat.telegraph !== this._lastOrder) {
+      this._lastOrder = boat.telegraph;
+      this.showOrder(boat.telegraph);
+    }
+    if (Math.abs(boat.wheel - this.wheelOrder) > 0.01) {      // keyboard / midships
+      this.wheelOrder = boat.wheel;
+      this.drawWheel(boat.wheel);
+    }
+    const r = Math.round(boat.rudder);
+    if (r !== this._lastRud) {
+      this._lastRud = r;
+      this.rudderTxt.textContent = r === 0 ? 'руль прямо' : `руль ${Math.abs(r)}° ${r > 0 ? 'влево' : 'вправо'}`;
     }
   }
 }

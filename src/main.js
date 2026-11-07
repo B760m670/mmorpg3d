@@ -93,8 +93,8 @@ let mode = '3p';
 let lastNear = null;
 
 const HINTS = IS_TOUCH ? {
-  '3p': 'рычаг справа — ход · джойстик слева — руль · палец — облёт, щипок — ближе/дальше',
-  helm: 'рычаг — ход · джойстик — руль · палец — осмотреться · «отойти» — пройтись по судну',
+  '3p': 'рычаг справа — ход · штурвал слева — крутите пальцем · палец по экрану — облёт, щипок — ближе/дальше',
+  helm: 'рычаг — ход · штурвал — руль · палец по экрану — осмотреться · «отойти» — пройтись по судну',
   walk: 'джойстик — идти · палец — осмотреться · у штурвала — «к штурвалу»',
 } : {
   '3p': '<b>W/S</b> телеграф · <b>A/D</b> руль · <b>Z</b> руль прямо · мышь — облёт, колесо — ближе/дальше · <b>F</b> на борт · <b>N</b> день/ночь · <b>B</b> погода · <b>H</b> гудок · <b>M</b> звук · <b>I</b> приборы',
@@ -245,6 +245,7 @@ function tick() {
     if (input.pressed('s') || input.pressed('arrowdown')) boat.telegraphStep(-1);
     if (input.pressed('z')) boat.midships();
     if (input.telegraphSet !== null) boat.telegraph = input.telegraphSet;
+    if (input.wheelSet !== null) boat.wheel = input.wheelSet;
     const turn = (input.held('a') || input.held('arrowleft') ? 1 : 0) - (input.held('d') || input.held('arrowright') ? 1 : 0);
     boat.steer(dt, { turn, target: input.stickActive ? -input.touchX * BOAT.rudderMax : null });
   }
@@ -274,7 +275,7 @@ function tick() {
     lastNear = near;
   }
   bridge.update(boat);
-  if (touch) touch.update(boat.telegraph);
+  if (touch) touch.update(boat);
   const pp = player.pos;
   const onBridge = mode === 'helm' ||
     (mode === 'walk' && pp.y > 5.1 && pp.z > -6.3 && pp.z < 0.2 && Math.abs(pp.x) < 3.4);
@@ -302,7 +303,7 @@ function tick() {
     started = true;
     loading.classList.add('hidden');
     if (touch) {
-      touch.toast('<b>Как управлять</b><br>Рычаг справа — ход: вверх вперёд, вниз назад.<br>Джойстик слева — руль.<br>'
+      touch.toast('<b>Как управлять</b><br>Рычаг справа — ход: вверх вперёд, вниз назад.<br>Штурвал слева — поверните пальцем влево/вправо, «прямо» — руль прямо.<br>'
         + 'Проведите пальцем — облететь судно, щипок двумя пальцами — ближе/дальше.<br>«на борт» — встать к штурвалу, ☰ — меню.', 9);
     }
   }

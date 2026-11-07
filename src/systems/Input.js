@@ -22,6 +22,7 @@ export class Input {
     this.moveY = 0;
     this.zoom = 1;
     this.telegraphSet = null;
+    this.wheelSet = null;
     this.dragging = false;
 
     target.addEventListener('keydown', (e) => {
@@ -71,5 +72,6 @@ export class Input {
     this.lookDY = 0;
     this.zoom = 1;
     this.telegraphSet = null;
+    this.wheelSet = null;
   }
 }

@@ -1240,7 +1240,7 @@ def build_collision():
         rows = []
         for sv in np.linspace(s0, s1, n):
             z = zfun(sv)
-            y = max(0.05, half_breadth(sv, z) - 0.2)
+            y = max(0.05, half_breadth(sv, z) + 0.05)     # reach under the bulwarks: no gap at the side
             rows.append((bm.verts.new((-y, Y(sv), z)), bm.verts.new((y, Y(sv), z))))
         for i in range(len(rows) - 1):
             f = bm.faces.new([rows[i][0], rows[i][1], rows[i + 1][1], rows[i + 1][0]])
@@ -1249,7 +1249,14 @@ def build_collision():
         new_obj(name, bm, C)
 
     deck_strip("col_working_deck", 0.0, SH0, lambda sv: WD_Z)
-    deck_strip("col_shelter_deck", SH1, L - 0.6, lambda sv: top_z(sv) - 0.15)
+    deck_strip("col_shelter_deck", SH1, L - 0.15, lambda sv: top_z(sv) - 0.15, n=20)
+    # the sloped aft end of the shelter: solid, with the rail along its top
+    # edge, open only where the stair comes up
+    hb0 = half_breadth(SH1, zr) + 0.05
+    for xa, xb in ((-hb0, STAIR_X - 0.45), (STAIR_X + 0.55, hb0)):
+        if xb - xa > 0.05:
+            box("col_shelter_end", ((xa + xb) / 2, Y((SH0 - 0.05 + SH1 + 0.1) / 2), (WD_Z + zr + 1.1) / 2),
+                (xb - xa, SH1 + 0.1 - (SH0 - 0.05), zr + 1.1 - WD_Z), C)
     # stair ramp (33 deg) on the sloped shelter end
     bm = bmesh.new()
     a, b = Y(SH0 - 0.6), Y(SH1)
