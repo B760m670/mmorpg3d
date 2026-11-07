@@ -80,6 +80,7 @@ const player = new Player(camera);
 const bridge = new Bridge();
 const follow = new FollowCamera(camera);
 follow.groundAt = (x, z) => Math.max(0, heightAt(x, z));
+follow.waterAt = (x, z, t) => ocean.sampleWater(x, z, t).height;
 
 const orbit = new OrbitControls(camera, renderer.domElement);
 orbit.enableDamping = true;
@@ -309,7 +310,9 @@ function tick() {
   const belowDecks = mode === 'walk' && pp.y < 3.9;
   const engineRoom = belowDecks && pp.y < -0.3 && pp.z > 2.55 && pp.z < 9.0;
   ocean.uniforms.uHullMask.value = belowDecks ? 1 : 0;
-  if (boat.interior) boat.interior.visible = mode !== '3p';
+  // The spaces below are drawn aboard, and from outside when the camera is
+  // close enough to look in through a hatch or the wheelhouse windows.
+  if (boat.interior) boat.interior.visible = mode !== '3p' || camera.position.distanceTo(boat.position) < 32;
   if (belowDecks) {
     lamp.visible = true;
     lamp.position.copy(camera.position);
