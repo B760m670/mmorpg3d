@@ -153,6 +153,10 @@ The realism here is **not** the engine — it's the water shader + fog + post.
   (water rising fast against the bow) throws a sheet of spray to both sides.
   It carries with the ship, blows downwind and falls back; light spray runs
   off the bow wave at speed in a seaway.
+- **Night sky** (`src/world/NightSky.js`): a dark gradient with airglow at
+  the horizon, twinkling stars in two layers, the Milky Way with its denser
+  star field, and the moon with maria and a halo. The moon lays a path of
+  light on the sea, and clouds hide the sky in bad weather.
 - **Water shading**: Fresnel sky reflection, sun or moon glitter that widens
   with distance, light scattered through thin crests, the ship's bow wave,
   wake and Kelvin arms, and distance fog. The mesh is a polar grid centred
@@ -212,6 +216,7 @@ src/
     Ocean.js           # water mesh + shaders, sea states, shelter
     Weather.js         # weather states, blending, preset resolution
     CloudLayer.js      # cloud deck
+    NightSky.js        # stars, Milky Way, moon
     Rain.js            # rain streaks
     Spray.js           # bow spray particles
   systems/Sound.js     # procedural soundscape
