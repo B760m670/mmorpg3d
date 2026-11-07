@@ -61,6 +61,25 @@ The trawler is driven like a real vessel, not an arcade boat:
 - Instruments on screen: speed log (kn), gyro heading, telegraph and rpm,
   rudder angle indicator with the wheel order.
 
+### Bridge electronics
+
+The five console screens in the wheelhouse are live (`src/ui/Instruments.js`),
+drawn into canvas textures from the game state while you are on the bridge:
+
+- **Radar**: X-band, head-up, 24 rpm sweep. It paints the actual terrain from
+  a 9.5 m antenna height, so cliff faces show strong echoes and the land behind
+  them falls into radar shadow. There is sea clutter close in. Range is picked
+  automatically from the 0.5 / 0.75 / 1.5 / 3 NM scales.
+- **Chart plotter**: north-up chart rendered from the terrain grid (land,
+  depth bands, 10 m contour, coastline) with position, COG/SOG, your past track
+  and a 6-minute speed vector. Coordinates are a fictional Norwegian datum.
+- **Echo sounder**: the scrolling seabed under the keel with the bottom
+  return, the second echo and the odd fish school.
+- **Conning display**: heading tape, rate of turn and rudder angle.
+- **Engine monitor**: tachometer, gear, load, fuel rate, temperatures.
+
+![bridge](docs/bridge_instruments.png)
+
 ## How it's built
 
 The realism here is **not** the engine — it's the water shader + fog + post.
@@ -69,6 +88,9 @@ The realism here is **not** the engine — it's the water shader + fog + post.
   waves** in the vertex shader. The fragment shader fakes water cheaply:
   Fresnel sky-gradient reflection, a sharp sun/moon specular glitter, depth
   color, foam on crests, and distance fog so the water melts into the haze.
+  Wind ripples come from a generated, tileable slope map (random directional
+  spectrum, mipmapped) at three scales, so there is no moire at a distance.
+  The hull has contact foam, a bow wave, a turbulent wake and Kelvin arms.
   The plane re-centers on the camera each frame and waves are evaluated in
   **world space**, so the ocean is effectively infinite.
 - **Single source of truth for waves** (`src/world/waves.js`) — the GLSL is

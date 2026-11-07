@@ -139,6 +139,11 @@ export class Terrain {
       }
     }
 
+    // Height grid kept for cheap lookups (radar, chart plotter, echo sounder).
+    const heights = new Float32Array(nx * nz);
+    for (let i = 0; i < nx * nz; i++) heights[i] = positions[i * 3 + 1];
+    this.grid = { nx, nz, spacing, minX: T.minX, minZ: T.minZ, heights };
+
     const indices = new Uint32Array((nx - 1) * (nz - 1) * 6);
     let p = 0;
     for (let iz = 0; iz < nz - 1; iz++) {
@@ -187,3 +192,18 @@ export class Terrain {
     this.mesh.frustumCulled = false;
   }
 }
+
+// Bilinear height from the terrain's vertex grid (clamped at the edges).
+Terrain.prototype.sample = function sample(x, z) {
+  const g = this.grid;
+  let fx = (x - g.minX) / g.spacing;
+  let fz = (z - g.minZ) / g.spacing;
+  fx = Math.min(Math.max(fx, 0), g.nx - 1.001);
+  fz = Math.min(Math.max(fz, 0), g.nz - 1.001);
+  const ix = fx | 0, iz = fz | 0;
+  const tx = fx - ix, tz = fz - iz;
+  const h = g.heights, i = iz * g.nx + ix;
+  const a = h[i] + (h[i + 1] - h[i]) * tx;
+  const b = h[i + g.nx] + (h[i + g.nx + 1] - h[i + g.nx]) * tx;
+  return a + (b - a) * tz;
+};

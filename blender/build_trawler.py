@@ -126,11 +126,14 @@ def half_breadth(s, z):
         y = bw * (1 - q ** n) ** (1 / n)
     else:
         y = lerp(bw, deck_half, clamp((z - zw) / (top_z(s) - zw)))
+    # Entrance: the hull keeps full breadth until the last D metres before the
+    # stem. Long, fine run at the forefoot; short, full shoulders at the deck
+    # (beamy Scottish trawler with a flared bow).
     d = max(0.0, stem_s(z) - s)
-    k = lerp(0.36, 0.78, smooth(-3.0, 5.4, z))  # finer entrance, fuller with height = flare
-    if y <= 1e-4:
-        return 0.0
-    return max(0.0, y * math.tanh(k * d / y))
+    t = smooth(-3.0, 5.4, z)
+    D = lerp(10.0, 6.0, t)
+    p = lerp(1.6, 2.2, t)
+    return max(0.0, y * (1 - (1 - min(1.0, d / D)) ** p))
 
 
 N_ST = 110

@@ -13,6 +13,7 @@ import { Input } from './systems/Input.js';
 import { FollowCamera } from './systems/FollowCamera.js';
 import { TouchControls } from './systems/TouchControls.js';
 import { Bridge } from './ui/Bridge.js';
+import { Instruments } from './ui/Instruments.js';
 import trawlerUrl from './assets/trawler.glb?url';
 
 const container = document.getElementById('app');
@@ -35,8 +36,9 @@ const terrain = new Terrain({ spacing: IS_TOUCH ? 12 : undefined });
 scene.add(terrain.mesh);
 const environment = new Environment(scene, { shadowMapSize: IS_TOUCH ? 1024 : 2048 });
 
+const instruments = new Instruments(terrain);
 const boat = new Boat();
-boat.load(trawlerUrl);
+boat.load(trawlerUrl, () => instruments.attach(boat.model));
 scene.add(boat.object);
 
 const input = new Input();
@@ -110,6 +112,7 @@ function applyPreset(name) {
   envTarget = pmrem.fromScene(envScene, 0.02, 0.1, 2000);
   scene.environment = envTarget.texture;
   scene.environmentIntensity = p.envIntensity ?? 0.6;
+  instruments.setNight(name === 'night');
 }
 applyPreset(order[presetIndex]);
 follow.snap(boat);
@@ -170,6 +173,10 @@ function tick() {
     lastNear = near;
   }
   bridge.update(boat);
+  const pp = player.pos;
+  const onBridge = mode === 'helm' ||
+    (mode === 'walk' && pp.y > 5.1 && pp.z > -6.3 && pp.z < 0.2 && Math.abs(pp.x) < 3.4);
+  instruments.update(dt, boat, onBridge);
   ocean.setBoat(boat);
   ocean.update(time, camera, sky.sunDirection);
   engine.render();
@@ -183,4 +190,4 @@ function tick() {
 }
 tick();
 
-window.__scene = { engine, sky, ocean, boat, player, environment, terrain, follow, orbit, heightAt, applyPreset, setMode, input };
+window.__scene = { engine, sky, ocean, boat, player, instruments, environment, terrain, follow, orbit, heightAt, applyPreset, setMode, input };

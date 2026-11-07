@@ -73,23 +73,21 @@ const FRAG = /* glsl */ `
   varying float vHeight;
   varying float vViewDist;
 
-  // Small capillary/wind waves for the normal only (no displacement):
-  // six directional waves at golden-angle spacing with analytic gradients.
-  // Smooth and animated, so no blocky artifacts.
-  vec2 ripple(vec2 p, float t) {
-    vec2 g = vec2(0.0);
-    float ang = 0.37;
-    float freq = 1.3;     // ~4.8 m down to ~0.4 m: wind waves at real scale
-    float amp = 0.045;
-    for (int i = 0; i < 9; i++) {
-      vec2 d = vec2(cos(ang), sin(ang));
-      float ph = dot(d, p) * freq + t * sqrt(9.81 * freq) * 0.8;
-      g += d * (freq * amp * cos(ph));
-      ang += 2.39996;
-      freq *= 1.41;
-      amp *= 0.78;
-    }
-    return g;
+  // Wind ripples for the normal only (no displacement): a tileable slope
+  // map with a random, directional spectrum (see makeRippleTexture), sampled
+  // at three scales drifting in different directions. Mipmapped, so it
+  // filters instead of aliasing into moire at a distance.
+  uniform sampler2D uRipple;
+  const mat2 ROT1 = mat2(0.8, -0.6, 0.6, 0.8);
+  const mat2 ROT2 = mat2(-0.5, 0.866, -0.866, -0.5);
+  vec3 ripple(vec2 p, float t, float dist) {
+    vec4 a = texture2D(uRipple, p / 23.0 + vec2(0.031, 0.019) * t);
+    vec4 b = texture2D(uRipple, ROT1 * p / 7.9 + vec2(-0.052, 0.071) * t);
+    vec4 c = texture2D(uRipple, ROT2 * p / 2.6 + vec2(0.16, -0.12) * t);
+    float near = exp(-dist * 0.03);
+    vec2 g = (a.xy * 2.0 - 1.0) * 0.22 + (b.xy * 2.0 - 1.0) * 0.3 + (c.xy * 2.0 - 1.0) * 0.3 * near;
+    float h = a.z * 0.45 + b.z * 0.35 + c.z * 0.2;
+    return vec3(g, h);
   }
 
   float hash21(vec2 p) {
@@ -143,8 +141,9 @@ const FRAG = /* glsl */ `
     vec3 N = normalize(vNormal);
 
     // Ripple detail, faded with distance to avoid shimmering.
-    float fade = exp(-vViewDist * 0.006);
-    vec2 rg = ripple(vWorldPos.xz, uTime);
+    float fade = mix(0.35, 1.0, exp(-vViewDist * 0.004));
+    vec3 rp = ripple(vWorldPos.xz, uTime, vViewDist);
+    vec2 rg = rp.xy;
     N = normalize(N + vec3(-rg.x, 0.0, -rg.y) * fade);
 
     vec3 V = normalize(uCameraPos - vWorldPos);
@@ -175,15 +174,18 @@ const FRAG = /* glsl */ `
 
     // Foam on the sharpest crests.
     // Foam only on the highest crests, broken up by the ripple pattern.
-    float foam = smoothstep(2.3, 3.0, vHeight) * smoothstep(0.08, 0.2, length(rg));
+    float foam = smoothstep(2.3, 3.0, vHeight) * smoothstep(0.55, 0.75, rp.z);
     col = mix(col, uFoam, foam * 0.6);
 
     // Whitewater from the vessel, broken up by drifting noise.
     float fa = boatFoam(vWorldPos.xz);
     if (fa > 0.001) {
       vec2 flow = -uBoatFwd * uTime * 0.6;
-      float n = vnoise(vWorldPos.xz * 1.3 + flow) * 0.6 + vnoise(vWorldPos.xz * 4.1 - flow * 1.7) * 0.4;
-      float pattern = smoothstep(0.62, 0.92, n * 1.1 + fa * 0.4) * fa;
+      vec2 q = vWorldPos.xz;
+      float n = texture2D(uRipple, (q + flow) / 11.0).z * 0.6
+              + texture2D(uRipple, ROT1 * (q - flow * 1.7) / 3.7).z * 0.4
+              + vnoise(q * 0.35 + flow * 0.2) * 0.25 - 0.12;
+      float pattern = smoothstep(0.56, 0.86, n + fa * 0.3) * fa;
       col = mix(col, uShallow * 1.8 + uFoam * 0.05, fa * 0.25);  // aerated, lighter water
       col = mix(col, uFoam * 1.05, pattern);
     }
@@ -195,6 +197,66 @@ const FRAG = /* glsl */ `
     gl_FragColor = vec4(col, 1.0);
   }
 `;
+
+// Tileable slope map of wind ripples: ~140 periodic wave trains with integer
+// wave vectors (so the tile wraps seamlessly), random phases, a height
+// spectrum falling as k^-1.8 and a directional spread around the wind.
+// RG = slope (x, z) normalised to rms 1/3 around 0.5, B = height.
+function makeRippleTexture(size = 256) {
+  let seed = 0x2f6b9d1;
+  const rnd = () => ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296);
+  const n = size * size;
+  const gx = new Float32Array(n), gz = new Float32Array(n), hh = new Float32Array(n);
+  const TAU = Math.PI * 2;
+  const wind = 0.55;
+  for (let c = 0; c < 140; c++) {
+    const m = 3 + Math.pow(rnd(), 1.7) * 44;          // cycles per tile
+    const spread = rnd() < 0.25 ? (rnd() - 0.5) * TAU : (rnd() + rnd() + rnd() - 1.5) * 1.4;
+    const kx = Math.round(Math.cos(wind + spread) * m);
+    const kz = Math.round(Math.sin(wind + spread) * m);
+    const k = Math.hypot(kx, kz);
+    if (k < 1) continue;
+    const A = Math.pow(k, -1.8);
+    const ph = rnd() * TAU;
+    const dphi = (TAU * kx) / size, cd = Math.cos(dphi), sd = Math.sin(dphi);
+    for (let y = 0; y < size; y++) {
+      const p0 = (TAU * kz * y) / size + ph;
+      let sn = Math.sin(p0), cs = Math.cos(p0);
+      let i = y * size;
+      for (let x = 0; x < size; x++, i++) {
+        hh[i] += A * cs;
+        gx[i] -= A * kx * sn;
+        gz[i] -= A * kz * sn;
+        const s2 = sn * cd + cs * sd;
+        cs = cs * cd - sn * sd;
+        sn = s2;
+      }
+    }
+  }
+  let ss = 0, hmin = Infinity, hmax = -Infinity;
+  for (let i = 0; i < n; i++) {
+    ss += gx[i] * gx[i] + gz[i] * gz[i];
+    if (hh[i] < hmin) hmin = hh[i];
+    if (hh[i] > hmax) hmax = hh[i];
+  }
+  const scale = 1 / (3 * Math.sqrt(ss / (2 * n)));
+  const data = new Uint8Array(n * 4);
+  const enc = (v) => Math.max(0, Math.min(255, Math.round(127.5 + 127.5 * v)));
+  for (let i = 0; i < n; i++) {
+    data[i * 4] = enc(gx[i] * scale);
+    data[i * 4 + 1] = enc(gz[i] * scale);
+    data[i * 4 + 2] = Math.round((255 * (hh[i] - hmin)) / (hmax - hmin));
+    data[i * 4 + 3] = 255;
+  }
+  const tex = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.magFilter = THREE.LinearFilter;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.generateMipmaps = true;
+  tex.anisotropy = 8;
+  tex.needsUpdate = true;
+  return tex;
+}
 
 export class Ocean {
   constructor({ segments = OCEAN.segments } = {}) {
@@ -219,6 +281,7 @@ export class Ocean {
       uBoatFwd: { value: new THREE.Vector2(0, -1) },
       uBoatSpeed: { value: 0 },
       uBoatHalf: { value: new THREE.Vector2(11.9, 4.6) },
+      uRipple: { value: makeRippleTexture() },
     };
 
     this.material = new THREE.ShaderMaterial({
