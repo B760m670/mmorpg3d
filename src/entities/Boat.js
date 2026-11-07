@@ -51,11 +51,25 @@ export class Boat {
     const loader = new GLTFLoader();
     const onLoad = (gltf) => {
       const model = gltf.scene;
+      // Ride slightly light, as working trawlers often do: a band of
+      // antifouling shows above the water.
+      model.position.y = BOAT.rideHeight;
       model.traverse((o) => {
+        if (o.isMesh) {
+          o.castShadow = true;
+          o.receiveShadow = true;
+        }
         if (o.isMesh && o.material) {
           const m = o.material;
           // Glass and paint should pick up the sky reflection.
-          if (m.name === 'glass') { m.envMapIntensity = 1.6; }
+          if (m.name === 'glass') {
+            m.envMapIntensity = 1.6;
+          } else if (!m.name.startsWith('light_')) {
+            // Weathered marine paint: satin, not gloss, so the sky
+            // reflection doesn't wash the colours out.
+            m.roughness = Math.max(m.roughness, 0.6);
+            m.envMapIntensity = 0.5;
+          }
           if (m.name && m.name.startsWith('light_')) { m.toneMapped = false; }
         }
       });

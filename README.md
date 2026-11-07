@@ -60,17 +60,26 @@ The realism here is **not** the engine — it's the water shader + fog + post.
 
 The player's vessel is a 23.95 m Scottish stern trawler built procedurally in
 Blender by `blender/build_trawler.py` and exported to `src/assets/trawler.glb`.
-Principal dimensions come from the published Macduff Ship Design data sheet for
-their 23.95 m stern trawler design: LOA 23.95 m, LBP 20.00 m, breadth 9.20 m,
-depth 4.00 m, 337 GRT, 2.7 m propeller in nozzle, 3 split winches, 4 net drums.
-The draught (3.0 m) is assumed. Name and registration are our own.
 
-![bow](docs/trawler_bow.png)
+Reference data, all from Macduff Ship Design's page for the 23.95 m trawler
+*Adventurer II*:
+- data sheet: LOA 23.95 m, LBP 20.00 m, breadth 9.20 m, depth 4.00 m, 337 GRT,
+  2.7 m propeller in nozzle, 3 split winches, 4 net drums, crane;
+- general-arrangement profile drawing: every height and position (freeboard,
+  stripes, shelter deck, wheelhouse, mast platforms, raked A-frame, drums) was
+  measured off it;
+- delivery photo: livery, railings, equipment.
 
-Rebuild the model (needs Python 3.13):
+The draught (3.0 m) is assumed. Name and registration are our own. Hull
+livery and ambient occlusion are baked into textures (hull 4096x1024,
+fittings atlas 2048).
+
+![compare](docs/trawler_compare.jpg)
+
+Rebuild the model (needs Python 3.13; takes ~3 minutes):
 
 ```bash
-python3.13 -m venv .blenv && .blenv/bin/pip install bpy==5.2.3
+python3.13 -m venv .blenv && .blenv/bin/pip install bpy==5.2.3 pillow
 .blenv/bin/python blender/build_trawler.py -- out --render
 cp out/trawler.glb src/assets/trawler.glb
 ```

@@ -48,7 +48,7 @@ export const PRESETS = {
     envIntensity: 0.55,
     sky: { turbidity: 10, rayleigh: 1.3, mieCoefficient: 0.012, mieDirectionalG: 0.84, elevation: 17, azimuth: 118 },
     sun: { color: [1.0, 0.95, 0.86], intensity: 2.4 },
-    ambient: { color: [0.7, 0.78, 0.84], intensity: 1.35 },
+    ambient: { color: [0.7, 0.78, 0.84], intensity: 1.05 },
     fog: { color: [0.72, 0.78, 0.82], density: 0.00062 },
     water: {
       deep: [0.02, 0.05, 0.07],
@@ -59,7 +59,7 @@ export const PRESETS = {
       specPower: 220,
       specStrength: 2.6,
     },
-    bloom: { strength: 0.55, radius: 0.6, threshold: 0.75 },
+    bloom: { strength: 0.4, radius: 0.55, threshold: 0.93 },
   },
   night: {
     label: 'night',
@@ -94,6 +94,7 @@ export const BOAT = {
   acceleration: 1.6,   // m/s^2 of thrust at full throttle
   turnRate: 0.35,      // rad/s at full rudder and speed
   heelFactor: 0.025,   // roll per (rad/s x m/s) in a turn
+  rideHeight: 0.35,    // model lift above the design waterline (light ship)
 };
 
 export const CAMERA = {

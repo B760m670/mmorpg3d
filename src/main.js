@@ -34,7 +34,7 @@ scene.add(ocean.mesh);
 const terrain = new Terrain({ spacing: IS_TOUCH ? 12 : undefined });
 scene.add(terrain.mesh);
 
-const environment = new Environment(scene);
+const environment = new Environment(scene, { shadowMapSize: IS_TOUCH ? 1024 : 2048 });
 
 const boat = new Boat();
 boat.load(trawlerUrl);
@@ -123,6 +123,7 @@ function tick() {
 
   input.update();
   boat.update(dt, input, time, isNavigable);
+  environment.follow(boat.position);
 
   if (follow.enabled) {
     follow.update(dt, boat, time);
@@ -144,4 +145,4 @@ function tick() {
 tick();
 
 // Expose for quick console tweaking / debugging.
-window.__scene = { engine, sky, ocean, boat, environment, terrain, follow, heightAt, applyPreset };
+window.__scene = { engine, sky, ocean, boat, environment, terrain, follow, orbit, heightAt, applyPreset };
