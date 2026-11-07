@@ -87,6 +87,20 @@
       <div><b>N</b> day / night &nbsp; <b>C</b> free camera</div>
     </div>
     <div id="loading">loading ocean…</div>
-    <script type="module" src="/src/main.js"></script>
+    <script>
+  // If start-up fails, say so on the loading screen instead of hanging.
+  (function () {
+    function show(msg) {
+      var el = document.getElementById('loading');
+      if (el && !el.classList.contains('hidden')) {
+        el.style.cssText += ';white-space:pre-wrap;text-align:center;padding:24px;text-transform:none;letter-spacing:0';
+        el.textContent = 'Не удалось запустить игру\n\n' + msg;
+      }
+    }
+    window.addEventListener('error', function (e) { show(e.message || String(e.error)); });
+    window.addEventListener('unhandledrejection', function (e) { show(String(e.reason && e.reason.message || e.reason)); });
+  })();
+</script>
+<script type="module" src="/src/main.js"></script>
   </body>
 </html>

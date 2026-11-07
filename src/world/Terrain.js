@@ -21,9 +21,23 @@ import expoOuterUrl from '../assets/terrain/expo_outer.dat?url';
 // hide the seams between patches of different size.
 
 // ------------------------------------------------------------------ data
-// fetched once at start-up (in the single-file page these are data: URLs)
+// Loaded once at start-up. In the single-file page these are data: URLs,
+// decoded here by hand: the page's content security policy refuses fetch()
+// of data: URLs (the ship model is loaded the same way). In development they
+// are ordinary URLs and are fetched.
+async function loadBytes(url) {
+  if (url.startsWith('data:')) {
+    const bin = atob(url.slice(url.indexOf(',') + 1));
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`terrain data ${url}: HTTP ${r.status}`);
+  return new Uint8Array(await r.arrayBuffer());
+}
 const [innerGz, outerGz, expoInnerGz, expoOuterGz] = await Promise.all(
-  [innerUrl, outerUrl, expoInnerUrl, expoOuterUrl].map(async (u) => new Uint8Array(await (await fetch(u)).arrayBuffer())),
+  [innerUrl, outerUrl, expoInnerUrl, expoOuterUrl].map(loadBytes),
 );
 
 function decodeHeights(gz, nx, nz) {
