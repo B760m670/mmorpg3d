@@ -45,6 +45,7 @@ export const PRESETS = {
     label: 'day',
     exposure: 0.55,
     showSkyDome: true,
+    envIntensity: 0.55,
     sky: { turbidity: 10, rayleigh: 1.3, mieCoefficient: 0.012, mieDirectionalG: 0.84, elevation: 17, azimuth: 118 },
     sun: { color: [1.0, 0.95, 0.86], intensity: 2.4 },
     ambient: { color: [0.7, 0.78, 0.84], intensity: 1.35 },
@@ -67,6 +68,7 @@ export const PRESETS = {
     // night hides the dome and relies on a dark background + fog. A proper
     // moonlit/cloud night sky is a Phase-2 task.
     showSkyDome: false,
+    envIntensity: 0.06,
     sky: { turbidity: 6, rayleigh: 0.9, mieCoefficient: 0.004, mieDirectionalG: 0.92, elevation: 11, azimuth: 165 },
     sun: { color: [0.55, 0.62, 0.8], intensity: 0.5 }, // "moon"
     ambient: { color: [0.18, 0.24, 0.35], intensity: 0.5 },
@@ -85,17 +87,19 @@ export const PRESETS = {
 };
 
 export const BOAT = {
-  maxSpeed: 26,        // world units / second
-  acceleration: 10,
-  drag: 0.9,
-  turnRate: 0.9,       // radians / second at full rudder
-  buoyancySamples: 2.4, // half-distance used to read pitch/roll from the waves
+  // Principal dimensions of the modelled vessel (23.95 m stern trawler).
+  length: 23.95,
+  beam: 9.2,
+  maxSpeed: 11,        // m/s at full throttle (~21 kn; tuned for play)
+  acceleration: 1.6,   // m/s^2 of thrust at full throttle
+  turnRate: 0.35,      // rad/s at full rudder and speed
+  heelFactor: 0.025,   // roll per (rad/s x m/s) in a turn
 };
 
 export const CAMERA = {
-  distance: 26,
-  height: 11,
-  lookHeight: 3.5,
+  distance: 44,
+  height: 14,
+  lookHeight: 5,
   damping: 2.2,
   fov: 55,
 };

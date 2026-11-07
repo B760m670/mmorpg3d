@@ -11,5 +11,7 @@ export default defineConfig(({ command }) => ({
   build: {
     target: 'es2020',
     outDir: 'dist',
+    // INLINE_ASSETS=1 embeds models as data URLs for the single-file page.
+    assetsInlineLimit: process.env.INLINE_ASSETS ? 16 * 1024 * 1024 : 4096,
   },
 }));

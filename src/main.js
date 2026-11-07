@@ -11,6 +11,7 @@ import { Boat } from './entities/Boat.js';
 import { Input } from './systems/Input.js';
 import { FollowCamera } from './systems/FollowCamera.js';
 import { TouchControls } from './systems/TouchControls.js';
+import trawlerUrl from './assets/trawler.glb?url';
 
 const container = document.getElementById('app');
 const loading = document.getElementById('loading');
@@ -36,6 +37,7 @@ scene.add(terrain.mesh);
 const environment = new Environment(scene);
 
 const boat = new Boat();
+boat.load(trawlerUrl);
 scene.add(boat.object);
 
 const input = new Input();
@@ -69,6 +71,23 @@ if (IS_TOUCH) {
 const order = ['day', 'night'];
 let presetIndex = 0;
 
+// Image-based lighting: a pre-filtered copy of the sky lights PBR materials
+// (paint, glass and steel on the trawler, rock on the cliffs).
+const pmrem = new THREE.PMREMGenerator(renderer);
+const envScene = new THREE.Scene();
+const envSky = new SkyDome();
+envSky.mesh.scale.setScalar(500);
+envScene.add(envSky.mesh);
+let envTarget = null;
+
+function updateEnvironment(p) {
+  envSky.applyPreset(p);
+  if (envTarget) envTarget.dispose();
+  envTarget = pmrem.fromScene(envScene, 0.02, 0.1, 2000);
+  scene.environment = envTarget.texture;
+  scene.environmentIntensity = p.envIntensity ?? 0.6;
+}
+
 function applyPreset(name) {
   const p = PRESETS[name];
   engine.applyPreset(p);
@@ -77,6 +96,7 @@ function applyPreset(name) {
   environment.applyPreset(p, sky.sunDirection);
   sky.mesh.visible = p.showSkyDome !== false;
   scene.background = new THREE.Color().setRGB(...p.fog.color);
+  updateEnvironment(p);
 }
 
 applyPreset(order[presetIndex]);

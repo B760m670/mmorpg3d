@@ -56,6 +56,25 @@ The realism here is **not** the engine — it's the water shader + fog + post.
 - **Presets** (`src/config.js`) — day/night are presets of one scene. All
   tuning (colors, waves, fog, bloom, camera, boat) lives here.
 
+## The trawler
+
+The player's vessel is a 23.95 m Scottish stern trawler built procedurally in
+Blender by `blender/build_trawler.py` and exported to `src/assets/trawler.glb`.
+Principal dimensions come from the published Macduff Ship Design data sheet for
+their 23.95 m stern trawler design: LOA 23.95 m, LBP 20.00 m, breadth 9.20 m,
+depth 4.00 m, 337 GRT, 2.7 m propeller in nozzle, 3 split winches, 4 net drums.
+The draught (3.0 m) is assumed. Name and registration are our own.
+
+![bow](docs/trawler_bow.png)
+
+Rebuild the model (needs Python 3.13):
+
+```bash
+python3.13 -m venv .blenv && .blenv/bin/pip install bpy==5.2.3
+.blenv/bin/python blender/build_trawler.py -- out --render
+cp out/trawler.glb src/assets/trawler.glb
+```
+
 ## Project layout
 
 ```
