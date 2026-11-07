@@ -12,7 +12,7 @@ const CSS = `
   padding: 10px 12px; border-radius: 10px;
   background: rgba(8, 12, 16, 0.62); border: 1px solid rgba(255, 255, 255, 0.12);
   font: 12px/1.25 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  color: #dfe8ec; pointer-events: none; z-index: 7;
+  color: #dfe8ec; pointer-events: auto; cursor: pointer; z-index: 7;
   -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
   font-variant-numeric: tabular-nums;
 }
@@ -26,7 +26,13 @@ const CSS = `
 #bridge .rud i { position: absolute; top: -2px; width: 4px; height: 14px; border-radius: 2px; background: #f2f7f9; }
 #bridge .rud b { position: absolute; top: 1px; width: 2px; height: 8px; background: #ffcf7a; }
 #bridge .rud::after { content: ""; position: absolute; left: 50%; top: -3px; width: 1px; height: 16px; background: rgba(255,255,255,.4); }
+#bridge.mini { display: block; padding: 5px 9px; border-radius: 8px; }
+#bridge.mini > div { display: none; }
+#bridge.mini > .line { display: block; font-size: 12px; white-space: nowrap; }
+#bridge > .line { display: none; }
+#bridge.off { display: none; }
 body.touch #bridge { gap: 2px 10px; padding: 6px 9px; font-size: 10px; opacity: 0.88; }
+body.touch #bridge.mini > .line { font-size: 10.5px; }
 body.touch #bridge .val { font-size: 13px; }
 body.touch #bridge .lbl { font-size: 8px; }
 body.touch #bridge .eng { font-size: 10px; }
@@ -53,11 +59,34 @@ export class Bridge {
       <div class="wide"><div class="eng" data-k="eng">СТОП</div></div>
       <div class="wide"><div class="lbl">Руль <span data-k="rudtxt">0°</span></div>
         <div class="rud"><b data-k="wheel"></b><i data-k="rud"></i></div></div>
-      <div class="wide"><div class="sea" data-k="sea">—</div></div>`;
+      <div class="wide"><div class="sea" data-k="sea">—</div></div>
+      <span class="line" data-k="line"></span>`;
     document.body.appendChild(el);
     this.el = el;
+    // compact one-liner by default; tap to expand / collapse; the menu can
+    // switch the instruments off altogether. Remembered between visits.
+    let saved = null;
+    try { saved = localStorage.getItem('hud'); } catch (e) { /* storage blocked */ }
+    this.setView(saved === 'full' || saved === 'off' ? saved : 'mini');
+    el.addEventListener('pointerdown', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      this.setView(this.view === 'full' ? 'mini' : 'full');
+    });
     this.f = {};
     el.querySelectorAll('[data-k]').forEach((n) => { this.f[n.dataset.k] = n; });
+  }
+
+  setView(v) {
+    this.view = v;
+    this.el.classList.toggle('mini', v === 'mini');
+    this.el.classList.toggle('off', v === 'off');
+    try { localStorage.setItem('hud', v); } catch (e) { /* storage blocked */ }
+  }
+
+  // menu / key: compact -> detailed -> hidden -> compact
+  cycle() {
+    this.setView(this.view === 'mini' ? 'full' : this.view === 'full' ? 'off' : 'mini');
+    return this.view;
   }
 
   // ocean: { info: {bft}, hs }, weather: text
@@ -78,6 +107,11 @@ export class Bridge {
     const r = boat.rudder;
     const side = Math.abs(r) < 0.5 ? 'прямо' : r > 0 ? 'лево' : 'право';
     f.rudtxt.textContent = `${Math.abs(r).toFixed(0)}° ${side}`;
+    if (this.view === 'mini') {
+      const rud = Math.abs(r) < 0.5 ? '' : ` · руль ${Math.abs(r).toFixed(0)}° ${side}`;
+      const line = `${boat.knots.toFixed(1)} уз · ${String(Math.round(boat.headingDeg) % 360).padStart(3, '0')}° · ${ORDER_RU[boat.telegraph]}${rud}`;
+      if (line !== this.lineText) { this.lineText = line; f.line.textContent = line; }
+    }
     // + rudder (port) drawn to the left
     const pos = (v) => `${50 - (v / BOAT.rudderMax) * 50}%`;
     f.rud.style.left = `calc(${pos(r)} - 2px)`;

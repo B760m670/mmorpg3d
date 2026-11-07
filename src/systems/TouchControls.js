@@ -83,6 +83,7 @@ export class TouchControls {
     this.button(menu, 'погода', 'b');
     this.btnSound = this.button(menu, 'звук: вкл', 'm');
     this.button(menu, 'гудок', 'h');
+    this.btnHud = this.button(menu, 'приборы', 'i');
     this.menu = menu;
 
     // bottom-right: telegraph lever
