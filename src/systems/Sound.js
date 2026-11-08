@@ -433,7 +433,7 @@ export class SoundScape {
     this.radioTimer -= dt;
     if (this.radioTimer <= 0) {
       this.radioTimer = 25 + Math.random() * 50;
-      if (s.inside) this.radioChatter();
+      if (s.inside && s.vhfIdle) this.radioChatter();
     }
   }
 
@@ -541,6 +541,32 @@ export class SoundScape {
     env.gain.exponentialRampToValueAtTime(0.001, t + dur);
     src.connect(bp).connect(env).connect(this.master);
     src.stop(t + dur + 0.05);
+  }
+
+  // the VHF loudspeaker: squelch opens on a signal (a burst of noise, then a
+  // faint hiss under the voice), and closes with the familiar tail
+  radioOpen(vol = 1) {
+    if (!this.ctx || this._rx) return;
+    const ctx = this.ctx, t = ctx.currentTime;
+    const src = this.noise();
+    const band = this.filter('bandpass', 1700, 0.6);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.32 * vol, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(Math.max(0.002, 0.035 * vol), t + 0.2);
+    src.connect(band).connect(g).connect(this.radio.input);
+    this._rx = { src, g, vol };
+  }
+
+  radioClose() {
+    if (!this.ctx || !this._rx) return;
+    const t = this.ctx.currentTime;
+    const { src, g, vol } = this._rx;
+    g.gain.cancelScheduledValues(t);
+    g.gain.setValueAtTime(0.28 * vol, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+    src.stop(t + 0.3);
+    this._rx = null;
   }
 
   radioChatter() {

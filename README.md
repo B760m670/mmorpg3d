@@ -271,6 +271,34 @@ off alongside. Moored, you can:
   quay (prices rough, NOK per kg).
 - **Take on fuel**: marine gas oil to full tanks (14 000 l).
 
+### VHF radio
+
+`src/ship/Radio.js`, the *УКВ* tab: the bridge VHF with DSC, on the 24 V
+supply. International maritime channels (6, 8, 9, 10, 12, 13, 14, 16, 26,
+67, 69, 72, 73, 77), dual watch with 16, 25 W / 1 W, volume; RX and TX
+lamps. What is on the air is generated and heard only on the channel it is
+sent on: the coast radio's sécurité announcements on 16 with the weather or
+a navigational warning read on its working channel; Norwegian fishermen
+talking on 72 and 77; a yacht calling the Moskenes ferry on 16 and moving
+to 13; a netter warning you off. You can:
+
+- call the coast radio for the weather: on 16 it asks you to go to 26;
+  change channel and it reads the coastal forecast for Vestfjorden, made
+  from the game's weather (wind direction and speed, trend, rain,
+  visibility, wave height, a gale warning above 14 m/s);
+- call the fish reception at Reine on 12 for a berth;
+- send a DSC distress alert (lift the cover, press again within 5 s): the
+  digital call goes out on 70 with the MMSI and GPS position, the coast
+  station acknowledges on 16, and you cancel the false alert by voice on 16
+  as the GMDSS procedure goes.
+
+The voices are the browser's speech synthesis (English; Norwegian where the
+device has a Norwegian voice, otherwise the sound of speech through the
+loudspeaker). Squelch noise opens and closes around each transmission; the
+loudspeaker is in the wheelhouse, faint on deck. The log on the panel shows
+each transmission with a Russian translation. The vessel names, the ship's
+MMSI and the coast radio's working channel are fictional.
+
 ### The crew
 
 `blender/build_crew.py` builds a crewman, a North-Norwegian fisherman of
@@ -624,6 +652,7 @@ src/
     Anchor.js          # anchor, chain, windlass, drift, dragging, anchor watch
     Trawl.js           # bottom trawl: shooting, towing, hauling, drag, catch, fish room
     Harbour.js         # the quay at Reine: mooring, shore-power pillar and cable, landing, fuel
+    Radio.js           # VHF with DSC: channels, dual watch, generated traffic, calls, distress
     Geo.js             # UTM 33 -> WGS84, convergence, declination, deviation card
     SeaLife.js         # kelp, urchins, starfish, saithe, cod
     Waterfalls.js      # waterfalls on the fjord walls

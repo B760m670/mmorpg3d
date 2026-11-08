@@ -2,6 +2,7 @@ import { NAV_PRESETS } from '../ship/ShipLights.js';
 import { wrap180 } from '../ship/Geo.js';
 import { SIGNALS, FOG } from '../ship/Whistle.js';
 import { SPECIES, HOLD_CAP } from '../ship/Trawl.js';
+import { CH_NAME, MMSI } from '../ship/Radio.js';
 
 // Control panels of the ship, as overlays:
 //   - the bridge console ("пульт"): navigation lights panel, deck lights and
@@ -63,8 +64,8 @@ const fmtT = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart
 const DEV_ORDER = ['radar', 'plotter', 'conning', 'sounder', 'engmon', 'gps', 'satc', 'log', 'wind', 'ap', 'vhf', 'ais', 'bnwas'];
 
 export class ShipPanels {
-  constructor({ elec, sensors, lights, alarms, whistle, anchor, trawl, harbour, actions }) {
-    this.E = elec; this.S = sensors; this.L = lights; this.A = alarms; this.W = whistle; this.AN = anchor; this.T = trawl; this.H = harbour;
+  constructor({ elec, sensors, lights, alarms, whistle, anchor, trawl, harbour, radio, actions }) {
+    this.E = elec; this.S = sensors; this.L = lights; this.A = alarms; this.W = whistle; this.AN = anchor; this.T = trawl; this.H = harbour; this.R = radio;
     this.actions = actions || {};
     const st = document.createElement('style');
     st.textContent = CSS;
@@ -170,6 +171,21 @@ export class ShipPanels {
       case 'anc': if (x === 'go') this.AN.letGo(); else if (x === 'brake') this.AN.brake(); else if (x === 'heave') this.AN.heave(); else if (x === 'lights') this.L.setPreset('anchor'); break;
       case 'fog': this.W.setFog(x); break;
       case 'port': this.port(x); break;
+      case 'vhf': {
+        const R = this.R;
+        if (x === 'ch') R.setCh(+y);
+        else if (x === 'step') R.step(+y);
+        else if (x === 'dw') R.dw = !R.dw;
+        else if (x === 'sq') R.sq = !R.sq;
+        else if (x === 'hi') R.hi = !R.hi;
+        else if (x === 'vol') R.vol = Math.max(0, Math.min(1, R.vol + +y));
+        else if (x === 'coast') R.callCoast();
+        else if (x === 'quay') R.callQuay();
+        else if (x === 'mayday') R.distress();
+        else if (x === 'cancel') R.cancelDistress();
+        else if (x === 'power') S.toggle('vhf');
+        break;
+      }
       case 'shore': if (x === 'close') E.closeShore(); else if (x === 'open') E.openShore(); else if (x === 'to') E.toShore(); else if (x === 'back') E.toShip(); break;
       case 'ack': this.A.ack(x); if (x.startsWith('bnwas')) S.bnwasReset(); break;
       case 'ackall': this.A.ackAll(); S.bnwasReset(); break;
@@ -211,7 +227,7 @@ export class ShipPanels {
     if (!this.open) return;
     const tabs = this.open === 'msb'
       ? [['msb', 'ГРЩ — главный распределительный щит']]
-      : [['nav', 'Огни'], ['light', 'Свет'], ['trawl', 'Трал'], ['port', 'Причал'], ['horn', 'Тифон'], ['anchor', 'Якорь'], ['dev', 'Приборы'], ['power', 'Энергия'], ['alarms', `Тревоги${this.A.unacked ? ` (${this.A.unacked})` : ''}`]];
+      : [['nav', 'Огни'], ['light', 'Свет'], ['trawl', 'Трал'], ['port', 'Причал'], ['vhf', 'УКВ'], ['horn', 'Тифон'], ['anchor', 'Якорь'], ['dev', 'Приборы'], ['power', 'Энергия'], ['alarms', `Тревоги${this.A.unacked ? ` (${this.A.unacked})` : ''}`]];
     if (this.open === 'msb') this.tab = 'msb';
     this.hd.innerHTML = `<b>${this.open === 'msb' ? 'Машинное отделение' : 'Пульт мостика'}</b>${tabs.map(([id, n]) => `<button class="tab ${this.tab === id ? 'sel' : ''}" data-a="tab:${id}">${n}</button>`).join('')}<button class="x" data-a="close">✕</button>`;
     const sc = this.bd.scrollTop;
@@ -354,7 +370,7 @@ export class ShipPanels {
     for (const [s, kg] of Object.entries(T.hold)) worth += kg * SPECIES[s].nok;
     return `<div class="grid">
       <div class="card"><h4>${H.q.name}</h4><div class="big">${st}</div>
-        <div class="mono">${H.state === 'free' ? `причал: пеленг ${String(Math.round(brg)).padStart(3, '0')}°, ${w.dist > 1000 ? (w.dist / 1852).toFixed(2) + ' миль' : Math.round(w.dist) + ' м'} · от стенки ${w.off.toFixed(0)} м · ход ${(Math.abs(boat.speed) * 1.944).toFixed(1)} уз` : `у стенки · глубина у причала около 6 м`}</div>
+        <div class="mono">${H.state === 'free' ? `причал: пеленг ${String(Math.round(brg)).padStart(3, '0')}°, ${w.dist > 1000 ? (w.dist / 1852).toFixed(2) + ' миль' : Math.round(w.dist) + ' м'}${w.dist < 300 ? ` · от стенки ${w.off.toFixed(0)} м` : ''} · ход ${(Math.abs(boat.speed) * 1.944).toFixed(1)} уз` : `у стенки · глубина у причала около 6 м`}</div>
         <div class="row"><button class="${can ? 'on' : ''}" data-a="port:moor">Швартоваться</button><button class="bad" data-a="port:unmoor">Отдать швартовы</button></div>
         ${H.msg ? `<p class="note">${H.msg}</p>` : ''}
         <p class="note">Западный берег Рейне. Подходите малым ходом, лагом к стенке (параллельно), на 5–15 м, ход меньше 1 узла — матрос подаст концы: носовой, кормовой и шпринги. Глубина у причала около 6 м при осадке 4,2 м.</p></div>
@@ -375,6 +391,40 @@ export class ShipPanels {
         <div class="row"><button data-a="port:fuel">Заправить до полных</button></div>
         <div class="mono">Касса: ${Math.round(T.cash).toLocaleString('ru-RU')} крон</div></div>
     </div>`;
+  }
+
+  r_vhf() {
+    const R = this.R, S = this.S, d = S.dev.vhf;
+    const on = R.on;
+    const rx = R.cur && R.cur.heard && R.cur.st.id !== 'me';
+    const tx = R.cur && R.cur.st.id === 'me';
+    const st = !d.on ? 'ВЫКЛ' : d.state === 'nopower' ? 'НЕТ 24 В' : d.state === 'booting' ? 'включается…' : '';
+    const quick = [16, 6, 12, 13, 26, 72, 77].map((c) => `<button class="${R.ch === c ? 'on' : ''}" data-a="vhf:ch:${c}">${c}</button>`).join('');
+    const log = R.log.slice(0, 10).map((m) => `<tr><td class="mono" style="white-space:nowrap;vertical-align:top">${m.time}<br>к.${m.ch}</td>
+      <td><b style="color:${m.me ? '#8fd0ff' : '#ffd27a'}">${m.me ? 'Вы' : m.ruWho}:</b> <span style="opacity:.75">${m.text}</span><br>${m.ru}</td></tr>`).join('');
+    const dsc = R.dsc;
+    return `<div class="grid">
+      <div class="card"><h4>УКВ-радиостанция с ЦИВ · MMSI ${MMSI} (условный)</h4>
+        <div class="row"><span class="big" style="font-size:34px;min-width:70px">${on ? R.ch : '--'}</span>
+          <span class="mono">${on ? `${R.dw && R.ch !== 16 ? 'DW 16 · ' : ''}${R.hi ? '25 Вт' : '1 Вт'} · ${R.sq ? 'ШП' : 'ШП откр.'}<br>${CH_NAME[R.ch] || ''}` : st}</span>
+          <span class="lamp ${rx ? 'g' : ''}"></span>RX <span class="lamp ${tx ? 'r' : ''}"></span>TX</div>
+        <div class="row"><button class="${d.on ? 'on' : ''}" data-a="vhf:power">${d.on ? 'ВКЛ' : 'ВЫКЛ'}</button><button data-a="vhf:step:-1">◀ канал</button><button data-a="vhf:step:1">канал ▶</button>
+          <button class="${R.dw ? 'on' : ''}" data-a="vhf:dw">DW</button><button class="${R.hi ? 'on' : ''}" data-a="vhf:hi">${R.hi ? '25 Вт' : '1 Вт'}</button>
+          <button data-a="vhf:vol:-0.2">−</button><span class="mono">${Math.round(R.vol * 100)} %</span><button data-a="vhf:vol:0.2">+</button></div>
+        <div class="row">${quick}</div>
+        ${R.msg ? `<p class="note">${R.msg}</p>` : ''}
+        <p class="note">16 — бедствие и вызов: его слушают все. Вызвали на 16-м — переходите на рабочий канал. DW: слушать 16-й вместе с выбранным. Голоса — синтез речи устройства; норвежских рыбаков без норвежского голоса слышно как речь, слова — в журнале.</p></div>
+      <div class="card"><h4>Вызовы</h4>
+        <div class="row"><button data-a="vhf:coast">Береговая станция: погода</button></div>
+        <p class="note">На 16-м (или сразу на 26-м). Станция попросит перейти на 26-й — переключитесь, и она передаст прогноз для Вестфьорда.</p>
+        <div class="row"><button data-a="vhf:quay">Рыбоприёмка Рейне (к. 12)</button></div>
+        <h4 style="margin-top:10px">ЦИВ — бедствие (DISTRESS)</h4>
+        <div class="row"><button class="bad" data-a="vhf:mayday">${dsc && dsc.armed ? 'ОТПРАВИТЬ БЕДСТВИЕ' : 'БЕДСТВИЕ (откинуть крышку)'}</button>
+          ${dsc && dsc.state ? '<button class="warn" data-a="vhf:cancel">Отменить ложную тревогу</button>' : ''}</div>
+        <p class="note">Сигнал уходит цифровым вызовом на 70-м канале с MMSI и координатами GPS; береговая станция подтверждает. Нажали случайно — сразу передайте голосом отмену на 16-м: так учат на курсах ГМССБ.</p></div>
+    </div>
+    <h4 style="margin:12px 0 4px;color:#8fb3c4">Журнал (слышно в эфире)</h4>
+    ${log ? `<table>${log}</table>` : '<p class="note">Пока тихо. Включите DW или переходите по каналам: 16, 26, 72, 77, 13.</p>'}`;
   }
 
   r_anchor() {

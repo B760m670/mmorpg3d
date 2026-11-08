@@ -39,6 +39,7 @@ import { Anchor } from './ship/Anchor.js';
 import { Crew } from './entities/Crew.js';
 import { Trawl } from './ship/Trawl.js';
 import { Harbour } from './ship/Harbour.js';
+import { Radio } from './ship/Radio.js';
 import crewUrl from './assets/crew.glb?url';
 
 const container = document.getElementById('app');
@@ -106,6 +107,7 @@ const anchor = new Anchor({ scene, elec, alarms });
 const crew = new Crew();
 const trawl = new Trawl({ scene, elec, alarms });
 const harbour = new Harbour({ scene, elec, heightAt });
+const radio = new Radio({ sensors, elec, alarms, sound, weather, trawl });
 let thirdPerson = false;
 const _prevPP = new THREE.Vector3();
 const _windCtx = { heightAt, tide: 0, wind: 0 };
@@ -143,7 +145,7 @@ orbit.enabled = false;
 
 const touch = IS_TOUCH ? new TouchControls(input) : null;
 const panels = new ShipPanels({
-  elec, sensors, lights: shipLights, alarms, whistle, anchor, trawl, harbour,
+  elec, sensors, lights: shipLights, alarms, whistle, anchor, trawl, harbour, radio,
   actions: {
     boat: () => boat,
     // the searchlight to where the camera looks
@@ -574,11 +576,14 @@ function tick() {
   rain.update(dt, camera, weather.v.rain, weather.v.wind, boat.model);
   spray.update(dt, boat, weather.v.wind);
   if (boat.slam > 0) sound.slam(boat.slam);
+  // the VHF loudspeaker is in the wheelhouse: heard fully there, faintly on
+  // deck through the open door, not at all below or in the water
+  radio.update(dt, { near: under ? 0 : onBridge ? 1 : mode === 'walk' && !belowDecks ? 0.35 : mode === '3p' ? 0.25 : 0.1 });
   sound.update(dt, {
     camera, ship: boat.model, rpm: boat.rpm, speed: boat.speed, heave: boat.heaveV, rollRate: boat.rollV,
     sea: ocean.uniforms.uSeaRough.value, exposure: terrain.exposure(boat.position.x, boat.position.z),
     wind: weather.v.wind, rain: weather.v.rain, dark: weather.v.dark, night: order[presetIndex] === 'night',
-    inside: onBridge || belowDecks, engineRoom, aboard: mode === 'walk' || mode === 'helm', fallFlow: falls.flow,
+    inside: onBridge || belowDecks, engineRoom, vhfIdle: radio.on && !radio.busy, aboard: mode === 'walk' || mode === 'helm', fallFlow: falls.flow,
     underwater: under, shipDist: camera.position.distanceTo(boat.position),
     engineRunning: boat.engineRunning, gens: elec.gens.filter((g) => g.state === 'running' || g.state === 'runup').length, genHz: elec.busF || 50,
     alarm: alarms.unacked > 0 || sensors.bnwas.stage >= 2,
@@ -608,4 +613,4 @@ function tick() {
 }
 tick();
 
-window.__scene = { engine, sky, ocean, boat, player, instruments, weather, clouds, rain, spray, sound, falls, environment, terrain, village, follow, orbit, heightAt, applyPreset, setMode, input, diver, underwater, seaLife, elec, sensors, shipLights, panels, alarms, nearSwitchboard, whistle, anchor, crew, trawl, harbour, setThird: (v) => { thirdPerson = v; }, overTheSide: () => overTheSide(), get mode() { return mode; } };
+window.__scene = { engine, sky, ocean, boat, player, instruments, weather, clouds, rain, spray, sound, falls, environment, terrain, village, follow, orbit, heightAt, applyPreset, setMode, input, diver, underwater, seaLife, elec, sensors, shipLights, panels, alarms, nearSwitchboard, whistle, anchor, crew, trawl, harbour, radio, setThird: (v) => { thirdPerson = v; }, overTheSide: () => overTheSide(), get mode() { return mode; } };
