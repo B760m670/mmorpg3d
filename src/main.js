@@ -38,6 +38,7 @@ import { Whistle } from './ship/Whistle.js';
 import { Anchor } from './ship/Anchor.js';
 import { Crew } from './entities/Crew.js';
 import { Trawl } from './ship/Trawl.js';
+import { Harbour } from './ship/Harbour.js';
 import crewUrl from './assets/crew.glb?url';
 
 const container = document.getElementById('app');
@@ -104,6 +105,7 @@ const whistle = new Whistle(elec);
 const anchor = new Anchor({ scene, elec, alarms });
 const crew = new Crew();
 const trawl = new Trawl({ scene, elec, alarms });
+const harbour = new Harbour({ scene, elec, heightAt });
 let thirdPerson = false;
 const _prevPP = new THREE.Vector3();
 const _windCtx = { heightAt, tide: 0, wind: 0 };
@@ -141,8 +143,9 @@ orbit.enabled = false;
 
 const touch = IS_TOUCH ? new TouchControls(input) : null;
 const panels = new ShipPanels({
-  elec, sensors, lights: shipLights, alarms, whistle, anchor, trawl,
+  elec, sensors, lights: shipLights, alarms, whistle, anchor, trawl, harbour,
   actions: {
+    boat: () => boat,
     // the searchlight to where the camera looks
     aimSearch: () => {
       if (!boat.model) return;
@@ -464,10 +467,11 @@ function tick() {
   _windCtx.wind = weather.v.wind;
   anchor.update(dt, boat, _windCtx);
   trawl.update(dt, boat, _windCtx);
-  boat.constrain = (cdt) => { anchor.constrain(cdt, boat, _windCtx); trawl.constrain(cdt, boat); };
+  boat.constrain = (cdt) => { anchor.constrain(cdt, boat, _windCtx); trawl.constrain(cdt, boat); harbour.constrain(cdt, boat); };
+  sensors.shallowSet = harbour.state === 'free' ? 5 : 0;   // the sounder's shallow alarm, off alongside
   boat.update(dt, time, (x, z) => heightAt(x, z) < ocean.tide - 4);
   anchor.draw(boat, _windCtx);
-  if (boat.model) trawl.draw(boat, _windCtx);
+  if (boat.model) { trawl.draw(boat, _windCtx); harbour.draw(boat); }
   anchor.watch(sensors.gps);
   environment.follow(boat.position);
 
@@ -604,4 +608,4 @@ function tick() {
 }
 tick();
 
-window.__scene = { engine, sky, ocean, boat, player, instruments, weather, clouds, rain, spray, sound, falls, environment, terrain, village, follow, orbit, heightAt, applyPreset, setMode, input, diver, underwater, seaLife, elec, sensors, shipLights, panels, alarms, nearSwitchboard, whistle, anchor, crew, trawl, setThird: (v) => { thirdPerson = v; }, overTheSide: () => overTheSide(), get mode() { return mode; } };
+window.__scene = { engine, sky, ocean, boat, player, instruments, weather, clouds, rain, spray, sound, falls, environment, terrain, village, follow, orbit, heightAt, applyPreset, setMode, input, diver, underwater, seaLife, elec, sensors, shipLights, panels, alarms, nearSwitchboard, whistle, anchor, crew, trawl, harbour, setThird: (v) => { thirdPerson = v; }, overTheSide: () => overTheSide(), get mode() { return mode; } };

@@ -242,6 +242,35 @@ species (cod, haddock, saithe, redfish, plaice) into an 18 t fish room.
 Trawling inside 12 nautical miles of the Norwegian baselines is generally
 not allowed; the game does not enforce it, the panel only says so.
 
+### The quay at Reine, shore power, landing the catch
+
+`src/ship/Harbour.js`: a fish-landing wharf on the west shore of Reine,
+between the registered sea houses. The site was searched for on the height
+model: a wharf built out 13-18 m on piles, with about 6 m of water under a
+ship alongside and an open approach. Concrete deck, rubber fenders,
+bollards, a ladder, a quay crane, fish tubs and boxes, a lamp post and a
+shore-power pillar. On the *Причал* tab: come alongside slowly (under a
+knot), parallel to the face and 5-15 m off, and **moor**: the ship is
+brought in to the fenders and held by bow and stern lines and springs,
+still riding the tide and the swell. The echo sounder's shallow alarm is
+off alongside. Moored, you can:
+
+- **Plug in shore power** (400 V 50 Hz, 125 A, about 69 kW) and change
+  over on the switchboard. Shore and generators cannot be paralleled: the
+  shore breaker is interlocked with the generator breakers and closes only
+  onto a dead bus. *Change over to shore* puts the standby generator to
+  manual, takes the generators off the board, closes the shore breaker
+  (under a second without power; the motors restart in sequence) and stops
+  the generators. *Back to the generators* starts one, opens the shore
+  breaker and closes the generator onto the dead bus. The shore supply is
+  stiff (50.00 Hz, the voltage drops a little along the cable), metered in
+  kWh and billed when you leave. Overload it and the preferential trip
+  sheds the non-essential consumers; beyond 115 % the shore breaker trips.
+  Leave with the cable still plugged in and it is torn out: blackout.
+- **Land the catch**: the fish room is sold by species to the buyer on the
+  quay (prices rough, NOK per kg).
+- **Take on fuel**: marine gas oil to full tanks (14 000 l).
+
 ### The crew
 
 `blender/build_crew.py` builds a crewman, a North-Norwegian fisherman of
@@ -594,6 +623,7 @@ src/
     Whistle.js         # whistle control: signals, fog-signal timer, air
     Anchor.js          # anchor, chain, windlass, drift, dragging, anchor watch
     Trawl.js           # bottom trawl: shooting, towing, hauling, drag, catch, fish room
+    Harbour.js         # the quay at Reine: mooring, shore-power pillar and cable, landing, fuel
     Geo.js             # UTM 33 -> WGS84, convergence, declination, deviation card
     SeaLife.js         # kelp, urchins, starfish, saithe, cod
     Waterfalls.js      # waterfalls on the fjord walls

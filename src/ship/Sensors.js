@@ -55,6 +55,7 @@ export class Sensors {
   constructor(alarms, elec) {
     this.alarms = alarms;
     this.elec = elec;
+    this.shallowSet = 5;          // echo sounder shallow alarm, m under the keel
     this.dev = {};
     for (const [id, [name, bus, w, boot]] of Object.entries(DEVICES)) {
       this.dev[id] = { id, name, bus, w, boot, on: id !== 'ais' || true, state: 'ready', t: 0 };
@@ -280,7 +281,7 @@ export class Sensors {
     // --- alarms
     A.set('gps', this.dev.gps.on && !g.fix, 'GPS: нет местоположения', 'warn');
     A.set('hdg', this.dev.satc.on && !this.hdgOk, 'Спутниковый компас: нет курса', 'warn');
-    A.set('shallow', this.ready('sounder') && d.ok && d.dbt < 5, `Мелководье: ${Math.max(0, d.dbt).toFixed(1)} м под килем`, 'alarm');
+    A.set('shallow', this.ready('sounder') && d.ok && d.dbt < this.shallowSet, `Мелководье: ${Math.max(0, d.dbt).toFixed(1)} м под килем`, 'alarm');
     A.set('offcourse', ap.offT > 20, `Авторулевой: уход с курса ${wrap180(ap.set - this.hdg).toFixed(0)}°`, 'alarm');
     A.set('apfail', ap.mode === 'hand' && ap.msg && ap.msg !== 'ручное управление', `Авторулевой: ${ap.msg}`, 'alarm');
     A.set('bnwas', bn.stage >= 2, bn.stage >= 3 ? 'BNWAS: вызов капитана — вахта не отвечает' : 'BNWAS: подтвердите бодрствование', 'alarm');

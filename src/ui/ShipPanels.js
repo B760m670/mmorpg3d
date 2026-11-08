@@ -63,8 +63,8 @@ const fmtT = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart
 const DEV_ORDER = ['radar', 'plotter', 'conning', 'sounder', 'engmon', 'gps', 'satc', 'log', 'wind', 'ap', 'vhf', 'ais', 'bnwas'];
 
 export class ShipPanels {
-  constructor({ elec, sensors, lights, alarms, whistle, anchor, trawl, actions }) {
-    this.E = elec; this.S = sensors; this.L = lights; this.A = alarms; this.W = whistle; this.AN = anchor; this.T = trawl;
+  constructor({ elec, sensors, lights, alarms, whistle, anchor, trawl, harbour, actions }) {
+    this.E = elec; this.S = sensors; this.L = lights; this.A = alarms; this.W = whistle; this.AN = anchor; this.T = trawl; this.H = harbour;
     this.actions = actions || {};
     const st = document.createElement('style');
     st.textContent = CSS;
@@ -169,6 +169,8 @@ export class ShipPanels {
       case 'trawl': if (x === 'shoot') this.T.shoot(); else if (x === 'brake') this.T.brake(); else if (x === 'haul') this.T.haul(); else if (x === 'more') this.T.more(+y); break;
       case 'anc': if (x === 'go') this.AN.letGo(); else if (x === 'brake') this.AN.brake(); else if (x === 'heave') this.AN.heave(); else if (x === 'lights') this.L.setPreset('anchor'); break;
       case 'fog': this.W.setFog(x); break;
+      case 'port': this.port(x); break;
+      case 'shore': if (x === 'close') E.closeShore(); else if (x === 'open') E.openShore(); else if (x === 'to') E.toShore(); else if (x === 'back') E.toShip(); break;
       case 'ack': this.A.ack(x); if (x.startsWith('bnwas')) S.bnwasReset(); break;
       case 'ackall': this.A.ackAll(); S.bnwasReset(); break;
       default:
@@ -209,7 +211,7 @@ export class ShipPanels {
     if (!this.open) return;
     const tabs = this.open === 'msb'
       ? [['msb', 'ГРЩ — главный распределительный щит']]
-      : [['nav', 'Огни'], ['light', 'Свет'], ['trawl', 'Трал'], ['horn', 'Тифон'], ['anchor', 'Якорь'], ['dev', 'Приборы'], ['power', 'Энергия'], ['alarms', `Тревоги${this.A.unacked ? ` (${this.A.unacked})` : ''}`]];
+      : [['nav', 'Огни'], ['light', 'Свет'], ['trawl', 'Трал'], ['port', 'Причал'], ['horn', 'Тифон'], ['anchor', 'Якорь'], ['dev', 'Приборы'], ['power', 'Энергия'], ['alarms', `Тревоги${this.A.unacked ? ` (${this.A.unacked})` : ''}`]];
     if (this.open === 'msb') this.tab = 'msb';
     this.hd.innerHTML = `<b>${this.open === 'msb' ? 'Машинное отделение' : 'Пульт мостика'}</b>${tabs.map(([id, n]) => `<button class="tab ${this.tab === id ? 'sel' : ''}" data-a="tab:${id}">${n}</button>`).join('')}<button class="x" data-a="close">✕</button>`;
     const sc = this.bd.scrollTop;
@@ -314,6 +316,65 @@ export class ShipPanels {
         <p class="note">Улов сдают у причала в Рейне. Температура трюма ${E.holdT.toFixed(1)} °C.</p></div>
     </div>
     <p class="note">Правда жизни: по норвежским правилам донное траление у материка в основном запрещено ближе 12 миль от исходных линий, так что у Рейне так ловить нельзя; здесь — игровое допущение. Цены рыбы примерные.</p>`;
+  }
+
+  port(x) {
+    const H = this.H, E = this.E, T = this.T, boat = this.actions.boat && this.actions.boat();
+    if (!H || !boat) return;
+    if (x === 'moor') H.moor(boat);
+    else if (x === 'unmoor') {
+      const bill = E.shore.nok;
+      H.unmoor();
+      if (bill > 0.5) { T.cash -= bill; H.msg += ` · счёт за электроэнергию ${Math.round(bill)} крон`; }
+      E.shore.kwh = 0; E.shore.nok = 0;
+    } else if (x === 'plug') H.plug();
+    else if (x === 'land') {
+      if (H.state !== 'moored') { H.msg = 'улов сдают ошвартовавшись у причала'; return; }
+      const r = T.land();
+      H.msg = r.kg > 0.5 ? `сдано ${Math.round(r.kg)} кг на ${Math.round(r.nok).toLocaleString('ru-RU')} крон` : 'трюм пуст';
+      H.lastSale = r.kg > 0.5 ? r : H.lastSale;
+    } else if (x === 'fuel') {
+      const r = H.refuel();
+      if (!r) { H.msg = 'топливо — у причала'; return; }
+      T.cash -= r.nok;
+      H.msg = r.l > 1 ? `принято ${Math.round(r.l)} л судового газойля, ${Math.round(r.nok).toLocaleString('ru-RU')} крон` : 'танки полные';
+    }
+  }
+
+  r_port() {
+    const H = this.H, E = this.E, T = this.T, sh = E.shore, boat = this.actions.boat && this.actions.boat();
+    if (!H || !boat) return '<p>—</p>';
+    const w = H.where(boat);
+    const brg = ((Math.atan2(H.q.centre[0] - boat.position.x, -(H.q.centre[1] - boat.position.z)) * 180) / Math.PI + 360) % 360;
+    const st = { free: 'не ошвартованы', mooring: 'подаём швартовы…', moored: 'ОШВАРТОВАНЫ' }[H.state];
+    const can = H.canMoor(boat);
+    const moored = H.state === 'moored';
+    const hold = Object.entries(T.hold).filter(([, kg]) => kg > 0.5).map(([s, kg]) => `${SPECIES[s].name} ${Math.round(kg)} кг`).join(' · ') || 'пусто';
+    let worth = 0;
+    for (const [s, kg] of Object.entries(T.hold)) worth += kg * SPECIES[s].nok;
+    return `<div class="grid">
+      <div class="card"><h4>${H.q.name}</h4><div class="big">${st}</div>
+        <div class="mono">${H.state === 'free' ? `причал: пеленг ${String(Math.round(brg)).padStart(3, '0')}°, ${w.dist > 1000 ? (w.dist / 1852).toFixed(2) + ' миль' : Math.round(w.dist) + ' м'} · от стенки ${w.off.toFixed(0)} м · ход ${(Math.abs(boat.speed) * 1.944).toFixed(1)} уз` : `у стенки · глубина у причала около 6 м`}</div>
+        <div class="row"><button class="${can ? 'on' : ''}" data-a="port:moor">Швартоваться</button><button class="bad" data-a="port:unmoor">Отдать швартовы</button></div>
+        ${H.msg ? `<p class="note">${H.msg}</p>` : ''}
+        <p class="note">Западный берег Рейне. Подходите малым ходом, лагом к стенке (параллельно), на 5–15 м, ход меньше 1 узла — матрос подаст концы: носовой, кормовой и шпринги. Глубина у причала около 6 м при осадке 4,2 м.</p></div>
+      <div class="card"><h4>Береговое питание · 400 В 50 Гц 125 А</h4>
+        <div class="row"><span class="lamp ${sh.breaker ? 'g' : sh.cable && sh.avail ? 'y' : ''}"></span><b>${sh.breaker ? 'ШИНЫ ОТ БЕРЕГА' : sh.cable ? (sh.avail ? 'кабель подключён, АВ берега отключён' : 'кабель подключён, нет напряжения') : 'кабель не подключён'}</b></div>
+        <div class="meters"><div><span>P, кВт</span><b>${sh.kw.toFixed(1)}</b></div><div><span>I, А</span><b>${sh.I.toFixed(0)}</b></div><div><span>кВт·ч</span><b>${sh.kwh.toFixed(1)}</b></div><div><span>крон</span><b>${Math.round(sh.nok)}</b></div></div>
+        <div class="bar"><i style="width:${Math.min(100, (sh.I / 125) * 100)}%;background:${sh.I > 118 ? '#e0533f' : '#4fb4d8'}"></i></div>
+        <div class="row"><button class="${sh.cable ? 'on' : ''}" data-a="port:plug">${sh.cable ? 'Кабель: отключить' : 'Подключить кабель'}</button>
+          <button data-a="shore:to">Перевести на берег</button><button data-a="shore:back">Перевести на ДГ</button></div>
+        ${sh.msg ? `<p class="note">${sh.msg}</p>` : ''}
+        <p class="note">Берег и генераторы не синхронизируются: АВ берега блокирован с АВ генераторов, переход — короткое обесточивание, моторы перезапускаются по очереди. 125 А — около 69 кВт: на стоянке хватает всего, кроме работы лебёдок вместе с камбузом и отоплением.</p></div>
+      <div class="card"><h4>Рыбоприёмка · трюм ${Math.round(T.holdKg)} кг</h4><div class="mono">${hold}</div>
+        <div class="mono">по ценам приёмки ≈ ${Math.round(worth).toLocaleString('ru-RU')} крон</div>
+        <div class="row"><button class="${moored && T.holdKg > 0.5 ? 'on' : ''}" data-a="port:land">Сдать улов</button></div>
+        <p class="note">Цены примерные, за кг рыбы-сырца.</p></div>
+      <div class="card"><h4>Бункеровка</h4><div class="mono">Топливо ${Math.round(E.fuel)} / 14 000 л</div>
+        <div class="bar"><i style="width:${(E.fuel / 14000) * 100}%"></i></div>
+        <div class="row"><button data-a="port:fuel">Заправить до полных</button></div>
+        <div class="mono">Касса: ${Math.round(T.cash).toLocaleString('ru-RU')} крон</div></div>
+    </div>`;
   }
 
   r_anchor() {
@@ -438,8 +499,16 @@ export class ShipPanels {
         <td style="text-align:right">${extra} <button class="${f.on ? 'on' : ''}" data-a="feeder:${f.id}">${f.on ? (f.motor && !f.running && E.live && !f.shed ? 'ПУСК' : 'ВКЛ') : 'ВЫКЛ'}</button></td></tr>`;
     }).join('');
     return `<div class="card" style="margin-bottom:10px"><div class="row"><span class="big">${E.live ? `ШИНЫ ${E.busV.toFixed(0)} В · ${E.busF.toFixed(2)} Гц · ${E.kw.toFixed(1)} кВт (${Math.round(E.load * 100)} %)` : 'ШИНЫ ОБЕСТОЧЕНЫ'}</span></div>
-        <p class="note">Перегрузка выше 100 % на 5 с — отключаются неответственные потребители; выше 115 % — генератор отключается защитой. Береговое питание: нет (судно в море).</p></div>
-      <div class="grid">${E.gens.map(gen).join('')}</div>
+        <p class="note">Перегрузка выше 100 % на 5 с — отключаются неответственные потребители; выше 115 % — генератор (или АВ берега) отключается защитой.</p></div>
+      <div class="grid">${E.gens.map(gen).join('')}
+        <div class="card"><h4>Береговое питание · 400 В 125 А</h4>
+          <div class="row"><span class="lamp ${E.shore.breaker ? 'r' : E.shore.cable && E.shore.avail ? 'g' : ''}"></span><b>${E.shore.breaker ? 'АВ БЕРЕГА ВКЛЮЧЁН' : E.shore.cable && E.shore.avail ? 'напряжение есть, АВ отключён' : 'нет берегового питания'}</b></div>
+          <div class="meters"><div><span>U, В</span><b>${E.shore.cable && E.shore.avail ? (E.shore.breaker ? E.busV : 404).toFixed(0) : '0'}</b></div><div><span>I, А</span><b>${E.shore.I.toFixed(0)}</b></div><div><span>P, кВт</span><b>${E.shore.kw.toFixed(1)}</b></div>
+            <div><span>чередование фаз</span><b>${E.shore.cable && E.shore.avail ? 'L1-L2-L3' : '—'}</b></div><div><span>кВт·ч</span><b>${E.shore.kwh.toFixed(1)}</b></div></div>
+          <div class="row"><button class="${E.shore.breaker ? 'bad' : ''}" data-a="shore:${E.shore.breaker ? 'open' : 'close'}">${E.shore.breaker ? 'Откл. АВ берега' : 'Вкл. АВ берега'}</button>
+            <button data-a="shore:to">Перевод на берег</button><button data-a="shore:back">Перевод на ДГ</button></div>
+          ${E.shore.msg ? `<p class="note">${E.shore.msg}</p>` : ''}
+          <p class="note">Блокировка: АВ берега включается только на обесточенные шины (АВ генераторов отключены) и наоборот.</p></div></div>
       <h4 style="margin:12px 0 4px;color:#8fb3c4">Потребители 400/230 В</h4><table>${feeders}</table>
       <div class="grid" style="margin-top:10px">
         <div class="card"><h4>24 В</h4><div class="mono">Судовая АКБ 2 × 225 А·ч: ${this.E.house.V.toFixed(1)} В · ${Math.round(E.house.soc * 100)} % · ${E.house.I >= 0 ? '+' : ''}${E.house.I.toFixed(0)} А</div>

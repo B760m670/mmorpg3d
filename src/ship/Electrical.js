@@ -29,6 +29,10 @@ import { localTime } from './Geo.js';
 
 const F0 = 50, V0 = 400;
 const KVA_PF = 0.8;
+// shore connection: 400 V 50 Hz, 125 A (86.6 kVA, about 69 kW at pf 0.8),
+// a size Norwegian fishing harbours offer alongside 63 A
+const SHORE_KW = 69;
+const SHORE_NOK_KWH = 1.6;     // harbour price per kWh, rough
 
 class Genset {
   constructor(id, name, kw) {
@@ -127,6 +131,9 @@ export class Electrical {
     this.ups = { kwh: 1.0, soc: 1, onBattery: false };
     this.upsOk = true;
     this.fuel = 8650;         // litres in the tanks (14 000 l capacity)
+    // shore power: avail (voltage at the pillar, alongside), cable plugged
+    // in, the shore breaker on the switchboard; kWh metered by the harbour
+    this.shore = { avail: false, cable: false, breaker: false, kw: 0, I: 0, kwh: 0, nok: 0, msg: '', rated: SHORE_KW };
     this.time = 0;
   }
 
@@ -156,6 +163,7 @@ export class Electrical {
   closeBreaker(i) {
     const g = this.gens[i];
     if (g.breaker) return;
+    if (this.shore.breaker) { g.msg = 'блокировка: шины питаются от берега'; g.sync = false; return; }
     if (!g.ready) { g.msg = 'генератор не готов'; return; }
     const busOn = this.busy.length > 0;
     if (!busOn) {                           // dead bus: close straight on
@@ -173,6 +181,43 @@ export class Electrical {
       this.alarms.set(`sync${i}`, true, `${g.name}: включение вне синхронизма`, 'alarm');
       setTimeout(() => this.alarms.set(`sync${i}`, false), 1000);
     }
+  }
+
+  // the shore breaker: interlocked with the generator breakers, it closes
+  // only onto a dead bus (the shore supply cannot be synchronised)
+  closeShore() {
+    const s = this.shore;
+    if (s.breaker) return;
+    if (!s.cable) { s.msg = 'береговой кабель не подключён'; return; }
+    if (!s.avail) { s.msg = 'нет напряжения с берега'; return; }
+    if (this.busy.length) { s.msg = 'блокировка: на шинах генератор — сначала отключите его АВ'; return; }
+    s.breaker = true;
+    s.msg = 'шины от берега';
+  }
+
+  openShore() {
+    if (!this.shore.breaker) return;
+    this.shore.breaker = false;
+    this.shore.msg = 'АВ берега отключён';
+  }
+
+  // change-over as the engineer does it: standby to manual, generators off
+  // the board, shore breaker on (a second or so without power), then the
+  // generators are stopped; and back: a generator started, shore off, the
+  // generator onto the dead bus
+  toShore() {
+    const s = this.shore;
+    if (!s.cable || !s.avail) { s.msg = !s.cable ? 'береговой кабель не подключён' : 'нет напряжения с берега'; return; }
+    for (const g of this.gens) { g.mode = 'man'; this.openBreaker(g.id); }
+    this._xfer = { to: 'shore', t: 0.8 };
+    s.msg = 'перевод на берег…';
+  }
+
+  toShip() {
+    const g = this.gens.find((q) => q.ready) || this.gens[0];
+    if (!g.ready) this.startGen(g.id);
+    this._xfer = { to: 'ship', gen: g.id, t: 0 };
+    this.shore.msg = `перевод на ${g.name}: пуск…`;
   }
 
   autoSync(i) {
@@ -310,10 +355,37 @@ export class Electrical {
       if (f.inrush > 0) f.inrush -= dt;
     }
 
+    // --- change-over between shore and ship's generators
+    const sh = this.shore;
+    if (sh.breaker && !(sh.cable && sh.avail)) { sh.breaker = false; sh.msg = 'питание с берега пропало'; }
+    if (this._xfer) {
+      const x = this._xfer;
+      x.t -= dt;
+      if (x.to === 'shore' && x.t <= 0) {
+        this.closeShore();
+        if (sh.breaker) {
+          for (const g of this.gens) if (g.state !== 'stopped') this.stopGen(g.id);
+          sh.msg = 'на береговом питании, генераторы остановлены';
+        }
+        this._xfer = null;
+      } else if (x.to === 'ship') {
+        const g = this.gens[x.gen];
+        if (g.ready && g.t > 3 && !x.open) {
+          this.openShore();                // break before make: a moment without power
+          x.open = 0.6;
+        } else if (x.open && (x.open -= dt) <= 0) {
+          this.closeBreaker(g.id);
+          if (g.breaker) { sh.msg = `шины от ${g.name}`; this.gens[1 - g.id].mode = 'auto'; }
+          this._xfer = null;
+        } else if (g.state === 'stopped' && x.t < -10) { sh.msg = `${g.name} не запустился`; this._xfer = null; }
+      }
+    }
+
     // --- the bus
     const conn = this.busy;
     const wasLive = this.live;
-    this.live = conn.length > 0;
+    const shoreOn = sh.breaker;
+    this.live = conn.length > 0 || shoreOn;
     let P = 0, inrush = 0;
     if (this.live) {
       for (const f of this.feeders) {
@@ -324,12 +396,13 @@ export class Electrical {
         if (f.inrush > 0) inrush += f.kw * (f.id === 'hyd' ? 1.0 : 4.0) * (f.inrush / 1.2);
       }
     }
-    const rated = conn.reduce((s, g) => s + g.rated, 0) || 1;
+    const rated = shoreOn ? SHORE_KW : conn.reduce((s, g) => s + g.rated, 0) || 1;
     // governor and AVR: a step in load pulls the frequency down, recovering
     // in a couple of seconds; beyond full load the engines cannot hold speed
     const dP = P - this.lastKw;
     this.lastKw = P;
-    if (this.live) this.fDip -= (dP / rated) * 2.2;
+    if (this.live && !shoreOn) this.fDip -= (dP / rated) * 2.2;
+    if (shoreOn) this.fDip = 0;
     this.fDip *= Math.exp(-dt / 1.4);
     this.vDip *= Math.exp(-dt / 0.5);
     const kva = rated / KVA_PF;
@@ -338,9 +411,15 @@ export class Electrical {
     this.load = P / rated;
     const sag = Math.max(0, this.load - 1) * 22;
     const trim = conn.length ? conn.reduce((s, g) => s + g.trim, 0) / conn.length : 0;
-    this.busF = this.live ? F0 + trim + this.fDip - sag - inF : 0;
-    this.busV = this.live ? Math.max(0, V0 - this.vDip - sag * 4 - inV) : 0;
+    // the grid is stiff: its frequency does not move; the voltage drops a
+    // little along the cable with the current
+    this.busF = !this.live ? 0 : shoreOn ? F0 + 0.02 * Math.sin(this.time * 0.05) : F0 + trim + this.fDip - sag - inF;
+    this.busV = !this.live ? 0 : shoreOn ? Math.max(0, 404 - this.load * 9 - inV * 0.4 - sag * 2) : Math.max(0, V0 - this.vDip - sag * 4 - inV);
     this.kw = this.live ? P : 0;
+    sh.kw = shoreOn ? P : 0;
+    sh.I = shoreOn ? (P * 1000) / (1.732 * this.busV * KVA_PF || 1) : 0;
+    sh.kwh += (sh.kw * dt) / 3600;
+    sh.nok = sh.kwh * SHORE_NOK_KWH;
     for (const g of this.gens) {
       g.kw = g.breaker && g.ready ? P / conn.length : 0;
       g.fuel = g.state === 'running' || g.state === 'runup' ? 2.2 + 0.24 * g.kw : 0;
@@ -357,8 +436,14 @@ export class Electrical {
     if (this.live && this.load > 1.15) this.overT += dt; else this.overT = 0;
     if (this.live && this.busF < 46) this.lowFT += dt; else this.lowFT = 0;
     if (this.overT > 8 || this.lowFT > 1.5) {
-      for (const g of conn) { g.breaker = false; g.msg = this.overT > 8 ? 'отключён защитой: перегрузка' : 'отключён защитой: низкая частота'; }
-      A.set('gtrip', true, 'Генератор отключён защитой', 'alarm');
+      if (shoreOn) {
+        sh.breaker = false;
+        sh.msg = 'АВ берега отключился: перегрузка (125 А)';
+        A.set('gtrip', true, 'АВ берегового питания отключён защитой', 'alarm');
+      } else {
+        for (const g of conn) { g.breaker = false; g.msg = this.overT > 8 ? 'отключён защитой: перегрузка' : 'отключён защитой: низкая частота'; }
+        A.set('gtrip', true, 'Генератор отключён защитой', 'alarm');
+      }
       this.overT = 0; this.lowFT = 0;
     }
 
@@ -387,6 +472,7 @@ export class Electrical {
     // synchroscope and the auto-synchroniser
     for (const g of this.gens) {
       if (g.ready && !g.breaker && this.live) {
+        if (shoreOn) g.sync = false;
         if (g.sync) {
           const want = trim + 0.08;
           g.trim += Math.max(-0.4 * dt, Math.min(0.4 * dt, want - g.trim));
