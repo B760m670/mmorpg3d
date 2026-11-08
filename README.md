@@ -219,6 +219,23 @@ switchboard: 9 m/min, pulling the ship up to her anchor until it breaks out.
 The chain hangs from the hawse and lies along the bottom to the anchor, so
 you can see it when diving.
 
+### The crew
+
+`blender/build_crew.py` builds a crewman, a North-Norwegian fisherman of
+1.80 m: orange PVC bib-and-brace oilskin trousers over a dark wool sweater,
+rubber boots, a knitted cap, a beard. A skeleton of joints with radii is
+skinned into the body (Skin modifier, smoothed); a sculpted head (cranium,
+jaw and chin, brow and eye sockets, cheekbones) with nose, ears, eyes and
+brows; the clothes are regions of the surface with their own materials. It
+is rigged with 19 bones, weighted by distance to the bones, and animated:
+idle, walk, run, helm, haul (`src/assets/crew.glb`, 350 KB, 8 300
+triangles). In the game (`src/entities/Crew.js`) the skipper stands at the
+controls in the wheelhouse (he steps away when you take the helm yourself),
+a deckhand in orange oilskins goes round the working deck between jobs, and
+walking about the ship you can switch to third person (`V`, or *1-е/3-е*)
+and see yourself, in yellow oilskins. Each is dressed by recolouring the
+model's materials.
+
 **Panels** (`src/ui/ShipPanels.js`): `P` (or *пульт*) opens the bridge
 console, at the conn or on the bridge. Its tabs: navigation lights; deck
 lights, searchlight and wheelhouse light; equipment power switches,
@@ -563,6 +580,7 @@ src/
     Environment.js     # lights + scene fog
   entities/Boat.js     # placeholder boat + buoyancy/steering
   entities/Diver.js    # the scuba diver: swimming, air, dive computer
+  entities/Crew.js     # skipper, deckhand and your own body (third person)
   ui/DiveComputer.js   # dive computer panel
   ui/ShipPanels.js     # bridge console and main switchboard overlays
   systems/

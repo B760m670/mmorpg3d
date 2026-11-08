@@ -119,6 +119,8 @@ export class TouchControls {
     for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) this.btnHorn.addEventListener(ev, hornOff);
     top.appendChild(this.btnHorn);
     this.btnPanel = this.button(top, 'пульт', 'p');
+    this.btnCam = this.button(top, '1-е/3-е', 'v');
+    this.btnCam.hidden = true;
     this.btnPanel.hidden = true;
     this.btnDive = this.button(top, 'нырнуть', 'j');
     this.btnTorch = this.button(top, 'фонарь', 'l');
@@ -313,6 +315,7 @@ export class TouchControls {
     this.btnHelm.textContent = swim ? 'на борт' : mode === 'helm' ? 'отойти' : 'к штурвалу';
     this.btnDive.hidden = !(mode === '3p' || mode === 'walk');
     this.btnHorn.hidden = !(mode === '3p' || mode === 'helm');
+    this.btnCam.hidden = mode !== 'walk';
     this.btnTorch.hidden = !swim;
     this.btnView.hidden = swim;
     this.btnView.textContent = mode === '3p' ? 'на борт' : 'со стороны';

@@ -139,6 +139,30 @@ export class Player {
     }
   }
 
+  // Third person: the camera on a short boom behind your head, pulled in
+  // where a bulkhead or the deckhead is in the way.
+  updateCameraThird(model, collider) {
+    if (!model) return;
+    const head = _eye.set(this.pos.x, this.pos.y + 1.6, this.pos.z);
+    const cp = Math.cos(this.pitch), sp = Math.sin(this.pitch);
+    const back = _dir.set(Math.sin(this.yaw) * cp, -sp + 0.18, Math.cos(this.yaw) * cp).normalize();
+    let dist = 2.7;
+    if (collider) {
+      const hit = this._cast(head, back, dist + 0.3, collider);
+      if (hit) dist = Math.max(0.35, hit.distance - 0.3);
+    }
+    const cam = _tmp.copy(head).addScaledVector(back, dist);
+    const look = head.clone();
+    look.y += 0.05;
+    model.localToWorld(cam);
+    model.localToWorld(look);
+    this.camera.position.copy(cam);
+    model.getWorldQuaternion(_qShip);
+    this.camera.up.set(0, 1, 0).applyQuaternion(_qShip);
+    this.camera.lookAt(look);
+    this.camera.up.set(0, 1, 0);
+  }
+
   // Put the camera at eye height, in the ship's frame (you feel her roll).
   updateCamera(model) {
     if (!model) return;
