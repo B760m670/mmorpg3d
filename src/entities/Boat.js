@@ -61,6 +61,8 @@ export class Boat {
     this.rpm = 0;        // fraction of max, signed (astern < 0)
     this.engineRunning = true;   // main engine (Sensors starts and stops it)
     this.steeringPumps = 1;      // hydraulic steering pumps running (electrical plant)
+    this.drift = { x: 0, z: 0 }; // wind drift over the ground (m/s), set each frame
+    this.constrain = null;       // (dt) => {}: the anchor chain, after she moves
 
     this.model = null;
     this.collider = null; // invisible walk/collision mesh, in model space
@@ -192,8 +194,8 @@ export class Boat {
     // Move; stop dead against the shore.
     const fx = Math.sin(this.heading);
     const fz = Math.cos(this.heading);
-    const nx = this.position.x - fx * this.speed * dt;
-    const nz = this.position.z - fz * this.speed * dt;
+    const nx = this.position.x - fx * this.speed * dt + this.drift.x * dt;
+    const nz = this.position.z - fz * this.speed * dt + this.drift.z * dt;
     const probe = Math.sign(this.speed || 1) * (BOAT.length / 2 + 2);
     if (!canMove || canMove(nx - fx * probe, nz - fz * probe)) {
       this.position.x = nx;
@@ -202,6 +204,7 @@ export class Boat {
       this.speed *= -0.15;
       this.yawRate *= 0.5;
     }
+    if (this.constrain) this.constrain(dt);
 
     // Seakeeping. Heave follows the mean water level under the hull; pitch
     // and roll are driven by the slope of the water between bow and stern and

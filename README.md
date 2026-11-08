@@ -203,6 +203,22 @@ three: astern propulsion; five: doubt; prolonged: a bend) and a fog-signal
 timer for Rule 35 (making way; underway, stopped; fishing / NUC), every
 2 minutes.
 
+### Anchoring
+
+`src/ship/Anchor.js`: the starboard bower anchor with 7 shackles of chain
+(192.5 m) and a hydraulic windlass driven by the deck-machinery power pack.
+Let it go and it runs out under its own weight, the chain rattling through
+the hawse; pay out 3-5 times the depth and set the brake. The ship then
+drifts with the wind (a stopped trawler makes leeway of about 3 % of the
+wind speed; the GPS course over the ground shows it) until the chain
+fetches up, and lies to it bow-on, swinging round the anchor. Too short a
+scope, too much wind or the engine pulling against it and the anchor drags.
+The anchor watch compares the GPS position with the swinging circle and
+raises the alarm. Heaving up needs the hydraulics running on the
+switchboard: 9 m/min, pulling the ship up to her anchor until it breaks out.
+The chain hangs from the hawse and lies along the bottom to the anchor, so
+you can see it when diving.
+
 **Panels** (`src/ui/ShipPanels.js`): `P` (or *пульт*) opens the bridge
 console, at the conn or on the bridge. Its tabs: navigation lights; deck
 lights, searchlight and wheelhouse light; equipment power switches,
@@ -536,6 +552,7 @@ src/
     ShipLights.js      # navigation lights (sectors), floods, searchlight, interior
     Alarms.js          # alarm list: raise, clear, acknowledge
     Whistle.js         # whistle control: signals, fog-signal timer, air
+    Anchor.js          # anchor, chain, windlass, drift, dragging, anchor watch
     Geo.js             # UTM 33 -> WGS84, convergence, declination, deviation card
     SeaLife.js         # kelp, urchins, starfish, saithe, cod
     Waterfalls.js      # waterfalls on the fjord walls

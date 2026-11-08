@@ -149,6 +149,15 @@ export class SoundScape {
 
     this.initWhistle();
 
+    // anchor chain and windlass
+    this.chainSrc = this.spatial({ ref: 8, reverb: 0.3 });
+    this.chainG = ctx.createGain(); this.chainG.gain.value = 0;
+    this.noise().connect(this.filter('bandpass', 2600, 1.4)).connect(this.chainG).connect(this.chainSrc.input);
+    const wo = ctx.createOscillator(); wo.type = 'square'; wo.frequency.value = 165;
+    this.winchG = ctx.createGain(); this.winchG.gain.value = 0;
+    wo.connect(this.filter('lowpass', 700, 2)).connect(this.winchG).connect(this.chainSrc.input);
+    wo.start();
+
     // generator sets and the alarm buzzer
     this.genOsc = ctx.createOscillator(); this.genOsc.type = 'sawtooth'; this.genOsc.frequency.value = 75;
     const genLP = this.filter('lowpass', 260, 1.2);
@@ -332,6 +341,18 @@ export class SoundScape {
     // engine room, a hum through the ship
     set(this.genOsc.frequency, 75 * (s.genHz || 50) / 50, 0.3);
     set(this.genGain.gain, s.gens ? (s.engineRoom ? 0.32 : s.aboard ? 0.035 : 0.006) * (0.7 + 0.3 * s.gens) : 0, 0.4);
+    // the anchor chain: rattling out through the hawse, or clanking in over
+    // the windlass gypsy with the whine of its hydraulic motor
+    if (s.chainPos) this.place(this.chainSrc, s.chainPos.x, s.chainPos.y, s.chainPos.z, L);
+    const cr = Math.abs(s.chain || 0);
+    this.chainT = (this.chainT || 0) - dt;
+    if (cr > 0.01 && this.chainT <= 0) {
+      this.chainT = Math.max(0.03, 0.21 / (cr * 4 + 0.5));            // a link over the gypsy
+      const t0 = this.ctx.currentTime;
+      this.chainG.gain.setValueAtTime(0.25 + 0.35 * Math.min(1, cr / 2) + Math.random() * 0.15, t0);
+      this.chainG.gain.exponentialRampToValueAtTime(0.01, t0 + 0.06);
+    }
+    set(this.winchG.gain, (s.chain || 0) < -0.01 ? 0.12 : 0, 0.2);
     // the alarm buzzer on the bridge (and its repeater below)
     this.buzT = (this.buzT || 0) + dt;
     const beep = s.alarm && (this.buzT % 1.0) < 0.5;

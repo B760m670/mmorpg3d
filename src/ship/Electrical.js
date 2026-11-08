@@ -252,7 +252,7 @@ export class Electrical {
     if (this.holdT > -0.5) this.fridgeOn = true;
     if (this.holdT < -2.2) this.fridgeOn = false;
     fd.fridge.demand = this.fridgeOn ? 10.2 : 0.3;
-    fd.hyd.demand = this.hydWork ? 34 : 8.5;                 // winches hauling, or the pump running unloaded
+    fd.hyd.demand = (this.hydWork ? 34 : 8.5) + (this.windlass || 0);   // winches hauling or idling, the windlass heaving
     // bilge: a little water always finds its way in; float switch
     this.bilge += dt * (0.00025 - (this.bilgeOn && this.powered('bilge') ? 0.0035 : 0));
     this.bilge = Math.max(0, Math.min(1, this.bilge));

@@ -133,7 +133,13 @@ export class Sensors {
     const conv = convergence(px, pz);
     const trueHdg = wrap360(boat.headingDeg + conv);
     const trueRot = (-boat.yawRate * 180) / Math.PI;            // deg/s, + to starboard
-    const sp = boat.speed;                                      // m/s through the water (no current here)
+    const sp = boat.speed;                                      // m/s through the water
+    // over the ground: through the water plus the wind drift
+    if (!this.prevP) this.prevP = { x: px, z: pz, vx: 0, vz: 0 };
+    const pv = this.prevP;
+    pv.vx += ((px - pv.x) / dt - pv.vx) * Math.min(1, dt * 2);
+    pv.vz += ((pz - pv.z) / dt - pv.vz) * Math.min(1, dt * 2);
+    pv.x = px; pv.z = pz;
 
     // --- GPS
     const g = this.gps;
@@ -151,9 +157,9 @@ export class Sensors {
       g.x = px + g.ex + gauss() * 0.4;
       g.z = pz + g.ez + gauss() * 0.4;
       [g.lat, g.lon] = worldToLatLon(g.x, g.z);
-      const sog = Math.abs(sp) * 1.943844 + gauss() * 0.05;
+      const sog = Math.hypot(pv.vx, pv.vz) * 1.943844 + gauss() * 0.05;
       g.sog = Math.max(0, sog);
-      const dir = sp >= 0 ? trueHdg : trueHdg + 180;
+      const dir = wrap360((Math.atan2(pv.vx, -pv.vz) * 180) / Math.PI + conv);
       g.cog = wrap360(dir + (g.sog > 0.3 ? gauss() * (2.5 / Math.max(0.5, g.sog)) : gauss() * 60));
     }
 

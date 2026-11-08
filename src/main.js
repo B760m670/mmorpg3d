@@ -35,6 +35,7 @@ import { Sensors } from './ship/Sensors.js';
 import { ShipLights } from './ship/ShipLights.js';
 import { ShipPanels } from './ui/ShipPanels.js';
 import { Whistle } from './ship/Whistle.js';
+import { Anchor } from './ship/Anchor.js';
 
 const container = document.getElementById('app');
 const loading = document.getElementById('loading');
@@ -97,6 +98,8 @@ const elec = new Electrical(alarms);
 const sensors = new Sensors(alarms, elec);
 const shipLights = new ShipLights({ scene, elec, mobile: IS_TOUCH });
 const whistle = new Whistle(elec);
+const anchor = new Anchor({ scene, elec, alarms });
+const _windCtx = { heightAt, tide: 0, wind: 0 };
 const _hornPos = new THREE.Vector3();
 const instruments = new Instruments(terrain, sensors);
 const boat = new Boat();
@@ -130,7 +133,7 @@ orbit.enabled = false;
 
 const touch = IS_TOUCH ? new TouchControls(input) : null;
 const panels = new ShipPanels({
-  elec, sensors, lights: shipLights, alarms, whistle,
+  elec, sensors, lights: shipLights, alarms, whistle, anchor,
   actions: {
     // the searchlight to where the camera looks
     aimSearch: () => {
@@ -437,7 +440,21 @@ function tick() {
   boat.steeringPumps = elec.steeringPumps;
   whistle.update(dt, hornHeld);
   if (boat.model) sound.tyfon(whistle.open, elec.air, boat.model.localToWorld(_hornPos.set(-0.8, 8.2, -3.9)));
+  // wind drift: a stopped trawler makes leeway of about 3 % of the wind
+  // speed; under way she carries her way through it
+  {
+    const wd = SEA.windDir, l = Math.hypot(wd[0], wd[1]);
+    const lee = 0.03 * weather.v.wind * (1 - Math.min(1, Math.abs(boat.speed) / 3));
+    boat.drift.x = (wd[0] / l) * lee;
+    boat.drift.z = (wd[1] / l) * lee;
+  }
+  _windCtx.tide = ocean.tide;
+  _windCtx.wind = weather.v.wind;
+  anchor.update(dt, boat, _windCtx);
+  boat.constrain = (cdt) => anchor.constrain(cdt, boat, _windCtx);
   boat.update(dt, time, (x, z) => heightAt(x, z) < ocean.tide - 4);
+  anchor.draw(boat, _windCtx);
+  anchor.watch(sensors.gps);
   environment.follow(boat.position);
 
   if (mode === 'walk') {
@@ -541,6 +558,7 @@ function tick() {
     underwater: under, shipDist: camera.position.distanceTo(boat.position),
     engineRunning: boat.engineRunning, gens: elec.gens.filter((g) => g.state === 'running' || g.state === 'runup').length, genHz: elec.busF || 50,
     alarm: alarms.unacked > 0 || sensors.bnwas.stage >= 2,
+    chain: anchor.speed, chainPos: boat.model ? anchor.hawseWorld(boat) : null,
   });
   ocean.uniforms.uRain.value = weather.v.rain;
   // Near plane: close for walking about inside the ship, further out in
@@ -564,4 +582,4 @@ function tick() {
 }
 tick();
 
-window.__scene = { engine, sky, ocean, boat, player, instruments, weather, clouds, rain, spray, sound, falls, environment, terrain, village, follow, orbit, heightAt, applyPreset, setMode, input, diver, underwater, seaLife, elec, sensors, shipLights, panels, alarms, nearSwitchboard, whistle, overTheSide: () => overTheSide(), get mode() { return mode; } };
+window.__scene = { engine, sky, ocean, boat, player, instruments, weather, clouds, rain, spray, sound, falls, environment, terrain, village, follow, orbit, heightAt, applyPreset, setMode, input, diver, underwater, seaLife, elec, sensors, shipLights, panels, alarms, nearSwitchboard, whistle, anchor, overTheSide: () => overTheSide(), get mode() { return mode; } };

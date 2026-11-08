@@ -62,8 +62,8 @@ const fmtT = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart
 const DEV_ORDER = ['radar', 'plotter', 'conning', 'sounder', 'engmon', 'gps', 'satc', 'log', 'wind', 'ap', 'vhf', 'ais', 'bnwas'];
 
 export class ShipPanels {
-  constructor({ elec, sensors, lights, alarms, whistle, actions }) {
-    this.E = elec; this.S = sensors; this.L = lights; this.A = alarms; this.W = whistle;
+  constructor({ elec, sensors, lights, alarms, whistle, anchor, actions }) {
+    this.E = elec; this.S = sensors; this.L = lights; this.A = alarms; this.W = whistle; this.AN = anchor;
     this.actions = actions || {};
     const st = document.createElement('style');
     st.textContent = CSS;
@@ -159,6 +159,7 @@ export class ShipPanels {
       case 'feeder': E.toggleFeeder(x); break;
       case 'hydwork': E.hydWork = !E.hydWork; break;
       case 'sig': this.W.play(x); this.S.bnwasReset(); break;
+      case 'anc': if (x === 'go') this.AN.letGo(); else if (x === 'brake') this.AN.brake(); else if (x === 'heave') this.AN.heave(); else if (x === 'lights') this.L.setPreset('anchor'); break;
       case 'fog': this.W.setFog(x); break;
       case 'ack': this.A.ack(x); if (x.startsWith('bnwas')) S.bnwasReset(); break;
       case 'ackall': this.A.ackAll(); S.bnwasReset(); break;
@@ -194,7 +195,7 @@ export class ShipPanels {
     if (!this.open) return;
     const tabs = this.open === 'msb'
       ? [['msb', 'ГРЩ — главный распределительный щит']]
-      : [['nav', 'Огни'], ['light', 'Свет'], ['horn', 'Тифон'], ['dev', 'Приборы'], ['power', 'Энергия'], ['alarms', `Тревоги${this.A.unacked ? ` (${this.A.unacked})` : ''}`]];
+      : [['nav', 'Огни'], ['light', 'Свет'], ['horn', 'Тифон'], ['anchor', 'Якорь'], ['dev', 'Приборы'], ['power', 'Энергия'], ['alarms', `Тревоги${this.A.unacked ? ` (${this.A.unacked})` : ''}`]];
     if (this.open === 'msb') this.tab = 'msb';
     this.hd.innerHTML = `<b>${this.open === 'msb' ? 'Машинное отделение' : 'Пульт мостика'}</b>${tabs.map(([id, n]) => `<button class="tab ${this.tab === id ? 'sel' : ''}" data-a="tab:${id}">${n}</button>`).join('')}<button class="x" data-a="close">✕</button>`;
     const sc = this.bd.scrollTop;
@@ -264,6 +265,28 @@ export class ShipPanels {
     <h4 style="margin:12px 0 4px;color:#8fb3c4">Сигналы маневроуказания (правило 34)</h4>
     <table>${sig}</table>
     <p class="note">Короткий — около 1 с, продолжительный — 4–6 с. Подаются, когда суда видят друг друга.</p>`;
+  }
+
+  r_anchor() {
+    const A = this.AN, E = this.E;
+    const st = { housed: 'в клюзе, на стопоре', running: 'ОТДАН — цепь травится', holding: A.pos ? (A.dragging ? 'ДРЕЙФУЕТ (ползёт)' : A.taut ? 'держит, цепь натянута' : 'на грунте, цепь провисает') : 'висит, до грунта не достал', heaving: 'выбирается брашпилем' }[A.state];
+    const sh = A.shackles;
+    const shTxt = `${Math.floor(sh)} смычк${Math.floor(sh) % 10 === 1 && Math.floor(sh) !== 11 ? 'а' : Math.floor(sh) % 10 >= 2 && Math.floor(sh) % 10 <= 4 ? 'и' : ''} ${((sh % 1) * 27.5).toFixed(0)} м`;
+    const hyd = E.powered('hyd');
+    return `<div class="grid">
+      <div class="card"><h4>Правый якорь · цепь 7 смычек (192,5 м)</h4>
+        <div class="big">${st}</div>
+        <div class="mono">Вытравлено ${A.out.toFixed(1)} м (${shTxt}) · глубина ${A.depth.toFixed(1)} м · соотношение ${A.scope.toFixed(1)}:1</div>
+        <div class="bar"><i style="width:${(A.out / A.max) * 100}%"></i></div>
+        <div class="row"><button class="bad" data-a="anc:go">Отдать якорь</button><button data-a="anc:brake">Тормоз — стоп цепь</button>
+          <button class="${hyd ? '' : 'warn'}" data-a="anc:heave">Выбирать</button></div>
+        ${A.msg ? `<p class="note">${A.msg}</p>` : ''}
+        <p class="note">Травят 3–5 глубин: на 20 м — 60–100 м цепи. Короткая цепь или сильный ветер — якорь ползёт. Брашпиль гидравлический: нужна гидростанция лебёдок (ГРЩ)${hyd ? '' : ' — сейчас не запущена'}.</p></div>
+      <div class="card"><h4>Якорная вахта (GPS)</h4>
+        <div class="mono">${A.pos ? `круг ${Math.round(A.watchR || 0)} м · от якоря ${Math.round(A.watchD || 0)} м` : 'не ведётся: якорь не на грунте'}</div>
+        <div class="row"><button data-a="anc:lights">Огни: якорные</button></div>
+        <p class="note">Ветер сносит судно, пока цепь не натянется; потом оно стоит носом к якорю и описывает круг. Тревога — если вышли из круга или якорь пополз.</p></div>
+    </div>`;
   }
 
   r_dev() {
