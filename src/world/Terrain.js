@@ -6,6 +6,7 @@ import outerUrl from '../assets/terrain/outer.dat?url';
 import expoInnerUrl from '../assets/terrain/expo_inner.dat?url';
 import expoOuterUrl from '../assets/terrain/expo_outer.dat?url';
 import coverUrl from '../assets/terrain/cover.dat?url';
+import { WATER_TINT_GLSL } from './WaterOptics.js';
 
 // Real terrain: Reine, Moskenesøya, Lofoten. Land from Kartverket's national
 // height model (10 m), sea floor from the EMODnet bathymetry model, merged by
@@ -121,6 +122,19 @@ export function exposureAt(x, z) {
 }
 
 // True where the boat can float (deep enough water).
+// The same rule as seabedHard() in the terrain shader: 0 soft bottom
+// (sand, mud) .. 1 rock. Slope from heights 10 m either side, as there.
+export function seabedHard(x, z) {
+  const te = inner.spacing;
+  const hL = heightAt(x - te, z), hR = heightAt(x + te, z), hN = heightAt(x, z - te), hS = heightAt(x, z + te);
+  const ny = 2 * te / Math.hypot(hL - hR, 2 * te, hN - hS);
+  const slope = 1 - ny, h = heightAt(x, z);
+  const ss = (a, b, v) => { const t = Math.min(1, Math.max(0, (v - a) / (b - a))); return t * t * (3 - 2 * t); };
+  const patch = Math.sin(x * 0.031 + 2 * Math.sin(z * 0.023)) * Math.sin(z * 0.027 + 2 * Math.sin(x * 0.019));
+  const shallow = ss(-9, -3, h) * 0.35;
+  return { hard: Math.min(1, Math.max(ss(0.14, 0.3, slope), ss(0.05, 0.3, patch + shallow))), slope, h };
+}
+
 export function isNavigable(x, z) {
   return heightAt(x, z) < -4;
 }
@@ -177,6 +191,9 @@ export function terrainUniforms() {
     uTerOuterTexel: { value: new THREE.Vector3(1 / outer.nx, 1 / outer.nz, outer.spacing) },
     uCover: { value: coverTexture() },
     uTide: { value: 0 },              // water level now, m above mean sea level
+    uCamUnder: { value: 0 },          // 1 while the camera is under water
+    uCamDepth: { value: 0 },          // its depth (m)
+    uWaterTime: { value: 0 },         // s, for the caustics
   };
   return sharedUniforms;
 }
@@ -208,6 +225,47 @@ export const TERRAIN_GLSL = /* glsl */ `
     if (e <= 0.0) return o;
     vec2 i = textureLod(uTerInner, lo / uTerInnerBox.zw + 0.5 * uTerInnerTexel.xy, 0.0).rg;
     return mix(o, i, clamp(e / ${EDGE.toFixed(1)}, 0.0, 1.0));
+  }
+`;
+
+// The sea floor: hard (rock, boulders) or soft (sand, shell sand, mud).
+// Steep bottoms and the shallows near land are mostly rock; elsewhere rock
+// comes up in broad patches. SeaLife.js puts kelp, urchins and so on with
+// the same rule, so it must match seabedHard() in sealife (JS).
+const SEABED_GLSL = /* glsl */ `
+  float rockPatch(vec2 p) {
+    return sin(p.x * 0.031 + 2.0 * sin(p.y * 0.023)) * sin(p.y * 0.027 + 2.0 * sin(p.x * 0.019));
+  }
+  float seabedHard(vec2 p, float slope, float h) {
+    float shallow = smoothstep(-9.0, -3.0, h) * 0.35;
+    return clamp(max(smoothstep(0.14, 0.3, slope), smoothstep(0.05, 0.3, rockPatch(p) + shallow)), 0.0, 1.0);
+  }
+  // Caustics: sunlight focused by the waves into a moving net of bright
+  // lines (two layers of cell edges drifting at different rates).
+  vec2 h22(vec2 p) {
+    vec3 q = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973));
+    q += dot(q, q.yzx + 33.33);
+    return fract((q.xx + q.yz) * q.zy);
+  }
+  float cellEdge(vec2 p, float t) {
+    vec2 i = floor(p), f = fract(p);
+    float d1 = 8.0, d2 = 8.0;
+    for (int y = -1; y <= 1; y++) {
+      for (int x = -1; x <= 1; x++) {
+        vec2 g = vec2(float(x), float(y));
+        vec2 o = h22(i + g);
+        o = 0.5 + 0.45 * sin(t * (0.6 + 0.5 * o) + 6.2831 * o);
+        vec2 r = g + o - f;
+        float d = dot(r, r);
+        if (d < d1) { d2 = d1; d1 = d; } else if (d < d2) { d2 = d; }
+      }
+    }
+    return sqrt(d2) - sqrt(d1);
+  }
+  float caustics(vec2 p, float t) {
+    float a = cellEdge(p * 0.85, t);
+    float b = cellEdge(p * 1.2 + vec2(3.7, 1.3), t * 1.3);
+    return pow(1.0 - smoothstep(0.0, 0.22, a), 2.5) * 0.65 + pow(1.0 - smoothstep(0.0, 0.18, b), 2.5) * 0.45;
   }
 `;
 
@@ -269,8 +327,11 @@ function buildMaterial(cells) {
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>
         uniform float uBumpScale;
+        uniform float uWaterTime;
         varying vec3 vWPos;
         ${TERRAIN_GLSL}
+        ${WATER_TINT_GLSL}
+        ${SEABED_GLSL}
         ${ROCK_GLSL}`)
       .replace('#include <color_fragment>', `#include <color_fragment>
         // the surface normal from the height texture, sampled wider far away
@@ -348,16 +409,27 @@ function buildMaterial(cells) {
         // rock on the steep sides, mud in the deep basins
         // (below the lowest tides; scree runs on under water as a boulder field)
         float under = smoothstep(-1.2, -2.2, tH);
-        vec3 sand = mix(vec3(0.42, 0.4, 0.33), vec3(0.3, 0.29, 0.25), nz);
-        vec3 bed = mix(sand, vec3(0.13, 0.13, 0.12), max(smoothstep(0.18, 0.45, slope), dep == 1.0 ? 0.8 : 0.0));
-        bed = mix(bed, vec3(0.2, 0.19, 0.16), smoothstep(-40.0, -110.0, tH));
+        float hard = max(seabedHard(tp, slope, tH), dep == 1.0 ? 0.85 : 0.0);
+        float grain = rockFbm(vWPos * 0.9);
+        // shell sand, pale and speckled in the shallows; finer and greyer
+        // deeper; mud in the basins
+        vec3 sand = mix(vec3(0.46, 0.43, 0.36), vec3(0.32, 0.31, 0.27), nz);
+        float shell = smoothstep(0.6, 0.72, rockFbm(vWPos * 14.0));
+        sand *= 1.0 + 0.3 * shell * exp(-tDist / 6.0);
+        sand = mix(sand, vec3(0.24, 0.22, 0.18), smoothstep(-30.0, -70.0, tH));
+        // rock: dark in the kelp zone, below it crusted pink with coralline algae
+        vec3 rk = vec3(0.12, 0.12, 0.11) * (0.75 + 0.5 * grain);
+        float coral = smoothstep(-8.0, -16.0, tH) * (1.0 - smoothstep(-35.0, -50.0, tH)) * smoothstep(0.35, 0.6, rockFbm(vWPos * 0.25 + 7.0));
+        rk = mix(rk, vec3(0.36, 0.2, 0.24), coral * 0.75);
+        vec3 bed = mix(sand, rk, hard);
         col = mix(col, bed, under);
         // lakes: found in the height model (flat, connected) by the build tool
         float cv0 = coverAt(tp);
         float lake = cv0 < 0.0 ? 0.0 : step(7.5, mod(cv0, 16.0)) * step(mod(cv0, 16.0), 8.5);
         col = mix(col, vec3(0.02, 0.028, 0.034), lake);
         float strata = 1.0 - 0.06 * smoothstep(0.3, 0.9, sin(vWPos.y * 0.31 + big * 9.0 + nz * 5.0)) * smoothstep(0.35, 0.7, slope);
-        diffuseColor.rgb = col * mix((0.72 + 0.56 * big) * strata, 1.0, max(lake, snow * 0.5));`)
+        diffuseColor.rgb = col * mix((0.72 + 0.56 * big) * strata, 1.0, max(lake, snow * 0.5));
+        diffuseColor.rgb *= waterTint(vWPos.y);`)
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
         roughnessFactor = mix(roughnessFactor * roughK, 0.12, lake);
         roughnessFactor = mix(roughnessFactor, 0.45, tide);`)
@@ -367,6 +439,14 @@ function buildMaterial(cells) {
           float shine = max(lake, tide);
           reflectedLight.directSpecular *= mix(0.15, 1.0, shine);
           reflectedLight.indirectSpecular *= mix(0.5, 1.0, shine);
+        }
+        {
+          // caustics on the bottom in the first metres, near the eye
+          float wd = uTide - vWPos.y;
+          if (wd > 0.15 && tDist < 70.0) {
+            float k = exp(-wd / 7.0) * smoothstep(70.0, 30.0, tDist) * smoothstep(0.15, 1.2, wd);
+            reflectedLight.directDiffuse *= 1.0 + k * (caustics(vWPos.xz, uWaterTime) * 2.4 - 0.6);
+          }
         }`)
       .replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>
         normal = normalize((viewMatrix * vec4(terN, 0.0)).xyz);`)
@@ -378,6 +458,10 @@ function buildMaterial(cells) {
           // light, it would sparkle (specular aliasing)
           float bumpFade = exp(-tDist / 160.0) * (1.0 - lake) * (1.0 - 0.6 * snow) * (1.0 - 0.75 * veg);
           if (bumpK > 1.5) bh += 0.5 * rockFbm(vWPos * 0.6) * exp(-tDist / 50.0);   // scree: blocks
+          // ripples in the sand on the bottom, from the swell
+          float sandK = under * (1.0 - hard) * exp(-tDist / 18.0) * smoothstep(-25.0, -3.0, tH);
+          bh += sandK * 0.09 * sin(dot(vWPos.xz, vec2(0.8, 0.6)) * 9.0 + 2.5 * rockFbm(vWPos * 0.2));
+          bh += under * hard * 0.25 * rockFbm(vWPos * 1.3) * exp(-tDist / 20.0);
           vec2 dH = clamp(vec2(dFdx(bh), dFdy(bh)) * uBumpScale * bumpK * bumpFade, -0.45, 0.45);
           normal = perturbRock(-vViewPosition, normal, dH, faceDirection);
         }`);

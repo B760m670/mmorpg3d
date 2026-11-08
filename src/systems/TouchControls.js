@@ -10,8 +10,10 @@ import { TELEGRAPH } from '../config.js';
 //     ship (third person); pinch with two fingers to zoom;
 //   - bottom-right: the engine-order telegraph lever — slide it up for ahead,
 //     down for astern;
-//   - top-right: view switch, helm button when it applies, and a menu (☰)
-//     with day/night, weather, sound and the horn.
+//   - top-right: view switch, helm button when it applies, "dive" (over the
+//     side), and a menu (☰) with day/night, weather, sound and the horn;
+//   - in the water: the stick swims where you look, ▲ / ▼ (held) go up and
+//     down, the torch and "aboard" (at the ship's side) are at the top.
 // Buttons press the same keys as the keyboard, so every action has one code
 // path.
 
@@ -55,6 +57,11 @@ body.walking #joy-knob { background: rgba(235, 244, 248, 0.55) !important; }
   text-shadow: 0 1px 2px #000; transform: translate(-50%, -50%); }
 #joy-label { position: absolute; left: 50%; top: 100%; transform: translate(-50%, 6px); font: 11px ui-monospace, monospace;
   color: #eaf2f6; text-shadow: 0 1px 2px #000; white-space: nowrap; }
+#tc-updown { right: calc(16px + env(safe-area-inset-right, 0px)); bottom: calc(26px + env(safe-area-inset-bottom, 0px));
+  display: none; flex-direction: column; gap: 14px; }
+#tc-updown button { width: 62px; height: 62px; border-radius: 31px; font-size: 22px; padding: 0; touch-action: none; }
+#tc-updown button.on { background: rgba(111, 224, 200, 0.4); }
+body.diving #tc-updown { display: flex; }
 #tc-toast { left: 50%; top: 38%; transform: translateX(-50%); max-width: min(560px, 86vw); padding: 12px 14px;
   border-radius: 12px; background: rgba(10,14,18,.72); font: 13px/1.45 system-ui, sans-serif; text-align: center;
   opacity: 0; transition: opacity .5s ease; pointer-events: none; }
@@ -103,6 +110,9 @@ export class TouchControls {
     // top-right: view, helm, menu
     const top = this.el('div', 'tc', 'tc-top');
     this.btnHelm = this.button(top, 'к штурвалу', 'e');
+    this.btnDive = this.button(top, 'нырнуть', 'j');
+    this.btnTorch = this.button(top, 'фонарь', 'l');
+    this.btnTorch.hidden = true;
     this.btnView = this.button(top, 'вид', 'f');
     const menuBtn = this.button(top, '☰', null);
     const menu = this.el('div', 'tc', 'tc-menu');
@@ -140,6 +150,20 @@ export class TouchControls {
     window.addEventListener('pointerup', (e) => { if (e.pointerId === leverId) leverId = null; });
 
     this.toastEl = this.el('div', 'tc', 'tc-toast');
+
+    // in the water: up / down while held (they hold the Space and C keys)
+    const ud = this.el('div', 'tc', 'tc-updown');
+    for (const [label, key] of [['▲', ' '], ['▼', 'c']]) {
+      const b = document.createElement('button');
+      b.textContent = label;
+      const on = (e) => { e.preventDefault(); e.stopPropagation(); this.input.keys.add(key); b.classList.add('on'); };
+      const off = () => { this.input.keys.delete(key); b.classList.remove('on'); };
+      b.addEventListener('pointerdown', on);
+      b.addEventListener('pointerup', off);
+      b.addEventListener('pointercancel', off);
+      b.addEventListener('pointerleave', off);
+      ud.appendChild(b);
+    }
 
     // stick
     left.addEventListener('pointerdown', (e) => {
@@ -258,14 +282,19 @@ export class TouchControls {
 
   // mode: '3p' | 'helm' | 'walk'; telegraph: current order index
   setMode(mode, nearHelm) {
-    this.lever.style.display = mode === 'walk' ? 'none' : 'flex';
-    document.body.classList.toggle('walking', mode === 'walk');
+    const swim = mode === 'swim';
+    this.lever.style.display = mode === 'walk' || swim ? 'none' : 'flex';
+    document.body.classList.toggle('walking', mode === 'walk' || swim);
     this.mode = mode;
-    const conn = mode !== 'walk';
-    if (!conn) this.label.textContent = 'идти';
+    const conn = mode === '3p' || mode === 'helm';
+    if (!conn) this.label.textContent = swim ? 'плыть' : 'идти';
     this._lastRud = null;
-    this.btnHelm.hidden = !(mode === 'helm' || (mode === 'walk' && nearHelm));
-    this.btnHelm.textContent = mode === 'helm' ? 'отойти' : 'к штурвалу';
+    // in the water nearHelm means "at the ship's side"
+    this.btnHelm.hidden = swim ? !nearHelm : !(mode === 'helm' || (mode === 'walk' && nearHelm));
+    this.btnHelm.textContent = swim ? 'на борт' : mode === 'helm' ? 'отойти' : 'к штурвалу';
+    this.btnDive.hidden = !(mode === '3p' || mode === 'walk');
+    this.btnTorch.hidden = !swim;
+    this.btnView.hidden = swim;
     this.btnView.textContent = mode === '3p' ? 'на борт' : 'со стороны';
   }
 
@@ -274,7 +303,7 @@ export class TouchControls {
       this._lastOrder = boat.telegraph;
       this.showOrder(boat.telegraph);
     }
-    if (this.mode === 'walk') return;
+    if (this.mode === 'walk' || this.mode === 'swim') return;
     const r = Math.round(boat.rudder);
     if (r !== this._lastRud) {
       this._lastRud = r;

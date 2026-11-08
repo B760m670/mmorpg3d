@@ -45,6 +45,17 @@ You can command the ship from outside, stand at the wheel, or walk about her.
 | `N` / `C` | day ↔ night / orbit camera (third person) | |
 | `B` | weather: clear → fair → overcast with showers → storm → changing on its own | weather |
 | `M` / `H` | sound on / off / ship's horn | sound on / off / horn |
+| `J` | dive in (off the starboard quarter) | over the side you stand nearest |
+
+In the water (a scuba diver):
+
+| Key | |
+| --- | --- |
+| `W` `A` `S` `D` | swim where you look (look down and swim on to dive) |
+| `Space` / `C` | up / down |
+| `Shift` | fin harder |
+| `L` | dive light on / off (it comes on by itself when deep or dark) |
+| `E` | climb the ladder aboard (at the ship's side, at the surface) |
 
 On a phone the interface is in Russian and kept out of the way:
 - **Bottom left**: a joystick, always in the same place. At the conn it works
@@ -56,7 +67,11 @@ On a phone the interface is in Russian and kept out of the way:
 - **Anywhere else**: drag to look around (aboard) or to fly the camera around
   the ship (third person). Pinch with two fingers to zoom.
 - **Top right**: *на борт / со стороны* switches view, *к штурвалу / отойти*
-  takes or leaves the helm, and ☰ opens day/night, weather, sound and horn.
+  takes or leaves the helm, *нырнуть* goes over the side, and ☰ opens
+  day/night, weather, sound and horn.
+- **In the water**: the joystick swims where you look, ▲ / ▼ on the right
+  (held) go up and down, *фонарь* is the dive light, *на борт* appears at
+  the ship's side.
 - Hints fade after a few seconds, and a short how-to shows on start.
 
 On desktop, drag the mouse to orbit the ship and use the wheel to zoom.
@@ -340,6 +355,55 @@ metres off. Buildings are typical shapes at the right place, not the real
 house; roads, quays and bridges are not drawn yet (OpenStreetMap could not be
 reached from the build environment).
 
+## Under water
+
+Go over the side (`J`, or *нырнуть*) and you are a diver in a drysuit with a
+12 litre, 200 bar cylinder of air; the water is about 7 °C in November.
+
+- **Diving as it works**: the vest holds your head out at the surface and is
+  let out to go down; under water you are neutral and swim where you look.
+  The dive computer shows depth, maximum depth, dive time, ascent rate and
+  cylinder pressure. Air goes at about 18 l/min at the surface at rest, more
+  when finning, times the ambient pressure (one bar more every 10 m), so the
+  same cylinder lasts half as long at 10 m and a third as long at 20 m. It
+  warns when you come up faster than 10 m/min, counts down the 3-minute
+  safety stop at 3-6 m after a dive deeper than 10 m, and warns past 40 m
+  and when the oxygen partial pressure of air passes 1.4 bar (57 m). Out of
+  air, you go straight up. Back at the ship's side, climb the ladder aboard.
+- **Light in water** (`src/world/Underwater.js`, `WaterOptics.js`): red is
+  taken out within a few metres, green goes deepest, blue a little less
+  deep (the dissolved organic matter of coastal water). The view fades into
+  the water's own colour within about 25-30 m (clear winter water) and
+  darkens with depth; the eye's adaptation is allowed for, so it is not the
+  unfiltered blue-green of a camera. Looking up, the sky shows only inside
+  Snell's window, a circle 97° across overhead with a glowing rim, and the
+  surface beyond it is a mirror of the water below (total internal
+  reflection). Caustics play on the bottom in the first metres; flecks of
+  marine snow drift; each breath out sends bubbles past the mask; the dive
+  light lights a cone. Sound goes dull under water, the ship's diesel and
+  propeller carry through it, and you hear the regulator: the hiss in, the
+  bubbles out.
+- **From above**, the sea is see-through where it is shallow, the bottom
+  fading with depth and tinted by the water above it.
+- **The bottom** (terrain shader): rock on steep bottoms and in patches,
+  dark in the kelp zone and crusted pink with coralline algae below it;
+  shell sand with ripples in the shallows, finer sand deeper, mud in the
+  basins.
+- **Life** (`src/world/SeaLife.js`), placed by the same rock-or-sand rule:
+  a forest of Laminaria hyperborea on rock from just below the lowest tides
+  to about 20 m (stiff stipes furred with red algae, hand-shaped blades,
+  thinning to a kelp "park" deeper), sugar kelp in sheltered water, green
+  sea urchins at and below the lower edge of the kelp, common starfish, a
+  school of saithe in mid water that keeps its distance, and cod by the
+  bottom. The kelp sways in the surge of the swell, more in shallow water
+  and in a rough sea.
+
+Honest limits: the sea-floor model is coarse (about 100 m), so near land the
+bottom drops to several metres within one 10 m cell and wide shallows are
+rare; the bottom types and the life are the usual pattern for this coast,
+placed by rule, not mapped (Norway's detailed sea-floor maps do not cover
+Reine yet). Fish are a simple school, not a simulation of behaviour.
+
 To rebuild the terrain data:
 
 ```bash
@@ -366,6 +430,9 @@ src/
     Terrain.js         # real terrain: data, CPU heights, GPU quadtree mesh
     Tide.js            # sea level now, from Kartverket's predictions
     Village.js         # registered buildings, stockfish racks, boulders
+    Underwater.js      # light in water, marine snow, bubbles, dive light
+    WaterOptics.js     # attenuation constants + GLSL shared by the shaders
+    SeaLife.js         # kelp, urchins, starfish, saithe, cod
     Waterfalls.js      # waterfalls on the fjord walls
     Rain.js            # rain streaks
     Spray.js           # bow spray particles
@@ -373,6 +440,8 @@ src/
     SkyDome.js         # sky + sun direction
     Environment.js     # lights + scene fog
   entities/Boat.js     # placeholder boat + buoyancy/steering
+  entities/Diver.js    # the scuba diver: swimming, air, dive computer
+  ui/DiveComputer.js   # dive computer panel
   systems/
     Input.js           # keyboard -> throttle/steer
     FollowCamera.js    # damped chase camera

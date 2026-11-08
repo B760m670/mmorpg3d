@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import buildingsData from '../assets/terrain/buildings.json';
 import { heightAt, coverAt } from './Terrain.js';
+import { addWaterTint } from './Underwater.js';
 
 // The settlements and the stones on the ground, Reine area.
 //
@@ -139,6 +140,7 @@ export class Village {
     for (let k = 0; k < 4; k++) {
       const p = pieces[`rock${k}`];
       if (!p) continue;
+      if (!p[0].mat.userData.tinted) { addWaterTint(p[0].mat); p[0].mat.userData.tinted = true; }   // stones under water
       const im = new THREE.InstancedMesh(p[0].geo, p[0].mat, this.rockCap);
       im.count = 0;
       im.frustumCulled = false;

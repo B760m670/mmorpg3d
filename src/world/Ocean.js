@@ -101,6 +101,9 @@ const FRAG = /* glsl */ `
   uniform float uFoamBias;      // Jacobian below which crests break
   uniform float uRain;          // 0..1, rings from raindrops
   uniform float uHullMask;      // 1 while the camera is below decks
+  uniform float uUnder;         // 1 while the camera is under water
+  uniform vec3  uWaterCol;      // the water around the camera (under water)
+  uniform float uWaterFog;      // its attenuation per metre, for the view up
 
   // The player's vessel, for hull foam, bow wave and wake.
   uniform vec2  uBoatPos;
@@ -218,6 +221,38 @@ const FRAG = /* glsl */ `
     vec3 N = normalize(vec3(-s.x, 1.0, -s.y));
     vec3 V = normalize(uCameraPos - vWorldPos);
 
+    // Seen from below. Light from the sky gets in only inside Snell's
+    // window, a circle 97 deg across overhead; outside it the surface is a
+    // mirror (total internal reflection) of the dim water below.
+    // (decided per pixel by which side of the surface faces the eye, so the
+    // waterline at the eye is right even where the waves and the CPU's
+    // estimate of them differ a little)
+    if (!gl_FrontFacing && uCameraPos.y < vWorldPos.y + 0.5) {
+      vec3 Nd = -N;
+      vec3 I = -V;
+      vec3 T = refract(I, Nd, 1.333);
+      float cosI = max(dot(V, Nd), 0.0);
+      vec3 below = uWaterCol * 0.85;
+      vec3 c;
+      if (dot(T, T) < 1e-4) {
+        c = below;
+      } else {
+        float cosT = max(dot(T, -Nd), 0.0);
+        float F = mix(0.02, 1.0, pow(1.0 - cosT, 5.0));
+        vec3 sky = skyColor(normalize(T)) * 1.5 + uSunColor * pow(max(dot(normalize(T), uSunDir), 0.0), 900.0) * 30.0;
+        c = mix(sky, below, F);
+        // the rim of the window glows where the refracted view grazes the horizon
+        c += uWaterCol * 2.0 * smoothstep(0.35, 0.0, cosT);
+      }
+      // foam and whitecaps show dark against the window, light outside it
+      float fu = smoothstep(0.55, 0.95, texture(uDisp0, uv0).w * amp.x + texture(uDisp1, uv1).w * amp.y);
+      c = mix(c, uFoam * 0.5, fu * 0.6);
+      float wf = 1.0 - exp(-uWaterFog * vViewDist);
+      c = mix(c, uWaterCol, wf);
+      gl_FragColor = vec4(c, 1.0);
+      return;
+    }
+
     // Fresnel (Schlick).
     float NdV = max(dot(N, V), 0.0);
     float fres = mix(0.02, 1.0, pow(1.0 - NdV, 5.0));
@@ -235,7 +270,15 @@ const FRAG = /* glsl */ `
     float thin = clamp(vHeight * 0.25, 0.0, 1.0) * pow(0.5 - 0.5 * dot(uSunDir, N), 2.0);
     body += uShallow * uSunColor * (back * thin * 0.9 + pow(NdV, 2.0) * 0.06);
 
-    vec3 col = mix(body, refl, fres);
+    // See-through where the water is shallow: the bottom shows, fading
+    // with the length of the way up through the water (refracted). The
+    // colour of what is down there is the terrain's own (tinted by depth);
+    // here only how much of it shows. Output is premultiplied alpha.
+    float colDepth = max(0.0, vHeight - vShore);
+    float cosT = sqrt(max(0.05, 1.0 - (1.0 - NdV * NdV) / 1.777));
+    float trans = exp(-0.12 * colDepth / cosT) * smoothstep(0.0, 0.25, colDepth + 0.1);
+    float alpha = 1.0 - (1.0 - fres) * trans;
+    vec3 col = refl * fres + body * (1.0 - fres) * (1.0 - trans);
 
     // Sun / moon glitter; the far sea is rougher than the pixels can show,
     // so the highlight widens with distance instead of flickering.
@@ -267,7 +310,9 @@ const FRAG = /* glsl */ `
     shore *= smoothstep(0.25, 0.65, detail + shore * 0.3);
 
     float foam = max(whitecap, shore * (0.55 + 0.45 * uSeaRough));
-    col = mix(col, uFoam * (0.85 + 0.15 * max(dot(N, uSunDir), 0.0)), clamp(foam, 0.0, 1.0) * 0.92);
+    float fk = clamp(foam, 0.0, 1.0) * 0.92;
+    col = mix(col, uFoam * (0.85 + 0.15 * max(dot(N, uSunDir), 0.0)), fk);
+    alpha = mix(alpha, 1.0, fk);
 
     // Whitewater from the vessel, broken up by drifting texture.
     float fa = boatFoam(p);
@@ -279,13 +324,15 @@ const FRAG = /* glsl */ `
       float pattern = smoothstep(0.56, 0.86, n + fa * 0.3) * fa;
       col = mix(col, uShallow * 1.8 + uFoam * 0.05, fa * 0.25);  // aerated, lighter water
       col = mix(col, uFoam * 1.05, pattern);
+      alpha = mix(alpha, 1.0, max(fa * 0.25, pattern));
     }
 
     // Distance fog — melt into the haze.
-    float fog = 1.0 - exp(-uFogDensity * vViewDist);
-    col = mix(col, uFogColor, clamp(fog, 0.0, 1.0));
+    float fog = clamp(1.0 - exp(-uFogDensity * vViewDist), 0.0, 1.0);
+    col = mix(col, uFogColor, fog);
+    alpha = mix(alpha, 1.0, fog);
 
-    gl_FragColor = vec4(col, 1.0);
+    gl_FragColor = vec4(col, alpha);
   }
 `;
 
@@ -408,6 +455,9 @@ export class Ocean {
       uFoamBias: { value: 0.5 },
       uRain: { value: 0 },
       uHullMask: { value: 0 },
+      uUnder: { value: 0 },
+      uWaterCol: { value: new THREE.Color(0.02, 0.07, 0.07) },
+      uWaterFog: { value: 0.08 },
       ...terrainUniforms(),
       uBoatPos: { value: new THREE.Vector2(0, 0) },
       uBoatFwd: { value: new THREE.Vector2(0, -1) },
@@ -421,11 +471,21 @@ export class Ocean {
       vertexShader: VERT,
       fragmentShader: FRAG,
       fog: false,
+      // see-through in the shallows (premultiplied alpha), and seen from
+      // below by a diver
+      transparent: true,
+      depthWrite: true,
+      side: THREE.DoubleSide,
+      blending: THREE.CustomBlending,
+      blendSrc: THREE.OneFactor,
+      blendDst: THREE.OneMinusSrcAlphaFactor,
+      premultipliedAlpha: true,
     });
 
     const geo = mobile ? polarGrid(180, 170, 0.5, 9000) : polarGrid(288, 240, 0.4, 9000);
     this.mesh = new THREE.Mesh(geo, this.material);
     this.mesh.frustumCulled = false;
+    this.mesh.renderOrder = -10;      // first of the transparent things: spray, rain, bubbles test against it
 
     this.state = -1;
     this.cur = null;     // h0 arrays per cascade, shown

@@ -143,6 +143,10 @@ export class SoundScape {
       this.fallVoices.push({ sp, roar, rumble });
     }
 
+    // under water: the low roar of the sea all around (surf, swell on rock)
+    this.uwBed = bed('lowpass', 260, 0.7, this.master);
+    this.uwHiss = bed('bandpass', 1800, 0.6, this.master);
+
     // gulls: a few voices that move around
     this.gulls = [];
     for (let i = 0; i < 3; i++) this.gulls.push({ sp: this.spatial({ ref: 12, reverb: 0.3 }), busy: 0 });
@@ -288,7 +292,13 @@ export class SoundScape {
     this.scanTimer -= dt;
     if (this.scanTimer <= 0) { this.scanTimer = 0.7; this.scanShores(L.x, L.z); }
 
-    set(this.muffle.frequency, s.inside ? 650 : 18000, 0.15);
+    // under water the air-borne world is a dull rumble from above; the
+    // ship's propeller and diesel carry through the water instead
+    const uw = !!s.underwater;
+    set(this.muffle.frequency, uw ? 320 : s.inside ? 650 : 18000, 0.15);
+    set(this.outside.gain, uw ? 0.4 : 1, 0.2);
+    set(this.uwBed.g.gain, uw ? 0.22 + 0.25 * s.sea : 0, 0.3);
+    set(this.uwHiss.g.gain, uw ? 0.015 : 0, 0.3);
     set(this.reverbSend.gain, 0.03 + 0.45 * this.enclosure, 1.0);
 
     // --- the ship
@@ -302,7 +312,8 @@ export class SoundScape {
     set(this.engLP.frequency, 260 + n * 380, 0.4);
     set(this.engOut.gain, 0.14 + 0.3 * n * n, 0.3);
     set(this.clatter.g.gain, 0.05 + 0.08 * n, 0.3);
-    set(this.hullGain.gain, s.engineRoom ? 2.2 : s.aboard ? 0.7 : 0, 0.3);
+    const prop = uw ? 1.6 * Math.exp(-(s.shipDist || 0) / 90) * (0.4 + 0.6 * n) : 0;
+    set(this.hullGain.gain, s.engineRoom ? 2.2 : s.aboard ? 0.7 : prop, 0.3);
     set(this.hull.frequency, s.engineRoom ? 900 : 190, 0.3);
     let p = this.shipPoint(ship, 1.3, 9.5, -1.5);
     this.place(this.exhaust, p.x, p.y, p.z, L);
@@ -420,6 +431,56 @@ export class SoundScape {
       t += dur + 0.06 + Math.random() * 0.12;
     }
     g.busy = t + 0.3;
+  }
+
+  // A breath on the regulator: in, the demand valve hisses; out, a burst of
+  // bubbles past the ears (lower and louder deeper, as the gas is denser).
+  breath(out, depth = 0) {
+    if (!this.ctx) return;
+    const ctx = this.ctx, t = ctx.currentTime;
+    const src = this.noise();
+    const env = ctx.createGain();
+    if (!out) {
+      const bp = this.filter('bandpass', 2600, 1.4);
+      const hp = this.filter('highpass', 900, 0.7);
+      env.gain.setValueAtTime(0, t);
+      env.gain.linearRampToValueAtTime(0.16, t + 0.25);
+      env.gain.linearRampToValueAtTime(0.12, t + 1.0);
+      env.gain.linearRampToValueAtTime(0, t + 1.5);
+      src.connect(hp).connect(bp).connect(env).connect(this.master);
+      src.stop(t + 1.6);
+    } else {
+      const lp = this.filter('lowpass', 700 - Math.min(300, depth * 8), 1.2);
+      const bp = this.filter('bandpass', 380, 2.5);
+      env.gain.setValueAtTime(0, t);
+      // irregular bursts: bubbles breaking off the exhaust valve
+      let tt = t;
+      while (tt < t + 1.7) {
+        const a = 0.25 + Math.random() * 0.45;
+        env.gain.setValueAtTime(a, tt);
+        env.gain.exponentialRampToValueAtTime(0.02, tt + 0.05 + Math.random() * 0.05);
+        bp.frequency.setValueAtTime(250 + Math.random() * 500, tt);
+        tt += 0.05 + Math.random() * 0.07;
+      }
+      env.gain.linearRampToValueAtTime(0, tt + 0.05);
+      src.connect(lp).connect(bp).connect(env).connect(this.master);
+      src.stop(tt + 0.1);
+    }
+  }
+
+  // Into the water.
+  splash() {
+    if (!this.ctx) return;
+    const ctx = this.ctx, t = ctx.currentTime;
+    const src = this.noise();
+    const lp = this.filter('lowpass', 2400, 0.6);
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(0, t);
+    env.gain.linearRampToValueAtTime(0.9, t + 0.02);
+    env.gain.exponentialRampToValueAtTime(0.001, t + 1.1);
+    lp.frequency.exponentialRampToValueAtTime(300, t + 1.0);
+    src.connect(lp).connect(env).connect(this.master);
+    src.stop(t + 1.2);
   }
 
   creak(strength) {
