@@ -53,6 +53,8 @@ export class Trawl {
     this.codend = {};           // kg by species in the net
     this.hold = {};             // kg by species in the fish room
     this.cash = 0;              // NOK earned
+    this.processKg = 0;         // catch being gutted and washed in the fish handling space
+    this.processT = 0;          // s left
     this.towTime = 0;
     this.spread = 0;
     this.headline = 0;
@@ -245,6 +247,7 @@ export class Trawl {
     const k = add > 0 ? Math.min(1, room / add) : 0;
     for (const [s, kg] of Object.entries(this.codend)) this.hold[s] = (this.hold[s] || 0) + kg * k;
     this.lastHaul = { kg: add * k, by: { ...this.codend }, time: this.towTime };
+    if (add * k > 1) { this.processKg = add * k; this.processT = Math.min(900, 60 + add * k * 0.3); }
     this.codend = {};
     this.towTime = 0;
     this.state = 'stowed';

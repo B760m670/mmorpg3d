@@ -148,6 +148,7 @@ export class SoundScape {
     this.uwHiss = bed('bandpass', 1800, 0.6, this.master);
 
     this.initWhistle();
+    this.initRooms();
 
     // anchor chain and windlass
     this.chainSrc = this.spatial({ ref: 8, reverb: 0.3 });
@@ -413,6 +414,15 @@ export class SoundScape {
       });
     }
 
+    // --- machinery and life below
+    if (this.rooms && s.rooms) {
+      for (const [k, r] of Object.entries(this.rooms)) {
+        const on = !!s.rooms[k];
+        set(r.g.gain, on ? r.level : 0, 0.4);
+        if (on) { p = this.shipPoint(ship, r.pos[0], r.pos[1], r.pos[2]); this.place(r.sp, p.x, p.y, p.z, L); }
+      }
+    }
+
     // --- gulls: fair weather, daylight, more near the shore
     this.gullTimer -= dt;
     const near = this.shores.length ? Math.max(0, 1 - this.shores[0].d / 600) : 0;
@@ -541,6 +551,47 @@ export class SoundScape {
     env.gain.exponentialRampToValueAtTime(0.001, t + dur);
     src.connect(bp).connect(env).connect(this.master);
     src.stop(t + dur + 0.05);
+  }
+
+  // machinery and life in the spaces below, each at its place in the ship
+  // (model space) and heard through the steel: the air compressor knocking,
+  // the hydraulic pump's whine, the conveyors, the shower, the television
+  initRooms() {
+    const ctx = this.ctx;
+    const mk = (pos, level, build) => {
+      const sp = this.spatial({ ref: 1.2, rolloff: 1.7, dest: this.master, reverb: 0.25 });
+      const g = ctx.createGain(); g.gain.value = 0; g.connect(sp.input);
+      build(g);
+      return { sp, g, pos, level };
+    };
+    const lfo = (hz, depth, target) => { const o = ctx.createOscillator(); o.frequency.value = hz; const k = ctx.createGain(); k.gain.value = depth; o.connect(k).connect(target); o.start(); return o; };
+    this.rooms = {
+      comp: mk([1.05, -1.2, 2.975], 0.5, (g) => {
+        const am = ctx.createGain(); am.gain.value = 0.55; lfo(13, 0.45, am.gain);
+        this.noise().connect(this.filter('bandpass', 230, 1.4)).connect(am).connect(g);
+        const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = 49; const og = ctx.createGain(); og.gain.value = 0.08;
+        o.connect(this.filter('lowpass', 300, 0.7)).connect(og).connect(g); o.start();
+      }),
+      hyd: mk([0, -0.65, 3.825], 0.35, (g) => {
+        const o = ctx.createOscillator(); o.frequency.value = 372; const og = ctx.createGain(); og.gain.value = 0.06; o.connect(og).connect(g); o.start();
+        lfo(0.7, 4, o.frequency);
+        this.noise().connect(this.filter('bandpass', 900, 0.8)).connect(g);
+      }),
+      conveyor: mk([1.6, 3.0, 5.475], 0.45, (g) => {
+        this.noise().connect(this.filter('lowpass', 220, 0.8)).connect(g);
+        const am = ctx.createGain(); am.gain.value = 0.15; lfo(7.5, 0.13, am.gain);
+        this.noise().connect(this.filter('bandpass', 1500, 2.5)).connect(am).connect(g);
+      }),
+      shower: mk([3.0, 4.2, -0.405], 0.35, (g) => {
+        this.noise().connect(this.filter('highpass', 1500, 0.7)).connect(this.filter('lowpass', 7000, 0.7)).connect(g);
+      }),
+      tv: mk([-1.0, 4.0, -4.525], 0.3, (g) => {
+        // speech-like murmur: band-passed noise with a syllable rhythm
+        const am = ctx.createGain(); am.gain.value = 0.35; lfo(4.3, 0.3, am.gain); lfo(1.1, 0.2, am.gain);
+        const f = this.filter('bandpass', 900, 1.3); lfo(2.3, 300, f.frequency);
+        this.noise().connect(f).connect(am).connect(g);
+      }),
+    };
   }
 
   // the VHF loudspeaker: squelch opens on a signal (a burst of noise, then a

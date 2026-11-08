@@ -79,11 +79,27 @@ export class Stations {
       return `${E.holdT.toFixed(1)} °C · ${fmt(T.holdKg)} из ${fmt(HOLD_CAP)} кг${by ? ': ' + by : ''}`;
     }, null);
     set('icemaker', () => (E.powered('fridge') ? 'работает' : 'без питания (автомат «Холодильник трюма»)'), null);
+    set('factory', () => (T.processT > 0 ? `идёт обработка улова: ${fmt(T.processKg)} кг, ещё ~${Math.ceil(T.processT / 60)} мин — бункер, потрошение, мойка, лоток в трюм` : 'конвейеры стоят: улова нет'), null);
+    set('washer', () => (T.processT > 0 ? 'работает' : 'стоит'), null);
+    for (const id of ['cabin1', 'cabin2', 'cabin3', 'cabin4']) set(id, null, { label: () => (this.resting ? null : 'лечь отдохнуть'), run: () => this.rest() });
     set('galley', () => (this.cooking > 0 ? `плита включена, ещё ${Math.ceil(this.cooking / 60)} мин` : 'плита выключена'),
       { label: () => (this.cooking > 0 ? 'выключить плиту' : 'приготовить еду (≈20 мин)'), run: () => { this.cooking = this.cooking > 0 ? 0 : 1200; } });
     set('coffee', () => (E.kettle > 0 ? 'греется' : ''), { label: () => (E.kettle > 0 ? null : 'сварить кофе'), run: () => { E.kettle = 180; } });
     set('tv', () => (this.tv ? (E.powered('light') ? 'включён' : 'нет питания') : 'выключен'), { label: () => (this.tv ? 'выключить' : 'включить'), run: () => { this.tv = !this.tv; } });
     set('shower', () => (E.hotw > 0 ? 'бойлер греет' : ''), { label: () => 'принять душ', run: () => { E.hotw = Math.max(E.hotw, 420); } });
+  }
+
+  // a short rest in a bunk: the screen goes dark and comes back
+  rest() {
+    if (this.resting) return;
+    this.resting = true;
+    const el = document.createElement('div');
+    el.style.cssText = 'position:fixed;inset:0;background:#000;opacity:0;transition:opacity 1.2s ease;z-index:30;display:flex;align-items:center;justify-content:center;color:#cfd8de;font:15px system-ui,sans-serif';
+    el.textContent = 'отдыхаете… качка, гул машины за переборкой';
+    document.body.appendChild(el);
+    requestAnimationFrame(() => { el.style.opacity = '1'; });
+    setTimeout(() => { el.style.opacity = '0'; }, 3600);
+    setTimeout(() => { el.remove(); this.resting = false; }, 5000);
   }
 
   // gauges, the receiver, the sight glass, the fish boxes, the TV picture
@@ -142,6 +158,53 @@ export class Stations {
     slots.forEach(([x, s, k], i) => { m4.makeTranslation(x, -1.5 + 0.13 + k * 0.26, 11.975 - s); this.boxes.setMatrixAt(i, m4); });
     this.boxes.count = 0;
     model.add(this.boxes);
+    // fish on the conveyors while a catch is worked: hopper -> sorting
+    // conveyor aft -> gutting conveyor forward -> lift -> washer
+    const path = [P(0.6, 8.15, 3.15), P(1.2, 8.4, 3.02), P(1.2, 4.7, 3.02), P(2.05, 4.65, 3.02), P(2.05, 8.0, 3.02), P(2.05, 8.6, 3.55), P(2.05, 9.3, 3.35)];
+    this.fpath = path;
+    this.flen = [0];
+    for (let i = 1; i < path.length; i++) this.flen.push(this.flen[i - 1] + path[i].distanceTo(path[i - 1]));
+    const fishG = new THREE.SphereGeometry(1, 10, 6);
+    fishG.scale(0.05, 0.045, 0.22);
+    this.fish = new THREE.InstancedMesh(fishG, new THREE.MeshStandardMaterial({ color: 0x8d8a76, roughness: 0.35, metalness: 0.1 }), 40);
+    this.fish.count = 0;
+    this.fish.frustumCulled = false;
+    model.add(this.fish);
+    this.fishT = 0;
+    // doors: they swing open as someone comes to them and close behind
+    this.doors = [];
+    const wood = new THREE.MeshStandardMaterial({ color: 0xa47f55, roughness: 0.6 });
+    const white = new THREE.MeshStandardMaterial({ color: 0xe6e4de, roughness: 0.5 });
+    const knob = new THREE.MeshStandardMaterial({ color: 0xc9c9c9, metalness: 0.7, roughness: 0.3 });
+    const door = (kind, at, a0, a1, h, swing, mat) => {
+      const w = Math.abs(a1 - a0);
+      const hinge = new THREE.Group();
+      const leaf = new THREE.Mesh(new THREE.BoxGeometry(kind === 'bh' ? w - 0.02 : 0.04, h - 0.02, kind === 'bh' ? 0.04 : w - 0.02), mat);
+      const handle = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.03, 0.03), knob);
+      if (kind === 'bh') {          // in a transverse bulkhead at station at, from x a0 to a1
+        hinge.position.copy(P(a0, at, 2.15));
+        leaf.position.set(w / 2, h / 2, 0);
+        handle.position.set(w - 0.1, 1.0, 0);
+        handle.scale.set(1, 1, 3.5);
+      } else {                      // in a fore-and-aft wall at x at, from station a0 to a1
+        hinge.position.copy(P(at, a0, 2.15));
+        leaf.position.set(0, h / 2, -w / 2);
+        handle.position.set(0, 1.0, -w + 0.1);
+        handle.scale.set(3.5, 1, 1);
+      }
+      hinge.add(leaf, handle);
+      model.add(hinge);
+      const c = kind === 'bh' ? P((a0 + a1) / 2, at, 2.15) : P(at, (a0 + a1) / 2, 2.15);
+      this.doors.push({ hinge, kind, swing, c, ang: 0 });
+    };
+    door('bh', 11.4, -1.4, -0.55, 1.9, -1, white);       // fish handling <-> changing room
+    door('bh', 12.8, -0.45, 0.45, 1.95, 1, wood);        // changing room <-> galley and mess
+    door('bh', 16.6, -0.5, 0.5, 1.95, 1, wood);          // mess <-> cabin corridor
+    for (const sd of [1, -1]) {
+      door('wall', sd * 0.5, 17.4, 18.1, 1.95, sd, wood);  // cabins
+      door('wall', sd * 0.5, 18.75, 19.45, 1.95, sd, wood);
+    }
+    door('wall', 1.8, 11.95, 12.65, 1.95, 1, white);     // washroom
   }
 
   dial(model, pos, yaw, r, label) {
@@ -195,6 +258,42 @@ export class Stations {
       else {
         B.rudder = THREE.MathUtils.clamp(B.rudder - st.moveX * 2.2 * dt, -35, 35);
         B.wheel = B.rudder;
+      }
+    }
+    // the catch being worked
+    if (T.processT > 0) T.processT = Math.max(0, T.processT - dt);
+    if (this.fish) {
+      const on = T.processT > 0;
+      this.fish.count = on ? this.fish.instanceMatrix.count : 0;
+      if (on) {
+        this.fishT += dt * 0.45;
+        const L = this.flen[this.flen.length - 1], n = this.fish.count, m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(1, 1, 1);
+        const pos = new THREE.Vector3(), dir = new THREE.Vector3();
+        for (let i = 0; i < n; i++) {
+          const d = (this.fishT + (i * L) / n + Math.sin(i * 12.9) * 0.08) % L;
+          let k = 1;
+          while (k < this.flen.length - 1 && this.flen[k] < d) k++;
+          const f = (d - this.flen[k - 1]) / (this.flen[k] - this.flen[k - 1]);
+          pos.lerpVectors(this.fpath[k - 1], this.fpath[k], f);
+          dir.subVectors(this.fpath[k], this.fpath[k - 1]).normalize();
+          q.setFromUnitVectors(new THREE.Vector3(0, 0, 1), dir);
+          q.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), i * 1.7));
+          pos.x += Math.sin(i * 7.3) * 0.12;
+          m4.compose(pos, q, sc);
+          this.fish.setMatrixAt(i, m4);
+        }
+        this.fish.instanceMatrix.needsUpdate = true;
+      }
+    }
+    // doors open for whoever comes to them (you, and later the people aboard)
+    if (this.doors) {
+      const who = [st.pos, ...(st.others || [])];
+      for (const d of this.doors) {
+        const near = who.some((p) => p && Math.hypot(p.x - d.c.x, p.z - d.c.z) < 1.35 && Math.abs(p.y - d.c.y) < 1.5);
+        const want = near ? 1 : 0;
+        d.ang += (want - d.ang) * Math.min(1, dt * 3.5);
+        const a = d.ang * Math.PI * 0.5;
+        d.hinge.rotation.y = d.kind === 'bh' ? a * d.swing : -a * d.swing;
       }
     }
     this.t -= dt;

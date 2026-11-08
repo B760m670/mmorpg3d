@@ -135,7 +135,19 @@ bottom of the screen also gives its live state from the ship's systems, and
 - **galley, mess, washroom**: cook (the range draws 6.5 kW on the
   switchboard for twenty minutes), make coffee, watch television, take a
   shower (the 3 kW boiler heats up again);
-- **cabins**: the escape scuttle from the corridor up to the foredeck.
+- **fish handling**: after a haul the catch is worked for a few minutes
+  (about 0.3 s per kilo, at most 15 min): the fish ride the conveyors from
+  the reception hopper past the gutting places, up the lift into the washer,
+  and the line at the bottom says how much is left;
+- **cabins**: lie down for a rest in a bunk; the escape scuttle from the
+  corridor up to the foredeck.
+
+Doors in the 'tween deck (fish handling to changing room, to galley and
+mess, to the cabin corridor, the four cabins, the washroom) swing open as
+someone comes to them and close behind. Each space has its own sound, placed
+where it comes from and heard through the steel: the air compressor knocking
+when it runs, the hydraulic pump's whine, the conveyors while the catch is
+worked, the shower, the television.
 
 ### Bridge electronics, sensors and the ship's power
 

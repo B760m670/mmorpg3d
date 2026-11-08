@@ -636,6 +636,8 @@ function tick() {
     chain: anchor.speed, chainPos: boat.model ? anchor.hawseWorld(boat) : null,
     winch: Math.abs(trawl.rate) + (trawl.state === 'net' || trawl.state === 'netin' ? 0.5 : 0),
     winchPos: boat.model && trawl.state !== 'stowed' ? boat.model.localToWorld(_hornPos.clone().set(0, 5, 6)) : null,
+    rooms: { comp: elec.compOn && elec.powered('comp'), hyd: elec.powered('hyd'), conveyor: trawl.processT > 0, shower: elec.hotw > 360,
+      tv: !!(stations && stations.tv && elec.powered('light')) },
   });
   ocean.uniforms.uRain.value = weather.v.rain;
   // Near plane: close for walking about inside the ship, further out in
