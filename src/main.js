@@ -29,6 +29,11 @@ import { Underwater, WATER } from './world/Underwater.js';
 import { SeaLife } from './world/SeaLife.js';
 import { Diver } from './entities/Diver.js';
 import { DiveComputer } from './ui/DiveComputer.js';
+import { Alarms } from './ship/Alarms.js';
+import { Electrical } from './ship/Electrical.js';
+import { Sensors } from './ship/Sensors.js';
+import { ShipLights } from './ship/ShipLights.js';
+import { ShipPanels } from './ui/ShipPanels.js';
 
 const container = document.getElementById('app');
 const loading = document.getElementById('loading');
@@ -63,8 +68,9 @@ scene.add(falls.group);
 falls.resize(window.innerHeight);
 window.addEventListener('resize', () => falls.resize(window.innerHeight));
 // The player's own light below decks (fluorescent tubes are emissive only).
-const lamp = new THREE.PointLight(0xfff1dc, 1.3, 9, 1.2);
-lamp.visible = false;
+// (always in the scene, switched by its intensity: adding or removing a
+// light would recompile every material)
+const lamp = new THREE.PointLight(0xfff1dc, 0, 9, 1.2);
 scene.add(lamp);
 const nightSky = new NightSky();
 scene.add(nightSky.mesh);
@@ -84,13 +90,23 @@ const startSound = () => sound.start();
 for (const ev of ['pointerdown', 'keydown', 'touchend']) window.addEventListener(ev, startSound, { passive: true });
 const environment = new Environment(scene, { shadowMapSize: IS_TOUCH ? 1024 : 2048 });
 
-const instruments = new Instruments(terrain);
+// The ship's systems: electrical plant, sensors and bridge equipment, lights
+const alarms = new Alarms();
+const elec = new Electrical(alarms);
+const sensors = new Sensors(alarms, elec);
+const shipLights = new ShipLights({ scene, elec, mobile: IS_TOUCH });
+const instruments = new Instruments(terrain, sensors);
 const boat = new Boat();
 // Lying off Reine in Vestfjorden, bow toward the fjord mouth: course 335°,
 // clear water for about 3 km (the skerries east of Reine are to port).
 boat.heading = THREE.MathUtils.degToRad(25);
 boat.water = (x, z, t) => ocean.sampleWater(x, z, t);
-boat.load(trawlerUrl, () => instruments.attach(boat.model));
+boat.load(trawlerUrl, () => {
+  instruments.attach(boat.model);
+  const mats = new Set();
+  boat.model.traverse((o) => { if (o.isMesh) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => m && mats.add(m)); });
+  shipLights.attach(boat.model, { materials: [...mats], torch: underwater.torch });
+});
 scene.add(boat.object);
 
 const input = new Input();
@@ -110,6 +126,21 @@ orbit.maxPolarAngle = Math.PI * 0.495;
 orbit.enabled = false;
 
 const touch = IS_TOUCH ? new TouchControls(input) : null;
+const panels = new ShipPanels({
+  elec, sensors, lights: shipLights, alarms,
+  actions: {
+    // the searchlight to where the camera looks
+    aimSearch: () => {
+      if (!boat.model) return;
+      const d = camera.getWorldDirection(new THREE.Vector3());
+      const q = boat.model.getWorldQuaternion(new THREE.Quaternion()).invert();
+      d.applyQuaternion(q);
+      shipLights.search.az = (Math.atan2(d.x, -d.z) * 180) / Math.PI;
+      shipLights.search.el = Math.max(-25, Math.min(15, (Math.asin(Math.max(-1, Math.min(1, d.y))) * 180) / Math.PI));
+      shipLights.search.on = true;
+    },
+  },
+});
 if (IS_TOUCH) document.body.classList.add('touch');
 
 // ---------------------------------------------------------------- modes
@@ -128,9 +159,9 @@ const HINTS = IS_TOUCH ? {
   walk: 'джойстик — идти · палец — осмотреться · у штурвала — «к штурвалу» · «нырнуть» — за борт',
   swim: 'джойстик — плыть туда, куда смотрите · ▲ ▼ — вверх / вниз · палец — осмотреться · «фонарь» · у борта — «на борт»',
 } : {
-  '3p': '<b>W/S</b> телеграф · <b>A/D</b> руль · <b>Z</b> руль прямо · мышь — облёт, колесо — ближе/дальше · <b>F</b> на борт · <b>N</b> день/ночь · <b>B</b> погода · <b>H</b> гудок · <b>M</b> звук · <b>I</b> приборы · <b>J</b> нырнуть',
-  helm: '<b>W/S</b> телеграф · <b>A/D</b> руль · <b>Z</b> руль прямо · <b>E</b> отойти от штурвала · <b>F</b> вид со стороны · клик — осмотреться',
-  walk: '<b>WASD</b> идти · <b>Shift</b> бегом · <b>E</b> к штурвалу (стоя у него) · <b>J</b> за борт · <b>F</b> вид со стороны · клик — осмотреться',
+  '3p': '<b>W/S</b> телеграф · <b>A/D</b> руль · <b>Z</b> руль прямо · мышь — облёт, колесо — ближе/дальше · <b>F</b> на борт · <b>N</b> день/ночь · <b>B</b> погода · <b>H</b> гудок · <b>M</b> звук · <b>I</b> приборы · <b>J</b> нырнуть · <b>P</b> пульт (огни, свет, приборы, энергия) · <b>U</b> авторулевой',
+  helm: '<b>W/S</b> телеграф · <b>A/D</b> руль · <b>Z</b> руль прямо · <b>U</b> авторулевой · <b>P</b> пульт · <b>E</b> отойти от штурвала · <b>F</b> вид со стороны · клик — осмотреться',
+  walk: '<b>WASD</b> идти · <b>Shift</b> бегом · <b>E</b> к штурвалу (стоя у него) · <b>P</b> пульт на мостике / щит в машинном · <b>J</b> за борт · <b>F</b> вид со стороны · клик — осмотреться',
   swim: '<b>WASD</b> плыть туда, куда смотрите · <b>Space</b> вверх · <b>C</b> вниз · <b>Shift</b> быстрее · <b>L</b> фонарь · <b>E</b> на борт (у борта) · клик — осмотреться',
 };
 const WEATHER_RU = { clear: 'ясно', fair: 'переменная облачность', 'overcast, showers': 'пасмурно, ливни', storm: 'шторм' };
@@ -240,6 +271,17 @@ function updateWeather(dt) {
   engine.renderer.toneMappingExposure = sceneExposure * (1 + flash * 1.4);
 }
 
+// ---------------------------------------------------------------- panels
+// standing at the main switchboard (engine room, forward bulkhead, port)
+function nearSwitchboard() {
+  const pp = player.pos;
+  return mode === 'walk' && pp.y < -0.3 && Math.hypot(pp.x + 1.9, pp.z - 3.2) < 1.9;
+}
+function onBridgeNow() {
+  const pp = player.pos;
+  return pp.y > 5.1 && pp.z > -6.3 && pp.z < 0.2 && Math.abs(pp.x) < 3.4;
+}
+
 // ---------------------------------------------------------------- diving
 // Over the side: from the deck (the side you stand nearest) or, from the
 // outside view, off the starboard quarter.
@@ -316,6 +358,14 @@ function tick() {
     else if (mode === 'swim') climbAboard();
   }
   if (input.pressed('j') && (mode === '3p' || mode === 'walk') && boat.model) overTheSide();
+  if (input.pressed('escape') && panels.isOpen) panels.hide();
+  else if (input.pressed('p')) {
+    if (panels.isOpen) panels.hide();
+    else if (nearSwitchboard()) panels.show('msb');
+    else if (mode === '3p' || mode === 'helm' || (mode === 'walk' && onBridgeNow())) panels.show('bridge');
+    else if (touch) touch.toast('Пульт — на мостике, главный щит — в машинном отделении', 2.5);
+    else showHint('Пульт управления — на мостике (P), главный распределительный щит — в машинном отделении у переборки (P)');
+  }
   if (input.pressed('l') && mode === 'swim') {
     torchUser = !underwater.torchOn;
     if (touch) touch.toast(torchUser ? 'Фонарь включён' : 'Фонарь выключен', 1.5);
@@ -328,11 +378,17 @@ function tick() {
 
   // The conn: telegraph and wheel answer only from the helm.
   if (mode === '3p' || mode === 'helm') {
+    const tg0 = boat.telegraph;
     if (input.pressed('w') || input.pressed('arrowup')) boat.telegraphStep(+1);
     if (input.pressed('s') || input.pressed('arrowdown')) boat.telegraphStep(-1);
     if (input.pressed('z')) boat.midships();
     if (input.telegraphSet !== null) boat.telegraph = input.telegraphSet;
     if (input.wheelSet !== null) boat.wheel = input.wheelSet;
+    if (boat.telegraph !== tg0) sensors.bnwasReset();
+    if (input.pressed('u')) {
+      if (sensors.ap.mode === 'auto') sensors.apHand('ручное управление'); else sensors.apEngage();
+      if (touch) touch.toast(sensors.ap.mode === 'auto' ? `Авторулевой: курс ${Math.round(sensors.ap.set)}°` : `Ручное управление${sensors.ap.msg ? ': ' + sensors.ap.msg : ''}`, 2);
+    }
     const turn = (input.held('a') || input.held('arrowleft') ? 1 : 0) - (input.held('d') || input.held('arrowright') ? 1 : 0);
     // Helm joystick (phone): sideways = rudder in proportion, back to
     // midships when released (follow-up steering); held up/down = step the
@@ -348,8 +404,15 @@ function tick() {
       } else stickStepT = 0;
     } else if (stickWas) boat.midships();
     stickWas = input.stickActive;
+    // taking the wheel overrides the autopilot
+    const handOnWheel = turn !== 0 || (input.stickActive && Math.abs(input.touchX) > 0.12) || input.wheelSet !== null;
+    if (handOnWheel) {
+      sensors.bnwasReset();
+      if (sensors.ap.mode === 'auto') sensors.apHand('ручное управление');
+    }
     boat.steer(dt, { turn, target });
   }
+  if (sensors.ap.mode === 'auto') boat.wheel = sensors.ap.wheel;
 
   // The tide, as predicted for Reine right now (real clock). Deep enough to
   // float means 4 m of water over the bottom at the present level.
@@ -359,6 +422,11 @@ function tick() {
     ocean.setTide(tideLevel());
     ocean.tideRising = tideLevel(Date.now() + 600000) > ocean.tide;
   }
+  // ship's systems: sensors and equipment, then the power they all draw
+  sensors.update(dt, { boat, heightAt, weather, seaRough: ocean.uniforms.uSeaRough.value });
+  elec.dcW = sensors.dcW + shipLights.dcW;
+  elec.update(dt, { rudderRate: boat.rudderRate || 0, meRunning: boat.engineRunning, meFuel: sensors.me.fuel });
+  boat.steeringPumps = elec.steeringPumps;
   boat.update(dt, time, (x, z) => heightAt(x, z) < ocean.tide - 4);
   environment.follow(boat.position);
 
@@ -386,11 +454,12 @@ function tick() {
   }
 
   const near = mode === 'swim' ? diver.nearShip(boat.model) : mode === 'walk' && player.nearHelm;
+  if (touch) touch.setPanel(nearSwitchboard() ? 'щит' : mode === '3p' || mode === 'helm' || (mode === 'walk' && onBridgeNow()) ? 'пульт' : null);
   if (touch && near !== lastNear) {
     touch.setMode(mode, near);
     lastNear = near;
   }
-  bridge.update(boat);
+  bridge.update(boat, sensors);
   if (touch) touch.update(boat);
   const pp = player.pos;
   const onBridge = mode === 'helm' ||
@@ -404,10 +473,11 @@ function tick() {
   // The spaces below are drawn aboard, and from outside when the camera is
   // close enough to look in through a hatch or the wheelhouse windows.
   if (boat.interior) boat.interior.visible = mode === 'walk' || mode === 'helm' || camera.position.distanceTo(boat.position) < 32;
-  if (belowDecks) {
-    lamp.visible = true;
-    lamp.position.copy(camera.position);
-  } else lamp.visible = false;
+  // the lights: navigation lights, floods, searchlight, the room you are in
+  const dark = order[presetIndex] === 'night' ? 1 : Math.min(1, weather.v.dark * 0.6);
+  shipLights.update(dt, { camera, dark, onBridge, belowDecks, lamp, swimming: mode === 'swim' });
+  ocean.setPools(shipLights.pools(boat.model, ocean.tide));
+  panels.update(dt);
   // Below decks only the deckhead lights and your lamp light the spaces: the
   // sun and the open sky are shut out (they would leak through the plating).
   const inK = belowDecks ? 1 : 0;
@@ -459,6 +529,8 @@ function tick() {
     wind: weather.v.wind, rain: weather.v.rain, dark: weather.v.dark, night: order[presetIndex] === 'night',
     inside: onBridge || belowDecks, engineRoom, aboard: mode === 'walk' || mode === 'helm', fallFlow: falls.flow,
     underwater: under, shipDist: camera.position.distanceTo(boat.position),
+    engineRunning: boat.engineRunning, gens: elec.gens.filter((g) => g.state === 'running' || g.state === 'runup').length, genHz: elec.busF || 50,
+    alarm: alarms.unacked > 0 || sensors.bnwas.stage >= 2,
   });
   ocean.uniforms.uRain.value = weather.v.rain;
   // Near plane: close for walking about inside the ship, further out in
@@ -482,4 +554,4 @@ function tick() {
 }
 tick();
 
-window.__scene = { engine, sky, ocean, boat, player, instruments, weather, clouds, rain, spray, sound, falls, environment, terrain, village, follow, orbit, heightAt, applyPreset, setMode, input, diver, underwater, seaLife, overTheSide: () => overTheSide(), get mode() { return mode; } };
+window.__scene = { engine, sky, ocean, boat, player, instruments, weather, clouds, rain, spray, sound, falls, environment, terrain, village, follow, orbit, heightAt, applyPreset, setMode, input, diver, underwater, seaLife, elec, sensors, shipLights, panels, alarms, nearSwitchboard, overTheSide: () => overTheSide(), get mode() { return mode; } };

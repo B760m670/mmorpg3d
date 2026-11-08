@@ -283,6 +283,8 @@ export class Underwater {
     this.torchOn = !!torch;
     this.torch.intensity = torch ? 40 : 0;
     if (torch) {
+      // (the same light is the ship's searchlight when nobody is diving)
+      this.torch.angle = 0.38; this.torch.penumbra = 0.45; this.torch.distance = 32; this.torch.decay = 1.6;
       const dir = camera.getWorldDirection(this._v);
       this.torch.position.copy(camera.position).addScaledVector(dir, 0.3);
       this.torch.position.y -= 0.25;

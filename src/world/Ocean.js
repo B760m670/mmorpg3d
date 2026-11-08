@@ -112,6 +112,8 @@ const FRAG = /* glsl */ `
   uniform vec2  uBoatHalf;   // half length, half beam (m)
 
   uniform sampler2D uRipple;  // small tileable detail for foam texture
+  uniform vec4  uPool[3];     // light on the water from the ship: x, z, radius, strength
+  uniform vec3  uPoolCol[3];
 
   varying vec3  vWorldPos;
   varying vec2  vFlat;
@@ -327,6 +329,20 @@ const FRAG = /* glsl */ `
       alpha = mix(alpha, 1.0, max(fa * 0.25, pattern));
     }
 
+    // The ship's floodlights and searchlight on the water: light scattered
+    // in the top of the water, and their glitter on the wave facets.
+    for (int i = 0; i < 3; i++) {
+      vec4 pl = uPool[i];
+      if (pl.w <= 0.0) continue;
+      vec2 dl = vWorldPos.xz - pl.xy;
+      float fall = exp(-dot(dl, dl) / (pl.z * pl.z)) * pl.w;
+      if (fall < 0.002) continue;
+      vec3 Lp = normalize(vec3(-dl.x, pl.z * 0.6, -dl.y));
+      float gl = pow(max(dot(N, normalize(Lp + V)), 0.0), 90.0);
+      col += uPoolCol[i] * fall * (0.035 + 1.6 * gl);
+      alpha = min(1.0, alpha + fall * 0.04);
+    }
+
     // Distance fog — melt into the haze.
     float fog = clamp(1.0 - exp(-uFogDensity * vViewDist), 0.0, 1.0);
     col = mix(col, uFogColor, fog);
@@ -464,6 +480,8 @@ export class Ocean {
       uBoatSpeed: { value: 0 },
       uBoatHalf: { value: new THREE.Vector2(11.9, 4.6) },
       uRipple: { value: makeRippleTexture() },
+      uPool: { value: [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()] },
+      uPoolCol: { value: [new THREE.Color(), new THREE.Color(), new THREE.Color()] },
     };
 
     this.material = new THREE.ShaderMaterial({
@@ -631,4 +649,13 @@ Ocean.prototype.setBoat = function setBoat(boat) {
   u.uBoatPos.value.set(boat.position.x, boat.position.z);
   u.uBoatFwd.value.set(-Math.sin(boat.heading), -Math.cos(boat.heading));
   u.uBoatSpeed.value = boat.speed;
+};
+
+// Light pools from the ship's lamps: [[x, z, radius, strength, [r,g,b]], ...]
+Ocean.prototype.setPools = function setPools(pools) {
+  const u = this.uniforms;
+  for (let i = 0; i < 3; i++) {
+    const p = pools[i];
+    if (p) { u.uPool.value[i].set(p[0], p[1], p[2], p[3]); u.uPoolCol.value[i].setRGB(...p[4]); } else u.uPool.value[i].w = 0;
+  }
 };

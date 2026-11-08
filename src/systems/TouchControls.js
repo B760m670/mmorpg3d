@@ -110,6 +110,8 @@ export class TouchControls {
     // top-right: view, helm, menu
     const top = this.el('div', 'tc', 'tc-top');
     this.btnHelm = this.button(top, 'к штурвалу', 'e');
+    this.btnPanel = this.button(top, 'пульт', 'p');
+    this.btnPanel.hidden = true;
     this.btnDive = this.button(top, 'нырнуть', 'j');
     this.btnTorch = this.button(top, 'фонарь', 'l');
     this.btnTorch.hidden = true;
@@ -267,6 +269,15 @@ export class TouchControls {
     this.input.touchX = dx / this.radius;
     this.input.touchY = -dy / this.radius;
     this.input.stickActive = true;
+  }
+
+  // the ship's panels: 'пульт' on the bridge or at the conn, 'щит' at the
+  // main switchboard, hidden elsewhere
+  setPanel(label) {
+    if (label === this._panel) return;
+    this._panel = label;
+    this.btnPanel.hidden = !label;
+    if (label) this.btnPanel.textContent = label;
   }
 
   toast(html, seconds = 6) {

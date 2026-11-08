@@ -59,6 +59,8 @@ export class Boat {
     this.wheel = 0;      // deg, helm order (+ = port)
     this.rudder = 0;     // deg, actual rudder angle
     this.rpm = 0;        // fraction of max, signed (astern < 0)
+    this.engineRunning = true;   // main engine (Sensors starts and stops it)
+    this.steeringPumps = 1;      // hydraulic steering pumps running (electrical plant)
 
     this.model = null;
     this.collider = null; // invisible walk/collision mesh, in model space
@@ -151,12 +153,17 @@ export class Boat {
   // ---------------------------------------------------------------- physics
   update(dt, time, canMove = null) {
     // Engine follows the telegraph with a lag.
-    const order = TELEGRAPH[this.telegraph].power;
-    this.rpm += (order - this.rpm) * (1 - Math.exp(-dt / BOAT.rpmLag));
+    // (a stopped engine turns no propeller whatever the telegraph says)
+    const order = this.engineRunning ? TELEGRAPH[this.telegraph].power : 0;
+    this.rpm += (order - this.rpm) * (1 - Math.exp(-dt / (this.engineRunning ? BOAT.rpmLag : 4)));
 
-    // Steering gear chases the wheel order at a limited rate.
-    const dr = THREE.MathUtils.clamp(this.wheel - this.rudder, -BOAT.rudderRate * dt, BOAT.rudderRate * dt);
+    // Steering gear chases the wheel order at a limited rate, driven by its
+    // hydraulic pumps: one pump gives the rated speed, two a little more;
+    // none (a blackout) and the rudder stays where it is.
+    const rate = BOAT.rudderRate * (this.steeringPumps >= 2 ? 1.6 : this.steeringPumps >= 1 ? 1 : 0);
+    const dr = THREE.MathUtils.clamp(this.wheel - this.rudder, -rate * dt, rate * dt);
     this.rudder += dr;
+    this.rudderRate = dt > 0 ? dr / dt : 0;
 
     // Surge: propeller thrust (∝ n²) minus quadratic resistance.
     const u = this.speed;

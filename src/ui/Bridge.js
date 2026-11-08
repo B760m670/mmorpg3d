@@ -100,18 +100,24 @@ export class Bridge {
     }
   }
 
-  update(boat) {
+  // What the bridge instruments read (sensors): GPS speed over ground, the
+  // sat compass (or the magnetic compass when it is down), engine rpm.
+  update(boat, S) {
     const f = this.f;
-    f.sog.textContent = `${boat.knots.toFixed(1)} уз`;
-    f.hdg.textContent = `${String(Math.round(boat.headingDeg) % 360).padStart(3, '0')}°`;
-    const rpm = Math.round(Math.abs(boat.rpm) * BOAT.rpmMax);
-    f.eng.textContent = `${ORDER_RU[boat.telegraph]} · ${rpm} об/мин`;
+    const sog = S ? (S.gps.fix ? `${S.gps.sog.toFixed(1)} уз` : '-- уз') : `${boat.knots.toFixed(1)} уз`;
+    const hdgV = S ? (S.hdgOk ? S.hdg : S.mag.card) : boat.headingDeg;
+    const hdg = `${String(Math.round(hdgV) % 360).padStart(3, '0')}°${S && !S.hdgOk ? 'К' : ''}`;
+    f.sog.textContent = sog;
+    f.hdg.textContent = hdg;
+    const rpm = S ? Math.round(S.me.rpm) : Math.round(Math.abs(boat.rpm) * BOAT.rpmMax);
+    const ap = S && S.ap.mode === 'auto' ? ` · АВТО ${String(Math.round(S.ap.set)).padStart(3, '0')}°` : '';
+    f.eng.textContent = `${S && S.me.state !== 'running' ? 'ГД СТОП' : ORDER_RU[boat.telegraph]} · ${rpm} об/мин${ap}`;
     const r = boat.rudder;
     const side = Math.abs(r) < 0.5 ? 'прямо' : r > 0 ? 'лево' : 'право';
     f.rudtxt.textContent = `${Math.abs(r).toFixed(0)}° ${side}`;
     if (this.view === 'mini') {
       const rud = Math.abs(r) < 0.5 ? '' : ` · руль ${Math.abs(r).toFixed(0)}° ${side}`;
-      const line = `${boat.knots.toFixed(1)} уз · ${String(Math.round(boat.headingDeg) % 360).padStart(3, '0')}° · ${ORDER_RU[boat.telegraph]}${rud}`;
+      const line = `${sog} · ${hdg} · ${S && S.me.state !== 'running' ? 'ГД СТОП' : ORDER_RU[boat.telegraph]}${ap}${rud}`;
       if (line !== this.lineText) { this.lineText = line; f.line.textContent = line; }
     }
     // + rudder (port) drawn to the left

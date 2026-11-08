@@ -147,6 +147,18 @@ export class SoundScape {
     this.uwBed = bed('lowpass', 260, 0.7, this.master);
     this.uwHiss = bed('bandpass', 1800, 0.6, this.master);
 
+    // generator sets and the alarm buzzer
+    this.genOsc = ctx.createOscillator(); this.genOsc.type = 'sawtooth'; this.genOsc.frequency.value = 75;
+    const genLP = this.filter('lowpass', 260, 1.2);
+    this.genGain = ctx.createGain(); this.genGain.gain.value = 0;
+    this.genOsc.connect(genLP).connect(this.genGain).connect(this.master);
+    this.genOsc.start();
+    this.buzOsc = ctx.createOscillator(); this.buzOsc.type = 'square'; this.buzOsc.frequency.value = 2400;
+    const buzBP = this.filter('bandpass', 2400, 3);
+    this.buzGain = ctx.createGain(); this.buzGain.gain.value = 0;
+    this.buzOsc.connect(buzBP).connect(this.buzGain).connect(this.master);
+    this.buzOsc.start();
+
     // gulls: a few voices that move around
     this.gulls = [];
     for (let i = 0; i < 3; i++) this.gulls.push({ sp: this.spatial({ ref: 12, reverb: 0.3 }), busy: 0 });
@@ -310,8 +322,17 @@ export class SoundScape {
     set(this.engB.frequency, fire * 0.5, 0.4);
     set(this.lfo.frequency, fire * 0.5, 0.4);
     set(this.engLP.frequency, 260 + n * 380, 0.4);
-    set(this.engOut.gain, 0.14 + 0.3 * n * n, 0.3);
-    set(this.clatter.g.gain, 0.05 + 0.08 * n, 0.3);
+    const run = s.engineRunning !== false;
+    set(this.engOut.gain, run ? 0.14 + 0.3 * n * n : 0, run ? 0.3 : 1.5);
+    set(this.clatter.g.gain, run ? 0.05 + 0.08 * n : 0, 0.3);
+    // generator sets: 1500 rpm, six cylinders: 75 Hz firing, loud in the
+    // engine room, a hum through the ship
+    set(this.genOsc.frequency, 75 * (s.genHz || 50) / 50, 0.3);
+    set(this.genGain.gain, s.gens ? (s.engineRoom ? 0.32 : s.aboard ? 0.035 : 0.006) * (0.7 + 0.3 * s.gens) : 0, 0.4);
+    // the alarm buzzer on the bridge (and its repeater below)
+    this.buzT = (this.buzT || 0) + dt;
+    const beep = s.alarm && (this.buzT % 1.0) < 0.5;
+    set(this.buzGain.gain, beep ? (s.inside && !s.engineRoom ? 0.1 : s.aboard ? 0.05 : 0.025) : 0, 0.01);
     const prop = uw ? 1.6 * Math.exp(-(s.shipDist || 0) / 90) * (0.4 + 0.6 * n) : 0;
     set(this.hullGain.gain, s.engineRoom ? 2.2 : s.aboard ? 0.7 : prop, 0.3);
     set(this.hull.frequency, s.engineRoom ? 900 : 190, 0.3);

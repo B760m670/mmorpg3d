@@ -46,6 +46,8 @@ You can command the ship from outside, stand at the wheel, or walk about her.
 | `B` | weather: clear → fair → overcast with showers → storm → changing on its own | weather |
 | `M` / `H` | sound on / off / ship's horn | sound on / off / horn |
 | `J` | dive in (off the starboard quarter) | over the side you stand nearest |
+| `P` | bridge console (lights, equipment, power, alarms) | the console on the bridge, the switchboard in the engine room |
+| `U` | autopilot on / off (holds the present heading) | |
 
 In the water (a scuba diver):
 
@@ -98,22 +100,100 @@ The trawler is driven like a real vessel, not an arcade boat:
 - Instruments on screen: speed log (kn), gyro heading, telegraph and rpm,
   rudder angle indicator with the wheel order.
 
-### Bridge electronics
+### Bridge electronics, sensors and the ship's power
 
-The five console screens in the wheelhouse are live (`src/ui/Instruments.js`),
-drawn into canvas textures from the game state while you are on the bridge:
+Everything aboard runs on the ship's own power and shows what its sensors
+measure, not the game's exact state (`src/ship/`, `src/ui/Instruments.js`):
 
-- **Radar**: X-band, head-up, 24 rpm sweep. It paints the actual terrain from
-  a 9.5 m antenna height, so cliff faces show strong echoes and the land behind
-  them falls into radar shadow. There is sea clutter close in. Range is picked
-  automatically from the 0.5 / 0.75 / 1.5 / 3 NM scales.
-- **Chart plotter**: north-up chart rendered from the terrain grid (land,
-  depth bands, 10 m contour, coastline) with position, COG/SOG, your past track
-  and a 6-minute speed vector. Coordinates are a fictional Norwegian datum.
-- **Echo sounder**: the scrolling seabed under the keel with the bottom
-  return, the second echo and the odd fish school.
-- **Conning display**: heading tape, rate of turn and rudder angle.
-- **Engine monitor**: tachometer, gear, load, fuel rate, temperatures.
+- **Power plant** (`Electrical.js`, a typical arrangement for a 24 m stern
+  trawler, not one vessel's drawings): two diesel generator sets of
+  80 kVA / 64 kW, 400 V 50 Hz, on a main switchboard with a breaker per
+  generator and per consumer: steering-gear pumps, engine-room fans, fuel
+  separator, fish-hold refrigeration (thermostat), the winch hydraulic power
+  pack, bilge pump (float switch), fresh-water pump, heating (cabin
+  thermostat, 3 °C outside), hot water, galley (busy before meals, local
+  time), lighting, deck floods, searchlight, navigation supply through a UPS,
+  24 V chargers. Starting a big motor pulls the frequency and voltage down
+  for a moment. Above full load the non-essential consumers are shed
+  (preferential trip); above 115 % the generator breaker trips and the ship
+  blacks out: the steering pumps stop (the rudder stays where it is), the
+  230 V lights go out and the 24 V emergency lights come on, the bridge
+  electronics run on the UPS, and a standby generator on AUTO starts and
+  closes onto the dead bus by itself. Paralleling a second generator needs
+  synchronising: match its speed, close at twelve o'clock on the
+  synchroscope (or let the auto-synchroniser do it); closing out of phase
+  trips it. 24 V: house battery 2 x 225 Ah and a start battery, charged by
+  the chargers and the main engine's alternator; generators and the main
+  engine crank from the start battery. Fuel is used by load.
+- **Sensors** (`Sensors.js`), each with its supply (UPS or 24 V) and
+  start-up time:
+  - GPS: real coordinates (UTM 33 to WGS84, Reine 67°55.96'N 013°05.34'E),
+    an error wandering over a couple of metres, about 40 s to a fix after
+    power-on;
+  - satellite compass: true heading with the meridian convergence of the
+    UTM grid allowed for (about 1.7°), a minute to align;
+  - magnetic steering compass: needs no power. Declination +7.5° E (WMM2025
+    for Reine, November 2026), a deviation card, a swinging card, and
+    heeling and turning errors (the field dips 77° this far north);
+  - speed log;
+  - echo sounder: depth from the transducer in the keel, with the real tide
+    and heave, drop-outs in aerated water;
+  - masthead anemometer: apparent wind, true wind worked out from it;
+  - barometer, air and sea temperature;
+  - main engine: rpm (idling at 600 when stopped in gear), oil pressure,
+    coolant, exhaust, boost, fuel rate, with real lags. The main engine can
+    be stopped and started.
+- **Autopilot**: holds a set course on the sat compass through the steering
+  gear (no pumps, no steering), off-course alarm; taking the wheel or the
+  stick overrides it. **BNWAS** while on autopilot: confirm you are awake
+  every 6 minutes, or the bridge alarm sounds, then the master is called.
+- **Alarms**: an alarm and monitoring list (blackout, generator trip,
+  overload, steering failure, UPS on battery, low 24 V, shallow water,
+  off course, GPS and compass loss, navigation light failure, bilge, hold
+  temperature, engine oil pressure...), each staying until cleared and
+  acknowledged; the buzzer sounds while any is unacknowledged.
+- **The screens**: dark without power, a start-up screen while booting (the
+  radar's magnetron warms up for 90 s), then:
+  - radar: X-band, head-up on the sat compass, 24 rpm. It paints the real
+    terrain from a 9.5 m antenna with radar shadow, transmit/standby;
+  - chart plotter: the ship at its GPS position, real lat/lon graticule,
+    track, COG/SOG vector; NO FIX without GPS;
+  - echo sounder: depth below the surface and under the keel;
+  - conning display: sat-compass and magnetic headings, rate of turn,
+    rudder, SOG/STW, apparent and true wind, barometer trend, autopilot,
+    BNWAS;
+  - engine monitor: main engine, generators, bus, 24 V, fuel, latest alarms.
+
+### Lights
+
+`src/ship/ShipLights.js`, all on the ship's power:
+
+- **Navigation lights** to COLREG, each with its own switch: masthead,
+  sidelights, stern light, trawling (green over white), anchor,
+  not-under-command. Presets on the panel: underway, trawling, anchor, NUC.
+  Each light is seen only inside its sector, with the 1-3° cut-off of
+  Annex I: go round the ship at night and you see what another vessel's
+  lookout would. Ranges for a vessel of 12-50 m. They are 24 V LED lanterns
+  and keep burning in a blackout.
+- **Deck floodlights**: metal-halide, aft working deck and foredeck. They
+  warm up from a dim blue-green glow over about a minute, and once switched
+  off hot they cannot strike again until cool (90 s). They light the deck
+  and the water around the ship.
+- **Searchlight**: 1 kW on the wheelhouse roof, aimed from the panel (or
+  where you look). Its beam shows in the night air and where it meets the
+  water; it lights the shore.
+- **Inside**: 230 V lighting below decks, 24 V emergency lighting in a
+  blackout; red night light or white light in the wheelhouse.
+
+**Panels** (`src/ui/ShipPanels.js`): `P` (or *пульт*) opens the bridge
+console, at the conn or on the bridge. Its tabs: navigation lights; deck
+lights, searchlight and wheelhouse light; equipment power switches,
+autopilot and BNWAS; the power plant with remote start/stop of the
+generators and the main engine; alarms. At the main switchboard in the
+engine room (forward bulkhead, port side), `P` (or *щит*) opens the
+switchboard itself: generator meters, synchroscope, breakers, speed trim,
+standby mode, every consumer breaker with its load, batteries and UPS.
+`U` engages the autopilot.
 
 ![bridge](docs/bridge_instruments.png)
 
@@ -432,6 +512,12 @@ src/
     Village.js         # registered buildings, stockfish racks, boulders
     Underwater.js      # light in water, marine snow, bubbles, dive light
     WaterOptics.js     # attenuation constants + GLSL shared by the shaders
+  ship/
+    Electrical.js      # generators, switchboard, consumers, protection, 24 V, UPS
+    Sensors.js         # GPS, compasses, log, sounder, wind, engine, autopilot, BNWAS
+    ShipLights.js      # navigation lights (sectors), floods, searchlight, interior
+    Alarms.js          # alarm list: raise, clear, acknowledge
+    Geo.js             # UTM 33 -> WGS84, convergence, declination, deviation card
     SeaLife.js         # kelp, urchins, starfish, saithe, cod
     Waterfalls.js      # waterfalls on the fjord walls
     Rain.js            # rain streaks
@@ -442,6 +528,7 @@ src/
   entities/Boat.js     # placeholder boat + buoyancy/steering
   entities/Diver.js    # the scuba diver: swimming, air, dive computer
   ui/DiveComputer.js   # dive computer panel
+  ui/ShipPanels.js     # bridge console and main switchboard overlays
   systems/
     Input.js           # keyboard -> throttle/steer
     FollowCamera.js    # damped chase camera
