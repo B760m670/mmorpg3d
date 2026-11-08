@@ -100,6 +100,20 @@ The trawler is driven like a real vessel, not an arcade boat:
 - Instruments on screen: speed log (kn), gyro heading, telegraph and rpm,
   rudder angle indicator with the wheel order.
 
+### Getting about the ship
+
+`src/ship/ShipAccess.js`. Besides the decks and the spaces below, you can go
+up onto the wheelhouse roof (life rafts, satellite domes, funnel, horn,
+searchlight), the upper radar platform on the mast and the walkway on top of
+the gantry; each has its guard rails. Ladders: up the starboard side of the
+wheelhouse from the side deck, up the mast from the roof (past the lower radar
+platform, which lies under the upper one and is for servicing only) and up
+the starboard gantry leg from the working deck. At the foot or the head of a
+ladder press `E` (or the action button), then go up and down it with W / S.
+Coming near a piece of equipment or into a space and looking at it, a line at
+the bottom of the screen says what it is and what it is for (about 45
+places, from the trawl doors to the ice locker).
+
 ### Bridge electronics, sensors and the ship's power
 
 Everything aboard runs on the ship's own power and shows what its sensors
@@ -655,6 +669,7 @@ src/
     Trawl.js           # bottom trawl: shooting, towing, hauling, drag, catch, fish room
     Harbour.js         # the quay at Reine: mooring, shore-power pillar and cable, landing, fuel
     Radio.js           # VHF with DSC: channels, dual watch, generated traffic, calls, distress
+    ShipAccess.js      # walkable roof, radar platform, gantry; ladders; what each place is for
     Geo.js             # UTM 33 -> WGS84, convergence, declination, deviation card
     SeaLife.js         # kelp, urchins, starfish, saithe, cod
     Waterfalls.js      # waterfalls on the fjord walls

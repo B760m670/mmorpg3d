@@ -42,6 +42,26 @@ export class Player {
     this.pitch = -0.08;
   }
 
+  // ladders: on one you go up and down it (W/S), facing it, and step off at
+  // the top or the bottom
+  startClimb(l, fromTop) {
+    this.climb = { l, t: fromTop ? 1 : 0, len: l.a.distanceTo(l.b) };
+    this.vy = 0;
+    this.yaw = l.face;
+    this.pos.copy(fromTop ? l.b : l.a);
+  }
+
+  updateClimb(dt, moveY) {
+    const c = this.climb;
+    c.t += (moveY * 0.55 * dt) / c.len;
+    if (Math.abs(moveY) > 0.05) this.bob += Math.abs(moveY) * dt * 5;
+    if (c.t >= 1 && moveY > 0) { this.pos.copy(c.l.top); this.climb = null; this.lastSafe.copy(this.pos); return 'top'; }
+    if (c.t <= 0 && moveY < 0) { this.pos.copy(c.l.bottom); this.climb = null; this.lastSafe.copy(this.pos); return 'bottom'; }
+    c.t = THREE.MathUtils.clamp(c.t, 0, 1);
+    this.pos.lerpVectors(c.l.a, c.l.b, c.t);
+    return null;
+  }
+
   look(dx, dy) {
     this.yaw -= dx * PLAYER.lookSensitivity;
     this.pitch = THREE.MathUtils.clamp(this.pitch - dy * PLAYER.lookSensitivity, -1.35, 1.35);
@@ -69,6 +89,7 @@ export class Player {
   // moveX/moveY in -1..1 (right / forward), run: boolean
   update(dt, moveX, moveY, run, collider) {
     if (!collider) return;
+    if (this.climb) { this.updateClimb(dt, moveY); return; }
     const speed = run ? PLAYER.runSpeed : PLAYER.walkSpeed;
     const sin = Math.sin(this.yaw);
     const cos = Math.cos(this.yaw);

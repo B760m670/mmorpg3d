@@ -312,7 +312,7 @@ export class TouchControls {
     this._lastRud = null;
     // in the water nearHelm means "at the ship's side"
     this.btnHelm.hidden = swim ? !nearHelm : !(mode === 'helm' || (mode === 'walk' && nearHelm));
-    this.btnHelm.textContent = swim ? 'на борт' : mode === 'helm' ? 'отойти' : 'к штурвалу';
+    this.btnHelm.textContent = swim ? 'на борт' : mode === 'helm' ? 'отойти' : typeof nearHelm === 'string' ? nearHelm : 'к штурвалу';
     this.btnDive.hidden = !(mode === '3p' || mode === 'walk');
     this.btnHorn.hidden = !(mode === '3p' || mode === 'helm');
     this.btnCam.hidden = mode !== 'walk';
