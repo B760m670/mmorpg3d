@@ -63,6 +63,8 @@ function accessGeometry() {
   g.push(box(-3.85, 3.85, 2.2, 3.05, GANTRY - 0.3, GANTRY));
   g.push(...rail('x', 2.2, -3.9, 3.9, GANTRY), ...rail('x', 3.05, -3.9, 3.9, GANTRY, [[2.9, 3.6]]));
   g.push(...rail('s', -3.9, 2.2, 3.05, GANTRY), ...rail('s', 3.9, 2.2, 3.05, GANTRY));
+  // engine room fittings added in Stations.js: air receiver and compressor, bilge pump
+  g.push(box(1.3, 1.9, 8.7, 9.3, -1.4, -0.1), box(0.8, 1.3, 8.75, 9.25, -1.4, -1.0), box(0.78, 1.12, 3.35, 3.85, -1.4, -1.1));
   return g;
 }
 
@@ -73,6 +75,8 @@ export const LADDERS = [
   { id: 'wh_roof', name: 'трап на крышу рубки', a: P(3.95, 12.45, 5.25), b: P(3.95, 12.45, ROOF + 0.08), top: P(3.12, 12.35, ROOF), bottom: P(4.0, 12.45, 5.25), face: Math.PI / 2, mesh: true },
   // up the mast, past the lower radar platform (it lies under the upper one) to the upper
   { id: 'mast', name: 'трап на площадку радара', a: P(0, 12.9, ROOF), b: P(0, 12.9, PLAT2 + 0.08), top: P(0, 13.85, PLAT2), bottom: P(0, 12.6, ROOF), face: 0, mesh: true },
+  // the escape scuttle: from the cabin corridor up to the foredeck
+  { id: 'scuttle', name: 'аварийный лаз', a: P(0, 19.0, 2.15), b: P(0, 19.0, 5.5), top: P(0.85, 19.0, 5.26), bottom: P(0, 18.7, 2.15), face: 0, mesh: true, meshTop: -0.05 },
   // up the starboard gantry leg, facing aft
   { id: 'gantry', name: 'трап на портал', a: P(3.15, 5.3, 4.3), b: P(3.15, 3.05, GANTRY + 0.05), top: P(3.0, 2.62, GANTRY), bottom: P(3.0, 5.55, 4.3), face: Math.PI },
 ];
@@ -91,7 +95,8 @@ export const PLACES = [
   { id: 'fishboxes', name: 'Рыбные ящики', p: P(2.4, 10.25, 4.9), r: 1.4, text: 'пустая тара: в рыбцехе в них укладывают рыбу со льдом.' },
   // foredeck
   { id: 'windlass', name: 'Брашпиль', p: P(0, 21.0, 6.0), r: 2.0, text: 'якорная лебёдка на гидравлике (пульт → «Якорь»).' },
-  { id: 'scuttle', name: 'Лаз в форпик', p: P(0, 19.0, 5.75), r: 1.3, text: 'вниз, в носовую кладовую и якорный ящик.' },
+  { id: 'scuttle', name: 'Аварийный лаз', p: P(0, 19.0, 5.75), r: 1.3, text: 'запасной выход из жилых помещений: трап вниз, в коридор кают.' },
+  { id: 'scuttle_low', name: 'Аварийный лаз', p: P(0, 19.0, 3.6), r: 1.0, text: 'запасной выход на бак, если трап в рубку отрезан.' },
   // wheelhouse roof and mast
   { id: 'liferaft', name: 'Спасательные плоты', p: P(2.6, 13.0, 8.3), r: 1.5, text: 'надувные, в контейнерах; если судно тонет, гидростат сам отдаёт их на глубине 2–4 м.' },
   { id: 'liferaft_p', name: 'Спасательные плоты', p: P(-2.6, 13.0, 8.3), r: 1.5, text: 'надувные, в контейнерах; если судно тонет, гидростат сам отдаёт их на глубине 2–4 м.' },
@@ -163,7 +168,7 @@ export class ShipAccess {
     const fwd = new THREE.Vector3(-Math.sin(l.face), 0, -Math.cos(l.face));   // toward the ladder from the climber
     const base = l.a.clone().addScaledVector(fwd, 0.28);
     const top = l.b.clone().addScaledVector(fwd, 0.28);
-    top.y += 1.0;
+    top.y += l.meshTop ?? 1.0;
     const len = top.distanceTo(base);
     const side = new THREE.Vector3(Math.cos(l.face), 0, -Math.sin(l.face));
     const railG = new THREE.CylinderGeometry(0.02, 0.02, len, 6);

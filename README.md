@@ -114,6 +114,29 @@ Coming near a piece of equipment or into a space and looking at it, a line at
 the bottom of the screen says what it is and what it is for (about 45
 places, from the trawl doors to the ice locker).
 
+### The spaces below at work
+
+`src/ship/Stations.js`. Coming to a machine or a fitting, the line at the
+bottom of the screen also gives its live state from the ship's systems, and
+`E` does what can be done there:
+
+- **engine room**: the main engine's local readings (rpm, oil pressure,
+  water temperature, fuel) and local start/stop; each generator with its
+  state, load and frequency, started and stopped from its local post; the
+  hydraulic power pack; the air compressor and its 250 l receiver with a
+  pressure gauge; the bilge pump (pump out by hand); the day tank, whose
+  sight glass shows its real level as the engines draw from it and the
+  transfer pump tops it up from the main tanks between 60 and 95 %;
+- **steering flat**: the rudder angle on the indicator; the standby pump;
+  the emergency tiller: with both pumps gone (a blackout), take it and put
+  the rudder over by hand (left/right), slowly, as on a real ship;
+- **fishroom**: temperature and the catch by species; the pens fill with
+  boxes as the catch comes down and empty when it is landed;
+- **galley, mess, washroom**: cook (the range draws 6.5 kW on the
+  switchboard for twenty minutes), make coffee, watch television, take a
+  shower (the 3 kW boiler heats up again);
+- **cabins**: the escape scuttle from the corridor up to the foredeck.
+
 ### Bridge electronics, sensors and the ship's power
 
 Everything aboard runs on the ship's own power and shows what its sensors
@@ -670,6 +693,7 @@ src/
     Harbour.js         # the quay at Reine: mooring, shore-power pillar and cable, landing, fuel
     Radio.js           # VHF with DSC: channels, dual watch, generated traffic, calls, distress
     ShipAccess.js      # walkable roof, radar platform, gantry; ladders; what each place is for
+    Stations.js        # machinery and fittings below: live readings, local controls, gauges
     Geo.js             # UTM 33 -> WGS84, convergence, declination, deviation card
     SeaLife.js         # kelp, urchins, starfish, saithe, cod
     Waterfalls.js      # waterfalls on the fjord walls

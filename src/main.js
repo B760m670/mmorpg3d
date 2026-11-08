@@ -41,6 +41,7 @@ import { Trawl } from './ship/Trawl.js';
 import { Harbour } from './ship/Harbour.js';
 import { Radio } from './ship/Radio.js';
 import { ShipAccess } from './ship/ShipAccess.js';
+import { Stations } from './ship/Stations.js';
 import crewUrl from './assets/person.glb?url';
 
 const container = document.getElementById('app');
@@ -110,11 +111,12 @@ const trawl = new Trawl({ scene, elec, alarms });
 const harbour = new Harbour({ scene, elec, heightAt });
 const radio = new Radio({ sensors, elec, alarms, sound, weather, trawl });
 const access = new ShipAccess();
+let stations = null;
 const placeEl = document.createElement('div');
 placeEl.id = 'place-hint';
 placeEl.style.cssText = 'position:fixed;left:50%;bottom:64px;transform:translateX(-50%);max-width:min(92vw,640px);padding:7px 12px;border-radius:10px;background:rgba(10,16,22,.62);color:#e8eef2;font:13px/1.35 system-ui,sans-serif;text-align:center;pointer-events:none;display:none;z-index:20';
 document.body.appendChild(placeEl);
-let placeT = 0, placeKey = '';
+let placeT = 0, placeKey = '', placeAct = null;
 let thirdPerson = false;
 const _prevPP = new THREE.Vector3();
 const _windCtx = { heightAt, tide: 0, wind: 0 };
@@ -132,6 +134,8 @@ boat.load(trawlerUrl, () => {
   shipLights.attach(boat.model, { materials: [...mats], torch: underwater.torch });
   crew.load(crewUrl, boat.model);
   access.extendCollider(boat);
+  stations = new Stations({ elec, sensors, boat, trawl, sound, input });
+  stations.attach(boat.model);
 });
 scene.add(boat.object);
 
@@ -389,7 +393,9 @@ function tick() {
     else if (mode === 'walk' && player.nearHelm) setMode('helm');
     else if (mode === 'walk' && !player.climb) {
       const l = access.nearLadder(player.pos);
+      const pl = l ? null : access.placeAt(player.pos, player.yaw);
       if (l) player.startClimb(l.ladder, l.fromTop);
+      else if (pl && pl.act && pl.act.label()) { pl.act.run(); placeT = 0; }
     }
     else if (mode === 'swim') climbAboard();
   }
@@ -490,7 +496,7 @@ function tick() {
   environment.follow(boat.position);
 
   if (mode === 'walk') {
-    player.update(dt, input.moveX, input.moveY, input.held('shift'), boat.collider);
+    if (!(stations && stations.emergency)) player.update(dt, input.moveX, input.moveY, input.held('shift'), boat.collider);   // at the emergency tiller the stick steers
   }
   if (mode === 'swim') {
     diver.look(input.lookDX, input.lookDY);
@@ -529,7 +535,12 @@ function tick() {
       if (player.climb) html = `<b>На трапе</b> — ${IS_TOUCH ? 'вперёд/назад' : 'W / S'}: вверх и вниз`;
       else {
         const pl = access.placeAt(player.pos, player.yaw);
-        if (pl) html = `<b>${pl.name}</b> — ${pl.text}`;
+        if (pl) {
+          const live = pl.live ? pl.live() : '';
+          const act = pl.act ? pl.act.label() : null;
+          html = `<b>${pl.name}</b> — ${pl.text}${live ? `<br><span style="color:#ffd27a">${live}</span>` : ''}${act ? `<br><b>${IS_TOUCH ? '' : 'E — '}${act}</b>` : ''}`;
+          placeAct = act;
+        } else placeAct = null;
         if (ladderHere) html += `${html ? '<br>' : ''}<b>${IS_TOUCH ? '' : 'E — '}${ladderHere.fromTop ? 'спуститься' : 'подняться'}</b>: ${ladderHere.ladder.name}`;
       }
     }
@@ -540,7 +551,8 @@ function tick() {
     }
   }
   const near = mode === 'swim' ? diver.nearShip(boat.model)
-    : mode === 'walk' && (player.nearHelm ? 'к штурвалу' : ladderHere ? (ladderHere.fromTop ? 'вниз по трапу' : 'вверх по трапу') : false);
+    : mode === 'walk' && (player.nearHelm ? 'к штурвалу' : ladderHere ? (ladderHere.fromTop ? 'вниз по трапу' : 'вверх по трапу') : placeAct || false);
+  if (stations) stations.update(dt, { mode, pos: player.pos, moveX: input.moveX });
   if (touch) touch.setPanel(nearSwitchboard() ? 'щит' : mode === '3p' || mode === 'helm' || (mode === 'walk' && onBridgeNow()) ? 'пульт' : null);
   if (touch && near !== lastNear) {
     touch.setMode(mode, near);
@@ -647,4 +659,4 @@ function tick() {
 }
 tick();
 
-window.__scene = { engine, sky, ocean, boat, player, instruments, weather, clouds, rain, spray, sound, falls, environment, terrain, village, follow, orbit, heightAt, applyPreset, setMode, input, diver, underwater, seaLife, elec, sensors, shipLights, panels, alarms, nearSwitchboard, whistle, anchor, crew, trawl, harbour, radio, access, setThird: (v) => { thirdPerson = v; }, overTheSide: () => overTheSide(), get mode() { return mode; } };
+window.__scene = { engine, sky, ocean, boat, player, instruments, weather, clouds, rain, spray, sound, falls, environment, terrain, village, follow, orbit, heightAt, applyPreset, setMode, input, diver, underwater, seaLife, elec, sensors, shipLights, panels, alarms, nearSwitchboard, whistle, anchor, crew, trawl, harbour, radio, access, get stations() { return stations; }, setThird: (v) => { thirdPerson = v; }, overTheSide: () => overTheSide(), get mode() { return mode; } };
