@@ -77,11 +77,21 @@ export class Anchor {
   brake() {
     if (this.state === 'running' || this.state === 'heaving') this.state = this.out > 0.5 ? 'holding' : 'housed';
   }
+  // Heave up: the hydraulic pump is started first if it is not running
+  // (remote start from the windlass control), then the windlass takes it.
   heave() {
     if (this.state === 'housed') return;
-    if (!this.elec.powered('hyd')) { this.msg = 'брашпиль: запустите гидростанцию лебёдок на ГРЩ'; return; }
-    this.state = 'heaving'; this.msg = '';
+    const E = this.elec;
+    if (!E.powered('hyd')) {
+      if (!E.live) { this.msg = 'брашпиль: нет электропитания (блэкаут)'; return; }
+      const f = E.f.hyd;
+      if (!f.on || !f.running || f.shed) { if (f.shed) f.shed = false; if (!f.on) E.toggleFeeder('hyd'); else E.toggleFeeder('hyd'); }
+      this.msg = 'пуск гидростанции…';
+      this.waitHyd = 6;
+    } else this.msg = '';
+    this.state = 'heaving';
   }
+  get eta() { return this.state === 'heaving' ? this.out / (this.pos ? 0.15 : 0.2) : 0; }
 
   get shackles() { return this.out / SHACKLE; }
   get scope() { return this.depth > 0 ? this.out / this.depth : 0; }
@@ -107,11 +117,18 @@ export class Anchor {
       this.out = Math.min(this.max, this.out + this.speed * dt);
       if (this.out >= this.max) { this.state = 'holding'; this.msg = 'вся цепь вытравлена — на жвака-галсе!'; }
     } else if (this.state === 'heaving') {
-      if (!E.powered('hyd')) { this.state = 'holding'; this.msg = 'брашпиль встал: нет гидравлики'; }
-      else {
+      if (!E.powered('hyd')) {
+        this.speed = 0;
+        this.waitHyd = (this.waitHyd || 0) - dt;
+        if (this.waitHyd <= 0) { this.state = 'holding'; this.msg = 'брашпиль встал: нет гидравлики (ГРЩ: «Гидростанция лебёдок»)'; }
+      } else {
+        if (this.msg === 'пуск гидростанции…') this.msg = '';
+        // 9 m/min while it pulls the ship up to her anchor, 12 m/min once
+        // only the hanging chain and the anchor are coming in
+        const v = this.pos ? 0.15 : 0.2;
         E.windlass = this.pos ? 18 : 9;
-        this.speed = -0.15;                            // 9 m/min
-        this.out = Math.max(0, this.out - 0.15 * dt);
+        this.speed = -v;
+        this.out = Math.max(0, this.out - v * dt);
         if (this.out <= 0.01) { this.out = 0; this.state = 'housed'; this.msg = 'якорь на месте, клюз закрыт'; }
       }
     } else this.speed = 0;

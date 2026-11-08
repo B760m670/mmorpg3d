@@ -38,6 +38,9 @@ export class Engine {
       new THREE.Vector2(window.innerWidth, window.innerHeight),
       0.55, 0.6, 0.75,
     );
+    // a soft knee: with the default hard threshold the bright sky around
+    // the sun showed its edge as a white wall across the sky
+    this.bloom.highPassUniforms.smoothWidth.value = 0.55;
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
 

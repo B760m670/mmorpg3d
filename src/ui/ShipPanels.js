@@ -109,6 +109,12 @@ export class ShipPanels {
       else this.show('bridge', 'alarms');
     });
     this.barKey = '';
+    // anchor operations at a glance (tap: the anchor tab)
+    this.pill = document.createElement('div');
+    this.pill.id = 'anchor-pill';
+    this.pill.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:calc(10px + env(safe-area-inset-bottom,0px));z-index:9;display:none;padding:6px 12px;border-radius:9px;background:rgba(10,16,22,.78);border:1px solid rgba(255,255,255,.18);color:#eaf2f6;font:12px/1.2 ui-monospace,Menlo,monospace;';
+    document.body.appendChild(this.pill);
+    this.pill.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); this.show('bridge', 'anchor'); });
   }
 
   get isOpen() { return !!this.open; }
@@ -183,6 +189,12 @@ export class ShipPanels {
         const txt = bn && (!top || top.id !== 'bnwas') ? 'BNWAS: подтвердите бодрствование вахты' : top.text;
         this.bar.innerHTML = `<span>⚠ ${txt}${un > 1 ? ` <small>(+${un - 1})</small>` : ''}</span><button data-a="ackall">квитировать</button>`;
       }
+    }
+    if (this.AN) {
+      const A = this.AN;
+      const txt = A.state === 'housed' ? '' : A.state === 'heaving' ? `⚓ выбирается: ${A.out.toFixed(0)} м, ~${Math.ceil(A.eta / 60)} мин${A.msg ? ' · ' + A.msg : ''}`
+        : A.state === 'running' ? `⚓ травится: ${A.out.toFixed(0)} м · глубина ${A.depth.toFixed(0)} м` : `⚓ на якоре: ${A.out.toFixed(0)} м цепи${A.dragging ? ' · ПОЛЗЁТ' : ''}`;
+      if (txt !== this.pillTxt) { this.pillTxt = txt; this.pill.textContent = txt; this.pill.style.display = txt ? 'block' : 'none'; }
     }
     if (!this.open) return;
     this.t -= dt;
@@ -279,7 +291,9 @@ export class ShipPanels {
         <div class="mono">Вытравлено ${A.out.toFixed(1)} м (${shTxt}) · глубина ${A.depth.toFixed(1)} м · соотношение ${A.scope.toFixed(1)}:1</div>
         <div class="bar"><i style="width:${(A.out / A.max) * 100}%"></i></div>
         <div class="row"><button class="bad" data-a="anc:go">Отдать якорь</button><button data-a="anc:brake">Тормоз — стоп цепь</button>
-          <button class="${hyd ? '' : 'warn'}" data-a="anc:heave">Выбирать</button></div>
+          <button class="${A.state === 'heaving' ? 'on' : ''}" data-a="anc:heave">Выбирать</button>
+          <button class="${hyd ? 'on' : ''}" data-a="feeder:hyd">Гидростанция: ${hyd ? 'работает' : 'пуск'}</button></div>
+        ${A.state === 'heaving' ? `<div class="mono">Осталось ${A.out.toFixed(0)} м · около ${Math.ceil(A.eta / 60)} мин (9–12 м/мин)</div>` : ''}
         ${A.msg ? `<p class="note">${A.msg}</p>` : ''}
         <p class="note">Травят 3–5 глубин: на 20 м — 60–100 м цепи. Короткая цепь или сильный ветер — якорь ползёт. Брашпиль гидравлический: нужна гидростанция лебёдок (ГРЩ)${hyd ? '' : ' — сейчас не запущена'}.</p></div>
       <div class="card"><h4>Якорная вахта (GPS)</h4>

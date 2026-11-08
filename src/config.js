@@ -45,7 +45,7 @@ export const PRESETS = {
     exposure: 0.55,
     showSkyDome: true,
     envIntensity: 0.55,
-    sky: { turbidity: 10, rayleigh: 1.3, mieCoefficient: 0.012, mieDirectionalG: 0.84, elevation: 17, azimuth: 118 },
+    sky: { turbidity: 5.5, rayleigh: 1.2, mieCoefficient: 0.0045, mieDirectionalG: 0.88, elevation: 17, azimuth: 118 },   // clean Arctic air: a tight glow round the sun
     sun: { color: [1.0, 0.95, 0.86], intensity: 2.4 },
     ambient: { color: [0.7, 0.78, 0.84], intensity: 1.05 },
     fog: { color: [0.72, 0.78, 0.82], density: 0.00016 },   // clear: the Lofoten wall stands 15-20 km off
@@ -58,7 +58,7 @@ export const PRESETS = {
       specPower: 220,
       specStrength: 2.6,
     },
-    bloom: { strength: 0.4, radius: 0.55, threshold: 0.93 },
+    bloom: { strength: 0.35, radius: 0.5, threshold: 1.05 },
   },
   night: {
     label: 'night',
