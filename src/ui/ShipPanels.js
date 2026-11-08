@@ -1,6 +1,7 @@
 import { NAV_PRESETS } from '../ship/ShipLights.js';
 import { wrap180 } from '../ship/Geo.js';
 import { SIGNALS, FOG } from '../ship/Whistle.js';
+import { SPECIES, HOLD_CAP } from '../ship/Trawl.js';
 
 // Control panels of the ship, as overlays:
 //   - the bridge console ("пульт"): navigation lights panel, deck lights and
@@ -62,8 +63,8 @@ const fmtT = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart
 const DEV_ORDER = ['radar', 'plotter', 'conning', 'sounder', 'engmon', 'gps', 'satc', 'log', 'wind', 'ap', 'vhf', 'ais', 'bnwas'];
 
 export class ShipPanels {
-  constructor({ elec, sensors, lights, alarms, whistle, anchor, actions }) {
-    this.E = elec; this.S = sensors; this.L = lights; this.A = alarms; this.W = whistle; this.AN = anchor;
+  constructor({ elec, sensors, lights, alarms, whistle, anchor, trawl, actions }) {
+    this.E = elec; this.S = sensors; this.L = lights; this.A = alarms; this.W = whistle; this.AN = anchor; this.T = trawl;
     this.actions = actions || {};
     const st = document.createElement('style');
     st.textContent = CSS;
@@ -165,6 +166,7 @@ export class ShipPanels {
       case 'feeder': E.toggleFeeder(x); break;
       case 'hydwork': E.hydWork = !E.hydWork; break;
       case 'sig': this.W.play(x); this.S.bnwasReset(); break;
+      case 'trawl': if (x === 'shoot') this.T.shoot(); else if (x === 'brake') this.T.brake(); else if (x === 'haul') this.T.haul(); else if (x === 'more') this.T.more(+y); break;
       case 'anc': if (x === 'go') this.AN.letGo(); else if (x === 'brake') this.AN.brake(); else if (x === 'heave') this.AN.heave(); else if (x === 'lights') this.L.setPreset('anchor'); break;
       case 'fog': this.W.setFog(x); break;
       case 'ack': this.A.ack(x); if (x.startsWith('bnwas')) S.bnwasReset(); break;
@@ -207,7 +209,7 @@ export class ShipPanels {
     if (!this.open) return;
     const tabs = this.open === 'msb'
       ? [['msb', 'ГРЩ — главный распределительный щит']]
-      : [['nav', 'Огни'], ['light', 'Свет'], ['horn', 'Тифон'], ['anchor', 'Якорь'], ['dev', 'Приборы'], ['power', 'Энергия'], ['alarms', `Тревоги${this.A.unacked ? ` (${this.A.unacked})` : ''}`]];
+      : [['nav', 'Огни'], ['light', 'Свет'], ['trawl', 'Трал'], ['horn', 'Тифон'], ['anchor', 'Якорь'], ['dev', 'Приборы'], ['power', 'Энергия'], ['alarms', `Тревоги${this.A.unacked ? ` (${this.A.unacked})` : ''}`]];
     if (this.open === 'msb') this.tab = 'msb';
     this.hd.innerHTML = `<b>${this.open === 'msb' ? 'Машинное отделение' : 'Пульт мостика'}</b>${tabs.map(([id, n]) => `<button class="tab ${this.tab === id ? 'sel' : ''}" data-a="tab:${id}">${n}</button>`).join('')}<button class="x" data-a="close">✕</button>`;
     const sc = this.bd.scrollTop;
@@ -277,6 +279,41 @@ export class ShipPanels {
     <h4 style="margin:12px 0 4px;color:#8fb3c4">Сигналы маневроуказания (правило 34)</h4>
     <table>${sig}</table>
     <p class="note">Короткий — около 1 с, продолжительный — 4–6 с. Подаются, когда суда видят друг друга.</p>`;
+  }
+
+  r_trawl() {
+    const T = this.T, E = this.E, S = this.S;
+    const sens = S.ready('trawl');
+    const st = { stowed: 'на борту: трал на барабане, доски в блоках', net: 'трал идёт с барабана за корму', warps: 'травим ваера', towing: T.fast ? 'ЗАЦЕП' : T.onBottom ? 'трал на грунте — лов' : 'буксируем, трал НЕ на грунте', hauling: 'выбираем ваера', netin: 'выбираем трал на барабан' }[T.state];
+    const kn = S.stw;
+    const est = sens ? Math.round(T.catchKg * (0.75 + 0.5 * ((Math.sin(Date.now() / 9000) + 1) / 2)) / 50) * 50 : null;
+    const hold = Object.entries(T.hold).filter(([, kg]) => kg > 0.5).map(([s, kg]) => `${SPECIES[s].name} ${Math.round(kg)} кг`).join(' · ') || 'пусто';
+    const last = T.lastHaul ? Object.entries(T.lastHaul.by).filter(([, kg]) => kg > 0.5).map(([s, kg]) => `${SPECIES[s].name} ${Math.round(kg)}`).join(', ') : '';
+    const hyd = E.powered('hyd');
+    const v = (x, u) => (sens && x != null ? `${x}${u}` : '---');
+    return `<div class="grid">
+      <div class="card"><h4>Донный трал</h4><div class="big">${st}</div>
+        <div class="mono">Ваера ${T.warp.toFixed(0)} / ${T.target} м · ${T.rate > 0 ? 'травятся' : T.rate < 0 ? 'выбираются' : 'на тормозах'} · натяжение ${(Math.abs(T.drag) / 2 / 9810).toFixed(1)} т на ваер</div>
+        <div class="mono">Глубина под тралом ${T.depth.toFixed(0)} м · рекомендуется ${Math.round(T.depth * 2.8 / 25) * 25 || '—'} м ваеров · ход ${kn.toFixed(1)} уз</div>
+        <div class="row"><button class="bad" data-a="trawl:shoot">Отдать трал</button><button data-a="trawl:brake">Стоп лебёдки</button>
+          <button data-a="trawl:more:-50">−50 м</button><button data-a="trawl:more:50">+50 м</button><button class="${T.state === 'hauling' || T.state === 'netin' ? 'on' : ''}" data-a="trawl:haul">Выбирать трал</button>
+          <button class="${hyd ? 'on' : ''}" data-a="feeder:hyd">Гидростанция: ${hyd ? 'работает' : 'пуск'}</button></div>
+        ${T.msg ? `<p class="note">${T.msg}</p>` : ''}
+        <p class="note">Отдают на ходу 2–3 узла, ваеров около трёх глубин, буксируют 3–3,5 узла. Лебёдки и барабан — на гидростанции (выборка ≈ 34 кВт): запустите второй генератор. На камнях можно получить зацеп.</p></div>
+      <div class="card"><h4>Датчики трала</h4>
+        <div class="meters"><div><span>раскрытие досок</span><b>${v(T.spread ? T.spread.toFixed(0) : null, ' м')}</b></div>
+          <div><span>вертикаль</span><b>${v(T.headline ? T.headline.toFixed(1) : null, ' м')}</b></div>
+          <div><span>на грунте</span><b>${sens ? (T.onBottom ? 'ДА' : 'нет') : '---'}</b></div>
+          <div><span>время лова</span><b>${Math.floor(T.towTime / 60)}:${String(Math.floor(T.towTime % 60)).padStart(2, '0')}</b></div>
+          <div><span>улов (датчик)</span><b>${v(est, ' кг')}</b></div>
+          <div><span>тралмешок</span><b>${v(Math.min(100, Math.round(T.catchKg / 40)), ' %')}</b></div></div>
+        <p class="note">Гидроакустические датчики на досках и тралмешке: оценка улова грубая, ±25 %.</p></div>
+      <div class="card"><h4>Трюм · ${Math.round(T.holdKg)} / ${HOLD_CAP} кг</h4><div class="mono">${hold}</div>
+        ${last ? `<p class="note">Последний подъём: ${Math.round(T.lastHaul.kg)} кг (${last})</p>` : ''}
+        <div class="mono">Выручено: ${Math.round(T.cash).toLocaleString('ru-RU')} крон</div>
+        <p class="note">Улов сдают у причала в Рейне. Температура трюма ${E.holdT.toFixed(1)} °C.</p></div>
+    </div>
+    <p class="note">Правда жизни: по норвежским правилам донное траление у материка в основном запрещено ближе 12 миль от исходных линий, так что у Рейне так ловить нельзя; здесь — игровое допущение. Цены рыбы примерные.</p>`;
   }
 
   r_anchor() {

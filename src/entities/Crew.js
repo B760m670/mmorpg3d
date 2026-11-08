@@ -107,8 +107,15 @@ export class Crew {
     const { skipper, deckhand, player } = this.people;
     // the skipper: at the controls unless you have taken the helm
     skipper.root.visible = st.mode !== 'helm';
-    // the deckhand's round
+    // the deckhand: at the stern while the gear or the anchor is worked,
+    // otherwise his round of the deck
     const d = this.deck;
+    if (st.deckWork) {
+      deckhand.root.position.set(-1.2, 4.3, 9.4);
+      deckhand.root.rotation.y = 0;                 // facing aft, over the stern
+      deckhand.play('haul');
+      d.i = 0; d.wait = 2;
+    } else {
     const wp = DECK[d.i];
     const pos = deckhand.root.position;
     if (d.wait > 0) {
@@ -133,6 +140,7 @@ export class Crew {
         deckhand.root.rotation.y += dr * Math.min(1, dt * 6);
         deckhand.play('walk');
       }
+    }
     }
     // you
     const me = player;

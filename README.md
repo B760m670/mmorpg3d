@@ -219,6 +219,29 @@ switchboard: 9 m/min, pulling the ship up to her anchor until it breaks out.
 The chain hangs from the hawse and lies along the bottom to the anchor, so
 you can see it when diving.
 
+### Trawling
+
+`src/ship/Trawl.js`: a bottom trawl worked from the stern, the way a 24 m
+stern trawler does it. On the *Трал* tab: **Shoot** while steaming slowly
+ahead: the net runs off the net drum over the stern ramp, the doors (otter
+boards) are hung off the gantry blocks and the warps run off the two trawl
+winches to the length you set (about three times the depth). **Brake** and
+tow at 3-3.5 knots: the doors spread the net (wing spread about 22 m) and
+the ground gear runs over the bottom; the warp counter, the depth under the
+trawl, door spread and "on the bottom" come from the trawl sensors on the
+UPS. Too little warp or too much speed and the gear lifts off; over hard
+ground it can come fast (a fastener: the warps bar-taut and the ship
+brought up; hauled back over it the trawl usually comes free, sometimes
+torn and empty). The gear's drag, 6-8 tonnes on the bottom, loads the
+engine and slows the ship. **Haul**: the winches heave at 60 m/min on the
+hydraulic power pack (34 kW, an essential consumer on the switchboard: with
+the hotel load on, the standby generator starts), the net is wound in and
+the cod-end swung aboard. The catch depends on where the trawl went: depth,
+hard or soft bottom and patches of fish that stay where they are; by
+species (cod, haddock, saithe, redfish, plaice) into an 18 t fish room.
+Trawling inside 12 nautical miles of the Norwegian baselines is generally
+not allowed; the game does not enforce it, the panel only says so.
+
 ### The crew
 
 `blender/build_crew.py` builds a crewman, a North-Norwegian fisherman of
@@ -570,6 +593,7 @@ src/
     Alarms.js          # alarm list: raise, clear, acknowledge
     Whistle.js         # whistle control: signals, fog-signal timer, air
     Anchor.js          # anchor, chain, windlass, drift, dragging, anchor watch
+    Trawl.js           # bottom trawl: shooting, towing, hauling, drag, catch, fish room
     Geo.js             # UTM 33 -> WGS84, convergence, declination, deviation card
     SeaLife.js         # kelp, urchins, starfish, saithe, cod
     Waterfalls.js      # waterfalls on the fjord walls

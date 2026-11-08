@@ -37,6 +37,7 @@ import { ShipPanels } from './ui/ShipPanels.js';
 import { Whistle } from './ship/Whistle.js';
 import { Anchor } from './ship/Anchor.js';
 import { Crew } from './entities/Crew.js';
+import { Trawl } from './ship/Trawl.js';
 import crewUrl from './assets/crew.glb?url';
 
 const container = document.getElementById('app');
@@ -102,6 +103,7 @@ const shipLights = new ShipLights({ scene, elec, mobile: IS_TOUCH });
 const whistle = new Whistle(elec);
 const anchor = new Anchor({ scene, elec, alarms });
 const crew = new Crew();
+const trawl = new Trawl({ scene, elec, alarms });
 let thirdPerson = false;
 const _prevPP = new THREE.Vector3();
 const _windCtx = { heightAt, tide: 0, wind: 0 };
@@ -139,7 +141,7 @@ orbit.enabled = false;
 
 const touch = IS_TOUCH ? new TouchControls(input) : null;
 const panels = new ShipPanels({
-  elec, sensors, lights: shipLights, alarms, whistle, anchor,
+  elec, sensors, lights: shipLights, alarms, whistle, anchor, trawl,
   actions: {
     // the searchlight to where the camera looks
     aimSearch: () => {
@@ -461,9 +463,11 @@ function tick() {
   _windCtx.tide = ocean.tide;
   _windCtx.wind = weather.v.wind;
   anchor.update(dt, boat, _windCtx);
-  boat.constrain = (cdt) => anchor.constrain(cdt, boat, _windCtx);
+  trawl.update(dt, boat, _windCtx);
+  boat.constrain = (cdt) => { anchor.constrain(cdt, boat, _windCtx); trawl.constrain(cdt, boat); };
   boat.update(dt, time, (x, z) => heightAt(x, z) < ocean.tide - 4);
   anchor.draw(boat, _windCtx);
+  if (boat.model) trawl.draw(boat, _windCtx);
   anchor.watch(sensors.gps);
   environment.follow(boat.position);
 
@@ -493,7 +497,8 @@ function tick() {
   // the people aboard
   const moved = Math.hypot(player.pos.x - _prevPP.x, player.pos.z - _prevPP.z) / Math.max(dt, 1e-3);
   _prevPP.copy(player.pos);
-  crew.update(dt, { mode, player, playerMoving: moved > 0.3, running: moved > 2.0, thirdPerson, near: camera.position.distanceTo(boat.position) });
+  crew.update(dt, { mode, player, playerMoving: moved > 0.3, running: moved > 2.0, thirdPerson, near: camera.position.distanceTo(boat.position),
+    deckWork: trawl.state !== 'stowed' && trawl.state !== 'towing' || anchor.state === 'running' || anchor.state === 'heaving' });
 
   const near = mode === 'swim' ? diver.nearShip(boat.model) : mode === 'walk' && player.nearHelm;
   if (touch) touch.setPanel(nearSwitchboard() ? 'щит' : mode === '3p' || mode === 'helm' || (mode === 'walk' && onBridgeNow()) ? 'пульт' : null);
@@ -574,6 +579,8 @@ function tick() {
     engineRunning: boat.engineRunning, gens: elec.gens.filter((g) => g.state === 'running' || g.state === 'runup').length, genHz: elec.busF || 50,
     alarm: alarms.unacked > 0 || sensors.bnwas.stage >= 2,
     chain: anchor.speed, chainPos: boat.model ? anchor.hawseWorld(boat) : null,
+    winch: Math.abs(trawl.rate) + (trawl.state === 'net' || trawl.state === 'netin' ? 0.5 : 0),
+    winchPos: boat.model && trawl.state !== 'stowed' ? boat.model.localToWorld(_hornPos.clone().set(0, 5, 6)) : null,
   });
   ocean.uniforms.uRain.value = weather.v.rain;
   // Near plane: close for walking about inside the ship, further out in
@@ -597,4 +604,4 @@ function tick() {
 }
 tick();
 
-window.__scene = { engine, sky, ocean, boat, player, instruments, weather, clouds, rain, spray, sound, falls, environment, terrain, village, follow, orbit, heightAt, applyPreset, setMode, input, diver, underwater, seaLife, elec, sensors, shipLights, panels, alarms, nearSwitchboard, whistle, anchor, crew, setThird: (v) => { thirdPerson = v; }, overTheSide: () => overTheSide(), get mode() { return mode; } };
+window.__scene = { engine, sky, ocean, boat, player, instruments, weather, clouds, rain, spray, sound, falls, environment, terrain, village, follow, orbit, heightAt, applyPreset, setMode, input, diver, underwater, seaLife, elec, sensors, shipLights, panels, alarms, nearSwitchboard, whistle, anchor, crew, trawl, setThird: (v) => { thirdPerson = v; }, overTheSide: () => overTheSide(), get mode() { return mode; } };

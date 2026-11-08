@@ -343,7 +343,8 @@ export class SoundScape {
     set(this.genGain.gain, s.gens ? (s.engineRoom ? 0.32 : s.aboard ? 0.035 : 0.006) * (0.7 + 0.3 * s.gens) : 0, 0.4);
     // the anchor chain: rattling out through the hawse, or clanking in over
     // the windlass gypsy with the whine of its hydraulic motor
-    if (s.chainPos) this.place(this.chainSrc, s.chainPos.x, s.chainPos.y, s.chainPos.z, L);
+    const wpos = s.winchPos || s.chainPos;
+    if (wpos) this.place(this.chainSrc, wpos.x, wpos.y, wpos.z, L);
     const cr = Math.abs(s.chain || 0);
     this.chainT = (this.chainT || 0) - dt;
     if (cr > 0.01 && this.chainT <= 0) {
@@ -352,7 +353,7 @@ export class SoundScape {
       this.chainG.gain.setValueAtTime(0.25 + 0.35 * Math.min(1, cr / 2) + Math.random() * 0.15, t0);
       this.chainG.gain.exponentialRampToValueAtTime(0.01, t0 + 0.06);
     }
-    set(this.winchG.gain, (s.chain || 0) < -0.01 ? 0.12 : 0, 0.2);
+    set(this.winchG.gain, (s.chain || 0) < -0.01 ? 0.12 : (s.winch || 0) > 0.05 ? 0.16 : 0, 0.2);
     // the alarm buzzer on the bridge (and its repeater below)
     this.buzT = (this.buzT || 0) + dt;
     const beep = s.alarm && (this.buzT % 1.0) < 0.5;

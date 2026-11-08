@@ -66,7 +66,7 @@ const FEEDERS = [
   ['fans', 'Вентиляция машинного отделения', 6, true, true, true, true],
   ['sep', 'Топливный сепаратор', 3, true, false, true, false],
   ['fridge', 'Рефрижерация трюма', 11, true, false, true, true],
-  ['hyd', 'Гидростанция лебёдок', 37, true, false, false, false],
+  ['hyd', 'Гидростанция лебёдок', 37, true, true, false, false],      // essential: never shed mid-haul
   ['bilge', 'Осушительный насос (по поплавку)', 5.5, true, true, true, true],
   ['fw', 'Насос пресной воды', 1.1, true, false, true, true],
   ['heat', 'Отопление жилых помещений', 9, false, false, true, true],
@@ -373,11 +373,11 @@ export class Electrical {
       for (const f of this.feeders) if (f.motor && f.on && f.auto && !f.shed) f.restartAt = this.time + 1 + 2.5 * k++;
     }
     if (!this.live) this.deadT += dt; else this.deadT = 0;
-    if (this.live && this.load > 0.85 && conn.length === 1) this.highT += dt; else this.highT = 0;
+    if (this.live && this.load > 0.85 && conn.length === 1) this.highT += dt; else this.highT = Math.max(0, this.highT - dt);
     // standby generator on AUTO
     for (const g of this.gens) {
       if (g.mode !== 'auto') continue;
-      const need = (!this.live && this.deadT > 1.5) || this.highT > 20;
+      const need = (!this.live && this.deadT > 1.5) || this.highT > 8;
       if (need && g.state === 'stopped') { this.startGen(g.id); g.msg = this.live ? 'автопуск: высокая нагрузка' : 'автопуск: обесточивание'; }
       if (g.ready && !g.breaker && (need || g.msg.startsWith('автопуск'))) {
         if (!this.busy.length) this.closeBreaker(g.id);

@@ -63,6 +63,7 @@ export class Boat {
     this.steeringPumps = 1;      // hydraulic steering pumps running (electrical plant)
     this.drift = { x: 0, z: 0 }; // wind drift over the ground (m/s), set each frame
     this.constrain = null;       // (dt) => {}: the anchor chain, after she moves
+    this.towDrag = 0;            // N: the trawl gear's drag, set each frame
 
     this.model = null;
     this.collider = null; // invisible walk/collision mesh, in model space
@@ -177,6 +178,7 @@ export class Boat {
     const resistance = c * u * Math.abs(u);
     let accel = (thrust - resistance) / BOAT.mass;
     accel -= 0.35 * Math.abs(this.yawRate) * u;      // speed lost in a turn
+    accel -= this.towDrag / BOAT.mass;               // the trawl
     this.speed += accel * dt;
 
     // Yaw: Nomoto. Rudder needs flow: ship speed plus propeller wash.
