@@ -34,6 +34,7 @@ import { Electrical } from './ship/Electrical.js';
 import { Sensors } from './ship/Sensors.js';
 import { ShipLights } from './ship/ShipLights.js';
 import { ShipPanels } from './ui/ShipPanels.js';
+import { Whistle } from './ship/Whistle.js';
 
 const container = document.getElementById('app');
 const loading = document.getElementById('loading');
@@ -95,6 +96,8 @@ const alarms = new Alarms();
 const elec = new Electrical(alarms);
 const sensors = new Sensors(alarms, elec);
 const shipLights = new ShipLights({ scene, elec, mobile: IS_TOUCH });
+const whistle = new Whistle(elec);
+const _hornPos = new THREE.Vector3();
 const instruments = new Instruments(terrain, sensors);
 const boat = new Boat();
 // Lying off Reine in Vestfjorden, bow toward the fjord mouth: course 335°,
@@ -127,7 +130,7 @@ orbit.enabled = false;
 
 const touch = IS_TOUCH ? new TouchControls(input) : null;
 const panels = new ShipPanels({
-  elec, sensors, lights: shipLights, alarms,
+  elec, sensors, lights: shipLights, alarms, whistle,
   actions: {
     // the searchlight to where the camera looks
     aimSearch: () => {
@@ -159,7 +162,7 @@ const HINTS = IS_TOUCH ? {
   walk: 'джойстик — идти · палец — осмотреться · у штурвала — «к штурвалу» · «нырнуть» — за борт',
   swim: 'джойстик — плыть туда, куда смотрите · ▲ ▼ — вверх / вниз · палец — осмотреться · «фонарь» · у борта — «на борт»',
 } : {
-  '3p': '<b>W/S</b> телеграф · <b>A/D</b> руль · <b>Z</b> руль прямо · мышь — облёт, колесо — ближе/дальше · <b>F</b> на борт · <b>N</b> день/ночь · <b>B</b> погода · <b>H</b> гудок · <b>M</b> звук · <b>I</b> приборы · <b>J</b> нырнуть · <b>P</b> пульт (огни, свет, приборы, энергия) · <b>U</b> авторулевой',
+  '3p': '<b>W/S</b> телеграф · <b>A/D</b> руль · <b>Z</b> руль прямо · мышь — облёт, колесо — ближе/дальше · <b>F</b> на борт · <b>N</b> день/ночь · <b>B</b> погода · <b>H</b> гудок (держать) · <b>M</b> звук · <b>I</b> приборы · <b>J</b> нырнуть · <b>P</b> пульт (огни, свет, приборы, энергия) · <b>U</b> авторулевой',
   helm: '<b>W/S</b> телеграф · <b>A/D</b> руль · <b>Z</b> руль прямо · <b>U</b> авторулевой · <b>P</b> пульт · <b>E</b> отойти от штурвала · <b>F</b> вид со стороны · клик — осмотреться',
   walk: '<b>WASD</b> идти · <b>Shift</b> бегом · <b>E</b> к штурвалу (стоя у него) · <b>P</b> пульт на мостике / щит в машинном · <b>J</b> за борт · <b>F</b> вид со стороны · клик — осмотреться',
   swim: '<b>WASD</b> плыть туда, куда смотрите · <b>Space</b> вверх · <b>C</b> вниз · <b>Shift</b> быстрее · <b>L</b> фонарь · <b>E</b> на борт (у борта) · клик — осмотреться',
@@ -349,7 +352,12 @@ function tick() {
     const muted = sound.toggle();
     if (touch) touch.setSound(muted);
   }
-  if (input.pressed('h')) sound.horn(boat.position);
+  // the whistle: held down it blows for as long as you hold it; a tap on the
+  // menu button gives one short blast
+  const atConn = mode === '3p' || mode === 'helm' || (mode === 'walk' && onBridgeNow());
+  const hornHeld = atConn && input.held('h');
+  if (atConn && input.pressed('h') && !input.held('h')) whistle.play('s1');
+  if (hornHeld) sensors.bnwasReset();
   updateWeather(dt);
   if (input.pressed('f') && mode !== 'swim') setMode(mode === '3p' ? 'helm' : '3p');
   if (input.pressed('e')) {
@@ -427,6 +435,8 @@ function tick() {
   elec.dcW = sensors.dcW + shipLights.dcW;
   elec.update(dt, { rudderRate: boat.rudderRate || 0, meRunning: boat.engineRunning, meFuel: sensors.me.fuel });
   boat.steeringPumps = elec.steeringPumps;
+  whistle.update(dt, hornHeld);
+  if (boat.model) sound.tyfon(whistle.open, elec.air, boat.model.localToWorld(_hornPos.set(-0.8, 8.2, -3.9)));
   boat.update(dt, time, (x, z) => heightAt(x, z) < ocean.tide - 4);
   environment.follow(boat.position);
 
@@ -554,4 +564,4 @@ function tick() {
 }
 tick();
 
-window.__scene = { engine, sky, ocean, boat, player, instruments, weather, clouds, rain, spray, sound, falls, environment, terrain, village, follow, orbit, heightAt, applyPreset, setMode, input, diver, underwater, seaLife, elec, sensors, shipLights, panels, alarms, nearSwitchboard, overTheSide: () => overTheSide(), get mode() { return mode; } };
+window.__scene = { engine, sky, ocean, boat, player, instruments, weather, clouds, rain, spray, sound, falls, environment, terrain, village, follow, orbit, heightAt, applyPreset, setMode, input, diver, underwater, seaLife, elec, sensors, shipLights, panels, alarms, nearSwitchboard, whistle, overTheSide: () => overTheSide(), get mode() { return mode; } };

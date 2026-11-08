@@ -1,5 +1,6 @@
 import { NAV_PRESETS } from '../ship/ShipLights.js';
 import { wrap180 } from '../ship/Geo.js';
+import { SIGNALS, FOG } from '../ship/Whistle.js';
 
 // Control panels of the ship, as overlays:
 //   - the bridge console ("пульт"): navigation lights panel, deck lights and
@@ -61,8 +62,8 @@ const fmtT = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart
 const DEV_ORDER = ['radar', 'plotter', 'conning', 'sounder', 'engmon', 'gps', 'satc', 'log', 'wind', 'ap', 'vhf', 'ais', 'bnwas'];
 
 export class ShipPanels {
-  constructor({ elec, sensors, lights, alarms, actions }) {
-    this.E = elec; this.S = sensors; this.L = lights; this.A = alarms;
+  constructor({ elec, sensors, lights, alarms, whistle, actions }) {
+    this.E = elec; this.S = sensors; this.L = lights; this.A = alarms; this.W = whistle;
     this.actions = actions || {};
     const st = document.createElement('style');
     st.textContent = CSS;
@@ -77,6 +78,17 @@ export class ShipPanels {
     this.tab = 'nav';
     this.t = 0;
     const act = (e) => {
+      // the whistle button: blows while held
+      const h = e.target.closest('[data-hold]');
+      if (h && this.W) {
+        e.preventDefault(); e.stopPropagation();
+        this.W.panelHeld = true;
+        h.classList.add('warn');
+        const up = () => { this.W.panelHeld = false; h.classList.remove('warn'); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); };
+        window.addEventListener('pointerup', up);
+        window.addEventListener('pointercancel', up);
+        return;
+      }
       const b = e.target.closest('[data-a]');
       if (!b) { if (e.target === this.el) this.hide(); return; }
       e.preventDefault();
@@ -146,6 +158,8 @@ export class ShipPanels {
       }
       case 'feeder': E.toggleFeeder(x); break;
       case 'hydwork': E.hydWork = !E.hydWork; break;
+      case 'sig': this.W.play(x); this.S.bnwasReset(); break;
+      case 'fog': this.W.setFog(x); break;
       case 'ack': this.A.ack(x); if (x.startsWith('bnwas')) S.bnwasReset(); break;
       case 'ackall': this.A.ackAll(); S.bnwasReset(); break;
       default:
@@ -180,7 +194,7 @@ export class ShipPanels {
     if (!this.open) return;
     const tabs = this.open === 'msb'
       ? [['msb', 'ГРЩ — главный распределительный щит']]
-      : [['nav', 'Огни'], ['light', 'Свет'], ['dev', 'Приборы'], ['power', 'Энергия'], ['alarms', `Тревоги${this.A.unacked ? ` (${this.A.unacked})` : ''}`]];
+      : [['nav', 'Огни'], ['light', 'Свет'], ['horn', 'Тифон'], ['dev', 'Приборы'], ['power', 'Энергия'], ['alarms', `Тревоги${this.A.unacked ? ` (${this.A.unacked})` : ''}`]];
     if (this.open === 'msb') this.tab = 'msb';
     this.hd.innerHTML = `<b>${this.open === 'msb' ? 'Машинное отделение' : 'Пульт мостика'}</b>${tabs.map(([id, n]) => `<button class="tab ${this.tab === id ? 'sel' : ''}" data-a="tab:${id}">${n}</button>`).join('')}<button class="x" data-a="close">✕</button>`;
     const sc = this.bd.scrollTop;
@@ -228,6 +242,28 @@ export class ShipPanels {
       <div class="card"><h4>Помещения</h4><p>${L.inside === 'normal' ? '<span class="lamp w"></span>Основное освещение 230 В' : L.inside === 'emergency' ? '<span class="lamp y"></span>Аварийное освещение 24 В' : '<span class="lamp r"></span>Темно: нет питания'}</p>
         <p class="note">Основное освещение — автомат «Освещение помещений» на ГРЩ.</p></div>
     </div>`;
+  }
+
+  r_horn() {
+    const W = this.W, E = this.E;
+    const p = E.air;
+    const ready = E.dcOk && p > 1.5;
+    const sig = Object.entries(SIGNALS).map(([id, q]) => `<tr><td><button data-a="sig:${id}">${q.name}</button></td><td class="n">${q.meaning}</td></tr>`).join('');
+    const fog = Object.entries(FOG).map(([id, q]) => `<button class="${W.fog === id ? 'on' : ''}" data-a="fog:${id}">${q.name}</button>`).join('');
+    return `<div class="grid">
+      <div class="card"><h4>Тифон (воздушный, ~290 Гц)</h4>
+        <div class="row"><button data-hold="1" style="min-width:150px;min-height:54px;font-size:15px">ДЕРЖАТЬ — ГУДОК</button>
+          <span class="lamp ${W.open ? 'y' : ready ? 'g' : 'r'}"></span>${W.open ? 'звучит' : ready ? 'готов' : !E.dcOk ? 'нет 24 В на клапане' : 'нет воздуха'}</div>
+        <div class="mono">Ресивер 250 л: ${p.toFixed(1)} бар</div>
+        <div class="bar"><i style="width:${Math.min(100, (p / 9.2) * 100)}%;background:${p < 5 ? '#e0533f' : '#4fb4d8'}"></i></div>
+        <div class="mono">Компрессор: ${!E.powered('comp') ? 'нет питания (ГРЩ)' : E.compOn ? 'качает' : 'стоп (7,5–9 бар)'}</div>
+        <p class="note">МППСС, Приложение III: судно 20–75 м — основная частота 250–700 Гц, 130 дБ на 1 м, слышен примерно за милю.</p></div>
+      <div class="card"><h4>Туманный сигнал — автомат</h4><div class="row">${fog}</div>
+        <p class="note">${FOG[W.fog].meaning}${W.fog !== 'off' ? ` · следующий через ${Math.max(0, Math.round(W.fogT))} с` : ''}</p></div>
+    </div>
+    <h4 style="margin:12px 0 4px;color:#8fb3c4">Сигналы маневроуказания (правило 34)</h4>
+    <table>${sig}</table>
+    <p class="note">Короткий — около 1 с, продолжительный — 4–6 с. Подаются, когда суда видят друг друга.</p>`;
   }
 
   r_dev() {

@@ -110,6 +110,14 @@ export class TouchControls {
     // top-right: view, helm, menu
     const top = this.el('div', 'tc', 'tc-top');
     this.btnHelm = this.button(top, 'к штурвалу', 'e');
+    // the whistle: blows while held (holds the H key)
+    this.btnHorn = document.createElement('button');
+    this.btnHorn.textContent = 'гудок';
+    const hornOn = (e) => { e.preventDefault(); e.stopPropagation(); this.input.keys.add('h'); this.btnHorn.style.background = 'rgba(255,176,46,.45)'; };
+    const hornOff = () => { this.input.keys.delete('h'); this.btnHorn.style.background = ''; };
+    this.btnHorn.addEventListener('pointerdown', hornOn);
+    for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) this.btnHorn.addEventListener(ev, hornOff);
+    top.appendChild(this.btnHorn);
     this.btnPanel = this.button(top, 'пульт', 'p');
     this.btnPanel.hidden = true;
     this.btnDive = this.button(top, 'нырнуть', 'j');
@@ -304,6 +312,7 @@ export class TouchControls {
     this.btnHelm.hidden = swim ? !nearHelm : !(mode === 'helm' || (mode === 'walk' && nearHelm));
     this.btnHelm.textContent = swim ? 'на борт' : mode === 'helm' ? 'отойти' : 'к штурвалу';
     this.btnDive.hidden = !(mode === '3p' || mode === 'walk');
+    this.btnHorn.hidden = !(mode === '3p' || mode === 'helm');
     this.btnTorch.hidden = !swim;
     this.btnView.hidden = swim;
     this.btnView.textContent = mode === '3p' ? 'на борт' : 'со стороны';

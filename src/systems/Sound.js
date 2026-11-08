@@ -147,6 +147,8 @@ export class SoundScape {
     this.uwBed = bed('lowpass', 260, 0.7, this.master);
     this.uwHiss = bed('bandpass', 1800, 0.6, this.master);
 
+    this.initWhistle();
+
     // generator sets and the alarm buzzer
     this.genOsc = ctx.createOscillator(); this.genOsc.type = 'sawtooth'; this.genOsc.frequency.value = 75;
     const genLP = this.filter('lowpass', 260, 1.2);
@@ -281,6 +283,7 @@ export class SoundScape {
       L.setOrientation(f.x, f.y, f.z, u.x, u.y, u.z);
     }
     _v.x = p.x; _v.y = p.y; _v.z = p.z;
+    this._lastL = _v;
     return _v;
   }
 
@@ -605,52 +608,138 @@ export class SoundScape {
     this.dispose(sp, tt + 3.6 - ctx.currentTime);
   }
 
-  // Ship's horn (two notes, 340 / 425 Hz, in the band COLREG sets for a
-  // vessel of this size), with echoes off every cliff within 1.5 km.
-  horn(shipPos, duration = 2.2) {
-    if (!this.ctx) return;
-    const ctx = this.ctx, t = ctx.currentTime;
-    const bus = ctx.createGain();
-    const lp = this.filter('lowpass', 2200, 0.7);
-    bus.gain.setValueAtTime(0, t);
-    bus.gain.linearRampToValueAtTime(0.45, t + 0.12);
-    bus.gain.setValueAtTime(0.45, t + duration);
-    bus.gain.exponentialRampToValueAtTime(0.001, t + duration + 0.45);
-    for (const f of [340, 425]) {
-      const o = ctx.createOscillator();
-      o.type = 'sawtooth';
-      o.frequency.value = f;
-      o.connect(lp);
-      o.start(t);
-      o.stop(t + duration + 0.5);
+  // The ship's whistle: an air horn (tyfon) of the kind on a vessel of this
+  // size. COLREG Annex III puts its fundamental at 250-700 Hz for vessels
+  // under 75 m (130 dB at 1 m, heard about a mile): one deep tone, not the
+  // two-note chord of a car horn. A diaphragm chopping the air at about
+  // 290 Hz makes a buzz rich in harmonics; the trumpet brings out the band
+  // around 1-1.2 kHz and 2.6 kHz and gives it its bray. When the valve opens
+  // the pressure builds over a tenth of a second: the note "blooms" up to
+  // pitch with a bark of air; on closing it sags and dies. Low air pressure
+  // makes it weak and flat. It sounds from the horn on the wheelhouse roof,
+  // reaches you at the speed of sound, and comes back from every cliff.
+  initWhistle() {
+    const ctx = this.ctx;
+    const f0 = 290;
+    this.whF0 = f0;
+    const N = 60;
+    const real = new Float32Array(N + 1), imag = new Float32Array(N + 1);
+    for (let k = 1; k <= N; k++) {
+      const f = k * f0;
+      const formant = 1 + 2.2 * Math.exp(-(((f - 1150) / 420) ** 2)) + 1.1 * Math.exp(-(((f - 2600) / 750) ** 2));
+      const top = f > 5500 ? Math.exp(-(f - 5500) / 1400) : 1;
+      imag[k] = Math.pow(k, -0.8) * formant * top * (k % 2 ? 1 : 0.85);
     }
-    lp.connect(bus).connect(this.hornSrc.input);
-    // echoes
-    const L = this.ctx.listener;
-    const lx = L.positionX ? L.positionX.value : shipPos.x;
-    const ly = L.positionY ? L.positionY.value : shipPos.y;
-    const lz = L.positionZ ? L.positionZ.value : shipPos.z;
-    const walls = [];
-    for (let i = 0; i < 16; i++) {
-      const a = (i / 16) * Math.PI * 2;
+    const wave = ctx.createPeriodicWave(real, imag);
+    this.whOsc = ctx.createOscillator(); this.whOsc.setPeriodicWave(wave); this.whOsc.frequency.value = f0;
+    this.whOsc2 = ctx.createOscillator(); this.whOsc2.setPeriodicWave(wave); this.whOsc2.frequency.value = f0 * 1.0035;
+    // the diaphragm's flutter
+    const lfo = ctx.createOscillator(); lfo.frequency.value = 6.2;
+    const lfoG = ctx.createGain(); lfoG.gain.value = f0 * 0.0022;
+    lfo.connect(lfoG); lfoG.connect(this.whOsc.frequency); lfoG.connect(this.whOsc2.frequency);
+    const g2 = ctx.createGain(); g2.gain.value = 0.32;
+    // overdriven a little: the brassy edge
+    const shaper = ctx.createWaveShaper();
+    const curve = new Float32Array(1024);
+    for (let i = 0; i < 1024; i++) { const x = (i / 511.5) - 1; curve[i] = Math.tanh(x * 1.8) / Math.tanh(1.8); }
+    shaper.curve = curve;
+    this.whGate = ctx.createGain(); this.whGate.gain.value = 0;
+    const pre = ctx.createGain(); pre.gain.value = 0.55;
+    this.whOsc.connect(pre); this.whOsc2.connect(g2).connect(pre);
+    pre.connect(shaper).connect(this.whGate);
+    // the bark of air as the valve opens
+    this.whBark = ctx.createGain(); this.whBark.gain.value = 0;
+    this.noise().connect(this.filter('bandpass', 1700, 1.3)).connect(this.whBark);
+    this.whOut = ctx.createGain(); this.whOut.gain.value = 0.62;
+    this.whGate.connect(this.whOut);
+    this.whBark.connect(this.whOut);
+    // the way to the listener: delay for the distance, then the horn's place
+    this.whDelay = ctx.createDelay(12);
+    this.whOut.connect(this.whDelay).connect(this.hornSrc.input);
+    for (const o of [this.whOsc, this.whOsc2, lfo]) o.start();
+    this.whOpen = false;
+    this.echoNet = null;
+  }
+
+  // Called every frame: valve open or shut, air pressure (bar), horn position.
+  tyfon(open, pressure, pos) {
+    if (!this.ctx || !this.whOsc) return;
+    const t = this.ctx.currentTime;
+    const L = this._lastL;
+    if (L) {
+      const d = Math.hypot(pos.x - L.x, pos.y - L.y, pos.z - L.z);
+      this.whDelay.delayTime.setTargetAtTime(Math.min(11.5, d / C_SOUND), t, 0.4);
+    }
+    if (open === this.whOpen) return;
+    this.whOpen = open;
+    const f0 = this.whF0;
+    const pk = Math.max(0, Math.min(1, (pressure - 1.5) / 3));      // full tone above 4.5 bar
+    if (open) {
+      const fT = f0 * (0.955 + 0.045 * pk);
+      for (const [o, k] of [[this.whOsc, 1], [this.whOsc2, 1.0035]]) {
+        o.frequency.cancelScheduledValues(t);
+        o.frequency.setValueAtTime(fT * 0.78 * k, t);
+        o.frequency.exponentialRampToValueAtTime(fT * 1.01 * k, t + 0.13);
+        o.frequency.exponentialRampToValueAtTime(fT * k, t + 0.3);
+      }
+      this.whGate.gain.cancelScheduledValues(t);
+      this.whGate.gain.setValueAtTime(this.whGate.gain.value, t);
+      this.whGate.gain.linearRampToValueAtTime((0.35 + 0.65 * pk), t + 0.1);
+      this.whBark.gain.cancelScheduledValues(t);
+      this.whBark.gain.setValueAtTime(0.5 * pk, t);
+      this.whBark.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+      this._echoes(pos);
+    } else {
+      for (const o of [this.whOsc, this.whOsc2]) {
+        o.frequency.cancelScheduledValues(t);
+        o.frequency.setValueAtTime(o.frequency.value, t);
+        o.frequency.exponentialRampToValueAtTime(o.frequency.value * 0.93, t + 0.22);
+      }
+      this.whGate.gain.cancelScheduledValues(t);
+      this.whGate.gain.setValueAtTime(this.whGate.gain.value, t);
+      this.whGate.gain.setTargetAtTime(0, t, 0.055);
+    }
+  }
+
+  // Echoes off the cliffs within 1.5 km of the ship: a delay line to each,
+  // kept while the ship stays near where they were worked out.
+  _echoes(shipPos) {
+    const ctx = this.ctx;
+    const net = this.echoNet;
+    if (net && Math.hypot(net.x - shipPos.x, net.z - shipPos.z) < 40 && ctx.currentTime - net.t < 30) return;
+    if (net) {
+      const old = net.nodes;
+      setTimeout(() => { for (const n of old) { try { n.disconnect(); } catch (e) { /* gone */ } } }, 12000);
+    }
+    const L = this._lastL || shipPos;
+    const nodes = [];
+    for (let i = 0; i < 20; i++) {
+      const a = (i / 20) * Math.PI * 2;
       const dx = Math.sin(a), dz = -Math.cos(a);
       for (let r = 20; r <= 1500; r += 10) {
         const wx = shipPos.x + dx * r, wz = shipPos.z + dz * r;
-        if (this.terrain.sample(wx, wz) > 5) { walls.push({ x: wx, z: wz, r }); break; }
+        if (this.terrain.sample(wx, wz) > 5) {
+          const back = Math.hypot(wx - L.x, 20 - L.y, wz - L.z);
+          const delay = (r + back) / C_SOUND;
+          const dl = ctx.createDelay(12);
+          dl.delayTime.value = Math.min(11.5, delay);
+          const eg = ctx.createGain();
+          eg.gain.value = 0.8 * Math.min(1, 160 / (r + back));     // spreading; rock takes some
+          const sp = this.spatial({ ref: 1e6, rolloff: 0, reverb: 0.3 });
+          this.place(sp, wx, 20, wz);
+          sp.air.frequency.value = Math.max(500, 5000 * Math.exp(-(r + back) / 1500));
+          this.whOut.connect(dl).connect(eg).connect(sp.input);
+          nodes.push(dl, eg, sp.input, sp.p);
+          break;
+        }
       }
     }
-    for (const w of walls) {
-      const back = Math.hypot(w.x - lx, 20 - ly, w.z - lz);
-      const delay = (w.r + back) / C_SOUND;
-      const dl = ctx.createDelay(10);
-      dl.delayTime.value = Math.min(9.9, delay);
-      const eg = ctx.createGain();
-      eg.gain.value = 0.9 * Math.min(1, 140 / (w.r + back));      // spreading + rock absorbs some
-      const sp = this.spatial({ ref: 1e6, rolloff: 0, reverb: 0.25 });
-      this.place(sp, w.x, 20, w.z);
-      sp.air.frequency.value = Math.max(500, 5000 * Math.exp(-(w.r + back) / 1500));
-      bus.connect(dl).connect(eg).connect(sp.input);
-      this.dispose(sp, delay + duration + 3);
-    }
+    this.echoNet = { x: shipPos.x, z: shipPos.z, t: ctx.currentTime, nodes };
+  }
+
+  // A single blast (kept for callers outside the bridge).
+  horn(shipPos, duration = 1.2) {
+    this.tyfon(true, 8, shipPos);
+    setTimeout(() => this.tyfon(false, 8, shipPos), duration * 1000);
   }
 }

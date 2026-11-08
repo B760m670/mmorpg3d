@@ -44,7 +44,7 @@ You can command the ship from outside, stand at the wheel, or walk about her.
 | mouse | (click to capture) look around | look around |
 | `N` / `C` | day ↔ night / orbit camera (third person) | |
 | `B` | weather: clear → fair → overcast with showers → storm → changing on its own | weather |
-| `M` / `H` | sound on / off / ship's horn | sound on / off / horn |
+| `M` / `H` | sound on / off / ship's whistle (hold) | sound on / off / whistle (on the bridge) |
 | `J` | dive in (off the starboard quarter) | over the side you stand nearest |
 | `P` | bridge console (lights, equipment, power, alarms) | the console on the bridge, the switchboard in the engine room |
 | `U` | autopilot on / off (holds the present heading) | |
@@ -184,6 +184,24 @@ measure, not the game's exact state (`src/ship/`, `src/ui/Instruments.js`):
   water; it lights the shore.
 - **Inside**: 230 V lighting below decks, 24 V emergency lighting in a
   blackout; red night light or white light in the wheelhouse.
+
+### The whistle
+
+`src/ship/Whistle.js`, voice in `src/systems/Sound.js`: an air horn (tyfon)
+on the wheelhouse roof, blown by working air from a 250 l receiver kept at
+7.5-9 bar by a compressor on the switchboard, through a 24 V solenoid valve.
+COLREG Annex III puts the fundamental at 250-700 Hz for a vessel under 75 m
+(130 dB at 1 m, heard about a mile), so this is one deep tone (290 Hz), not
+the two-note chord of a car horn. It is synthesised from how such a horn
+works: a diaphragm buzz rich in harmonics, the trumpet's resonances around
+1.1 and 2.6 kHz, the note blooming up to pitch with a bark of air as the
+valve opens and sagging as it closes, weak and flat on low air. It reaches
+you at the speed of sound and comes back off every cliff within 1.5 km.
+Hold `H` (or *гудок*) for as long as you like. The *Тифон* tab gives the
+Rule 34 manoeuvring signals (one short: altering to starboard; two: to port;
+three: astern propulsion; five: doubt; prolonged: a bend) and a fog-signal
+timer for Rule 35 (making way; underway, stopped; fishing / NUC), every
+2 minutes.
 
 **Panels** (`src/ui/ShipPanels.js`): `P` (or *пульт*) opens the bridge
 console, at the conn or on the bridge. Its tabs: navigation lights; deck
@@ -517,6 +535,7 @@ src/
     Sensors.js         # GPS, compasses, log, sounder, wind, engine, autopilot, BNWAS
     ShipLights.js      # navigation lights (sectors), floods, searchlight, interior
     Alarms.js          # alarm list: raise, clear, acknowledge
+    Whistle.js         # whistle control: signals, fog-signal timer, air
     Geo.js             # UTM 33 -> WGS84, convergence, declination, deviation card
     SeaLife.js         # kelp, urchins, starfish, saithe, cod
     Waterfalls.js      # waterfalls on the fjord walls

@@ -77,6 +77,7 @@ const FEEDERS = [
   ['search', 'Поисковый прожектор', 1.0, false, false, true, true],
   ['nav', 'Навигация (через ИБП)', 1.6, false, true, true, true],
   ['charge', 'Зарядные устройства 24 В', 2.4, false, true, true, true],
+  ['comp', 'Компрессор рабочего воздуха (тифон)', 4, true, false, true, true],
 ];
 
 export class Electrical {
@@ -115,6 +116,8 @@ export class Electrical {
     this.hotw = 0; this.fwT = 0; this.galleyT = 0; this.galleyKw = 0; this.kettle = 0;
     this.heatOn = false; this.fridgeOn = true; this.bilgeOn = false;
     this.hydWork = false;     // winches working (hauling the trawl)
+    // working air: a 250 l receiver for the whistle, 7.5-9 bar (pressure switch)
+    this.air = 8.4; this.airUse = 0; this.compOn = false;
     // 24 V
     this.house = { ah: 450, soc: 0.88, V: 26.8, I: 0 };
     this.start = { ah: 180, soc: 0.95, V: 26.4 };
@@ -260,6 +263,13 @@ export class Electrical {
     this.fwT -= dt;
     if (this.fwT < -200 - Math.random() * 300) this.fwT = 30 + Math.random() * 40;
     fd.fw.demand = this.fwT > 0 ? 1.0 : 0;
+    // working air: the whistle draws it down, the compressor cuts in at 7.5
+    // bar and out at 9; a little always leaks away
+    const compP = this.powered('comp');
+    this.air = Math.max(0, Math.min(9.2, this.air + dt * ((this.compOn && compP ? 0.045 : 0) - this.airUse - 0.0004)));
+    if (this.air < 7.5) this.compOn = true;
+    if (this.air > 9.0) this.compOn = false;
+    fd.comp.demand = this.compOn ? 3.6 : 0.05;
     // heating: the cabins lose heat to the 3 deg C outside; thermostat 21 deg
     const heatP = this.powered('heat');
     this.cabinT += dt * ((this.heatOn && heatP ? 9 * 0.00042 : 0) - (this.cabinT - this.outT) / 7200);
@@ -428,6 +438,7 @@ export class Electrical {
     A.set('steer', !this.powered('steer1') && !this.powered('steer2'), 'Рулевая машина: насосы не работают', 'alarm');
     A.set('bilge', this.bilge > 0.85, 'Высокий уровень льяльных вод', 'alarm');
     A.set('hold', this.holdT > 3, `Температура трюма ${this.holdT.toFixed(1)} °C`, 'warn');
+    A.set('air', this.air < 5, `Низкое давление рабочего воздуха: ${this.air.toFixed(1)} бар`, 'warn');
     for (const g of this.gens) A.set(`gstart${g.id}`, g.msg.startsWith('не проворачивается'), `${g.name}: ${g.msg}`, 'alarm');
   }
 
