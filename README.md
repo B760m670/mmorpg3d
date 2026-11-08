@@ -299,22 +299,24 @@ loudspeaker is in the wheelhouse, faint on deck. The log on the panel shows
 each transmission with a Russian translation. The vessel names, the ship's
 MMSI and the coast radio's working channel are fictional.
 
-### The crew
+### The person aboard
 
-`blender/build_crew.py` builds a crewman, a North-Norwegian fisherman of
-1.80 m: orange PVC bib-and-brace oilskin trousers over a dark wool sweater,
-rubber boots, a knitted cap, a beard. A skeleton of joints with radii is
-skinned into the body (Skin modifier, smoothed); a sculpted head (cranium,
-jaw and chin, brow and eye sockets, cheekbones) with nose, ears, eyes and
-brows; the clothes are regions of the surface with their own materials. It
-is rigged with 19 bones, weighted by distance to the bones, and animated:
-idle, walk, run, helm, haul (`src/assets/crew.glb`, 350 KB, 8 300
-triangles). In the game (`src/entities/Crew.js`) the skipper stands at the
-controls in the wheelhouse (he steps away when you take the helm yourself),
-a deckhand in orange oilskins goes round the working deck between jobs, and
-walking about the ship you can switch to third person (`V`, or *1-е/3-е*)
-and see yourself, in yellow oilskins. Each is dressed by recolouring the
-model's materials.
+The man the ship came to, who runs her himself. He is not modelled here: he
+is a ready-made, professionally built avatar from the **Microsoft Rocketbox
+Avatar Library** (`Male_Adult_07`, MIT licence,
+<https://github.com/microsoft/Microsoft-Rocketbox>): a realistic man of about
+40 in a grey jacket and jeans, 1.82 m, one skinned mesh of 7 600 triangles on
+the library's Biped skeleton, with its colour and normal maps. His animations
+are the library's own motion capture: standing (two takes), looking about,
+walking, jogging. `blender/build_person.py` converts the avatar and the takes
+for the game (`src/assets/person.glb`, 2.6 MB): the takes are retargeted
+onto the avatar bone by bone (their rest pose has the arms level, the
+avatar's has them down), textures are resized to 1024 px with the islands
+bled so their edges do not pick up the background. In the game
+(`src/entities/Crew.js`) you see yourself when you walk about the ship with
+the camera behind you (`V`, or *1-е/3-е*): standing, now and then looking
+about, walking, jogging; steering from the outside camera you see him at the
+controls in the wheelhouse.
 
 **Panels** (`src/ui/ShipPanels.js`): `P` (or *пульт*) opens the bridge
 console, at the conn or on the bridge. Its tabs: navigation lights; deck
@@ -663,7 +665,7 @@ src/
     Environment.js     # lights + scene fog
   entities/Boat.js     # placeholder boat + buoyancy/steering
   entities/Diver.js    # the scuba diver: swimming, air, dive computer
-  entities/Crew.js     # skipper, deckhand and your own body (third person)
+  entities/Crew.js     # the person aboard (Rocketbox avatar): you in third person, at the controls
   ui/DiveComputer.js   # dive computer panel
   ui/ShipPanels.js     # bridge console and main switchboard overlays
   systems/

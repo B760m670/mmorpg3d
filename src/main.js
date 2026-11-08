@@ -40,7 +40,7 @@ import { Crew } from './entities/Crew.js';
 import { Trawl } from './ship/Trawl.js';
 import { Harbour } from './ship/Harbour.js';
 import { Radio } from './ship/Radio.js';
-import crewUrl from './assets/crew.glb?url';
+import crewUrl from './assets/person.glb?url';
 
 const container = document.getElementById('app');
 const loading = document.getElementById('loading');
