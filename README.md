@@ -306,21 +306,47 @@ in open water south-east of Reine, bow toward the fjord mouth.
 - In the game (`src/world/Terrain.js`) the same heights answer the boat
   (grounding), camera, radar, echo sounder and chart, and drive the mesh: a
   quadtree of patches, finer near the camera, drawn as one instanced draw
-  call with the heights read from a texture in the vertex shader. It is
-  shaded by height and slope: grey rock, green on the gentler slopes, snow on
-  the high ledges, a dark wet band with weed at the tide line, the flat
-  mountain lakes, and on the sea floor sand, gravel and rock, mud in the
-  deep basins.
+  call with the heights read from a texture in the vertex shader.
+- **What the ground is**: NGU's map of superficial deposits (bare rock,
+  scree, moraine, beach, wind-blown sand, weathered material) and its
+  1:250 000 bedrock map (monzonite to granite, migmatitic gneiss, gabbro),
+  read into the same 10 m cells by `tools/build_landcover.py`. The shader
+  draws what the map says is there: pale rubble on the scree fans, green
+  stony moraine, beaches, dark gabbro, banded gneiss; mountain lakes are the
+  real ones (dead-flat areas in the height model). Height and slope add
+  snow on the high ledges and vegetation only where it can hold.
+- **Stones**: blocks on the scree, erratics on the moraines and cobbles on
+  the beaches, placed by the deposit map around the camera (instanced,
+  refreshed as you move) and coloured by the bedrock under them.
+- **The tide**: Kartverket's predicted high and low waters for Reine
+  (`src/assets/terrain/tide.json`, Nov 2026 - Dec 2027). The sea level in the
+  game follows the real clock (about 2.4 m range at springs), so the wet band
+  on the rocks, the shallows and what you can sail over change through the
+  day; the bridge shows the tide and whether it is rising or falling.
+- **The village**: every building in Kartverket's register (Matrikkelen,
+  788 standing buildings in the area) at its registered position, as the
+  kind its type code says: houses, cabins, red rorbuer and sea houses on
+  posts over the water, boathouses, sheds, the fish plants, shops. The
+  register has points, not outlines, so each kind has its typical size and
+  form (modelled in `blender/build_village.py`), faces downhill toward the
+  shore and stands on a foundation that follows the slope. Stockfish racks
+  stand near the fishery buildings (approximate places: they are not in the
+  register) and carry cod from February to May.
 
 Honest limits: the land is accurate to about 10 m; the sea floor is the
 regional model, so single rocks and the shape of small coves under water are
-smoothed. Individual stones, kelp and so on are not in the data.
+smoothed. The deposit map is 1:50 000-ish, so its borders are a few tens of
+metres off. Buildings are typical shapes at the right place, not the real
+house; roads, quays and bridges are not drawn yet (OpenStreetMap could not be
+reached from the build environment).
 
 To rebuild the terrain data:
 
 ```bash
-python3 -m venv .geoenv && .geoenv/bin/pip install numpy scipy tifffile pyproj
+python3 -m venv .geoenv && .geoenv/bin/pip install numpy scipy tifffile pyproj pillow
 .geoenv/bin/python tools/build_terrain.py
+.geoenv/bin/python tools/build_landcover.py      # cover.dat, buildings.json, tide.json
+blender -b -P blender/build_village.py -- src/assets      
 ```
 
 ## Project layout
@@ -338,6 +364,8 @@ src/
     CloudLayer.js      # cloud deck
     NightSky.js        # stars, Milky Way, moon
     Terrain.js         # real terrain: data, CPU heights, GPU quadtree mesh
+    Tide.js            # sea level now, from Kartverket's predictions
+    Village.js         # registered buildings, stockfish racks, boulders
     Waterfalls.js      # waterfalls on the fjord walls
     Rain.js            # rain streaks
     Spray.js           # bow spray particles

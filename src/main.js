@@ -23,6 +23,8 @@ import { TouchControls } from './systems/TouchControls.js';
 import { Bridge } from './ui/Bridge.js';
 import { Instruments } from './ui/Instruments.js';
 import trawlerUrl from './assets/trawler.glb?url';
+import villageUrl from './assets/village.glb?url';
+import { Village } from './world/Village.js';
 
 const container = document.getElementById('app');
 const loading = document.getElementById('loading');
@@ -41,6 +43,10 @@ scene.add(sky.mesh);
 const terrain = new Terrain({ mobile: IS_TOUCH });
 scene.add(terrain.mesh);
 const ocean = new Ocean({ renderer, terrain, mobile: IS_TOUCH });
+// buildings from the register and boulders from the deposit map
+const village = new Village({ mobile: IS_TOUCH });
+village.load(villageUrl);
+scene.add(village.group);
 scene.add(ocean.mesh);
 const weather = new Weather();
 ocean.setState(weather.state.sea, true);
@@ -360,6 +366,7 @@ function tick() {
   const nearPlane = mode === '3p' ? 1.0 : 0.08;
   if (camera.near !== nearPlane) { camera.near = nearPlane; camera.updateProjectionMatrix(); }
   terrain.update(camera);
+  village.updateRocks(camera.position.x, camera.position.z);
   engine.render();
   input.endFrame();
 
@@ -375,4 +382,4 @@ function tick() {
 }
 tick();
 
-window.__scene = { engine, sky, ocean, boat, player, instruments, weather, clouds, rain, spray, sound, falls, environment, terrain, follow, orbit, heightAt, applyPreset, setMode, input };
+window.__scene = { engine, sky, ocean, boat, player, instruments, weather, clouds, rain, spray, sound, falls, environment, terrain, village, follow, orbit, heightAt, applyPreset, setMode, input };
