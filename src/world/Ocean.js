@@ -47,7 +47,7 @@ const VERT = /* glsl */ `
     // open each point is to the sea, worked out from the real coastline); the
     // swell is damped in the last ten metres of depth before the rock.
     vec2 te = terrainHE(p);
-    float th = te.x;
+    float th = te.x - uTide;           // depth below the water as it stands now
     float expo = te.y;
     float deep = smoothstep(-0.5, -12.0, th);
     vec3 amp = vec3(mix(0.1, 1.0, expo) * mix(0.25, 1.0, deep), mix(0.45, 1.0, expo) * mix(0.5, 1.0, deep), 1.0);
@@ -56,7 +56,7 @@ const VERT = /* glsl */ `
     d += textureLod(uDisp1, p / uL.y + 0.5 / uN.y, 0.0).xyz * amp.y * (1.0 - smoothstep(250.0, 700.0, dist));
     d += textureLod(uDisp2, p / uL.z + 0.5 / uN.z, 0.0).xyz * (1.0 - smoothstep(25.0, 70.0, dist));
 
-    vec3 pos = vec3(p.x + d.x, d.y, p.y + d.z);
+    vec3 pos = vec3(p.x + d.x, d.y + uTide, p.y + d.z);
     vWorldPos = pos;
     vFlat = p;
     vHeight = d.y;
@@ -370,6 +370,7 @@ function polarGrid(segments, rings, rMin, rMax) {
 export class Ocean {
   constructor({ renderer, terrain, mobile = false }) {
     this.terrain = terrain;
+    this.tide = 0;                      // m above mean sea level, see setTide
     this.cascades = makeCascades(mobile);
     const nd = (v) => { const l = Math.hypot(v[0], v[1]); return [v[0] / l, v[1] / l]; };
     this.windDir = nd(SEA.windDir);
@@ -529,7 +530,7 @@ export class Ocean {
   amps(x, z) {
     const sm = (a, b, v) => { const t = Math.min(1, Math.max(0, (v - a) / (b - a))); return t * t * (3 - 2 * t); };
     const expo = this.terrain.exposure(x, z);
-    const deep = sm(-0.5, -12, this.terrain.sample(x, z));
+    const deep = sm(-0.5, -12, this.terrain.sample(x, z) - this.tide);
     return [(0.1 + 0.9 * expo) * (0.25 + 0.75 * deep), (0.45 + 0.55 * expo) * (0.5 + 0.5 * deep)];
   }
 
@@ -550,10 +551,19 @@ export class Ocean {
     const inv = 1 / Math.hypot(o[3], 1, o[4]);
     n.x = -o[3] * inv; n.y = inv; n.z = -o[4] * inv;
     const r = this._r || (this._r = { height: 0, normal: n });
-    r.height = o[1];
+    r.height = o[1] + this.tide;
     return r;
   }
 }
+
+// The water level from the tide (m above mean sea level), for the shader and
+// for the CPU sampler the ship floats on.
+Ocean.prototype.setTide = function setTide(level) {
+  if (this.tideSet) this.tideRising = level > this.tide;
+  this.tideSet = true;
+  this.tide = level;
+  this.uniforms.uTide.value = level;
+};
 
 // Feed the vessel's state for hull foam and wake.
 Ocean.prototype.setBoat = function setBoat(boat) {

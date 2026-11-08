@@ -5,6 +5,7 @@ import innerUrl from '../assets/terrain/inner.dat?url';
 import outerUrl from '../assets/terrain/outer.dat?url';
 import expoInnerUrl from '../assets/terrain/expo_inner.dat?url';
 import expoOuterUrl from '../assets/terrain/expo_outer.dat?url';
+import coverUrl from '../assets/terrain/cover.dat?url';
 
 // Real terrain: Reine, Moskenesøya, Lofoten. Land from Kartverket's national
 // height model (10 m), sea floor from the EMODnet bathymetry model, merged by
@@ -36,8 +37,8 @@ async function loadBytes(url) {
   if (!r.ok) throw new Error(`terrain data ${url}: HTTP ${r.status}`);
   return new Uint8Array(await r.arrayBuffer());
 }
-const [innerGz, outerGz, expoInnerGz, expoOuterGz] = await Promise.all(
-  [innerUrl, outerUrl, expoInnerUrl, expoOuterUrl].map(loadBytes),
+const [innerGz, outerGz, expoInnerGz, expoOuterGz, coverGz] = await Promise.all(
+  [innerUrl, outerUrl, expoInnerUrl, expoOuterUrl, coverUrl].map(loadBytes),
 );
 
 function decodeHeights(gz, nx, nz) {
@@ -91,6 +92,16 @@ const inner = new Grid(meta.inner, decodeHeights(innerGz, meta.inner.nx, meta.in
 const outer = new Grid(meta.outer, decodeHeights(outerGz, meta.outer.nx, meta.outer.nz));
 const expoInner = new Grid(meta.inner.expo, decodeBytes(expoInnerGz, meta.inner.expo.nx, meta.inner.expo.nz));
 const expoOuter = new Grid(meta.outer.expo, decodeBytes(expoOuterGz, meta.outer.expo.nx, meta.outer.expo.nz));
+// What covers the ground in each 10 m cell of the inner grid (NGU maps, see
+// tools/build_landcover.py): low 4 bits loose deposit, high 4 bits bedrock.
+export const DEPOSIT = { ROCK: 0, SCREE: 1, MORAINE: 2, THIN_MORAINE: 3, END_MORAINE: 4, BEACH: 5, DUNES: 6, WEATHERED: 7 };
+export const BEDROCK = { MONZONITE: 0, GNEISS: 1, GABBRO: 2, SEDIMENTARY: 3 };
+const cover = gunzipSync(coverGz);
+export function coverAt(x, z) {
+  const i = Math.round((x - inner.minX) / inner.spacing), j = Math.round((z - inner.minZ) / inner.spacing);
+  if (i < 0 || j < 0 || i >= inner.nx || j >= inner.nz) return -1;
+  return cover[j * inner.nx + i];
+}
 const OPEN_SEA = -250;     // beyond the outer grid: Vestfjorden / the Norwegian Sea
 const EDGE = 300;          // inner grid fades into the outer over this distance (m)
 
@@ -143,6 +154,15 @@ function makeTexture(h, ex, g, eg) {
   return t;
 }
 
+function coverTexture() {
+  const t = new THREE.DataTexture(cover, inner.nx, inner.nz, THREE.RedFormat, THREE.UnsignedByteType);
+  t.magFilter = t.minFilter = THREE.NearestFilter;     // class ids: never blend
+  t.generateMipmaps = false;
+  t.unpackAlignment = 1;
+  t.needsUpdate = true;
+  return t;
+}
+
 let sharedUniforms = null;
 // Uniforms for TERRAIN_GLSL (built once, shared by terrain and ocean).
 export function terrainUniforms() {
@@ -155,6 +175,8 @@ export function terrainUniforms() {
     uTerOuterBox: { value: box(outer) },
     uTerInnerTexel: { value: new THREE.Vector3(1 / inner.nx, 1 / inner.nz, inner.spacing) },
     uTerOuterTexel: { value: new THREE.Vector3(1 / outer.nx, 1 / outer.nz, outer.spacing) },
+    uCover: { value: coverTexture() },
+    uTide: { value: 0 },              // water level now, m above mean sea level
   };
   return sharedUniforms;
 }
@@ -168,6 +190,14 @@ export const TERRAIN_GLSL = /* glsl */ `
   uniform vec4 uTerOuterBox;
   uniform vec3 uTerInnerTexel;   // 1/nx, 1/nz, spacing
   uniform vec3 uTerOuterTexel;
+  uniform sampler2D uCover;
+  uniform float uTide;
+  // land cover byte (deposit + 16 * bedrock), -1 outside the mapped area
+  float coverAt(vec2 p) {
+    vec2 uv = (p - uTerInnerBox.xy) / uTerInnerBox.zw + 0.5 * uTerInnerTexel.xy;
+    if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) return -1.0;
+    return floor(textureLod(uCover, uv, 0.0).r * 255.0 + 0.5);
+  }
   vec2 terrainHE(vec2 p) {
     vec2 uo = (p - uTerOuterBox.xy) / uTerOuterBox.zw + 0.5 * uTerOuterTexel.xy;
     vec2 o = textureLod(uTerOuter, uo, 0.0).rg;
@@ -213,7 +243,9 @@ const ROCK_GLSL = /* glsl */ `
 `;
 
 function buildMaterial(cells) {
-  const mat = new THREE.MeshStandardMaterial({ roughness: 0.93, metalness: 0.0 });
+  // double-sided so a seam's skirt shows from either side (the ground itself
+  // is only ever seen from above)
+  const mat = new THREE.MeshStandardMaterial({ roughness: 0.93, metalness: 0.0, side: THREE.DoubleSide });
   const U = terrainUniforms();
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, U);
@@ -230,7 +262,7 @@ function buildMaterial(cells) {
         {
           vec2 tp = (instanceMatrix * vec4(position, 1.0)).xz;
           float cell = instanceMatrix[0][0] * uCellFrac;
-          transformed.y = terrainHE(tp).x - aSkirt * (cell * 1.5 + 4.0);
+          transformed.y = terrainHE(tp).x - aSkirt * (cell * 3.0 + 12.0);   // deep enough for steep seams
         }`)
       .replace('#include <project_vertex>', `#include <project_vertex>
         vWPos = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;`);
@@ -252,37 +284,101 @@ function buildMaterial(cells) {
         float slope = 1.0 - terN.y;
         float big = rockFbm(vWPos * 0.045);
         float nz = rockFbm(vec3(vWPos.xz * 0.02, 1.7));
-        // bare grey gabbro and gneiss, green on the gentler slopes, snow
-        // lying on the high ledges, a dark wet band with weed at the tide line
-        vec3 col = vec3(0.15, 0.15, 0.145) + vec3(0.06, 0.06, 0.05) * nz;
-        float grass = smoothstep(0.42, 0.16, slope) * smoothstep(3.0, 14.0, tH) * (1.0 - smoothstep(320.0, 520.0, tH + nz * 80.0));
-        col = mix(col, vec3(0.075, 0.11, 0.05) + vec3(0.03, 0.03, 0.0) * nz, grass);
+        // What lies here, from the NGU maps (edges broken up a little so the
+        // 10 m cells do not show). Outside the mapped area: rules of thumb.
+        vec2 jit = (vec2(rockFbm(vWPos * 0.05), rockFbm(vWPos * 0.05 + 3.1)) - 0.5) * 22.0;
+        float cv = coverAt(tp + jit);
+        float dep = cv < 0.0 ? -1.0 : mod(cv, 16.0);
+        float rockType = cv < 0.0 ? 0.0 : floor(cv / 16.0);
+        // bedrock: brown monzonitic gneiss; the migmatite strip by Hamnøy is
+        // darker and cooler with pale veins; gabbro nearly black
+        vec3 col = vec3(0.17, 0.155, 0.135) + vec3(0.06, 0.055, 0.045) * nz;
+        if (rockType == 1.0) {
+          // irregular pale veins, only seen up close
+          float vein = smoothstep(0.62, 0.8, rockFbm(vec3(dot(vWPos.xz, vec2(0.55, 0.83)) * 0.06, vWPos.y * 0.03, nz * 3.0)));
+          col = mix(vec3(0.115, 0.12, 0.125) + vec3(0.04) * nz, vec3(0.3, 0.29, 0.27), vein * 0.35 * exp(-tDist / 400.0));
+        } else if (rockType == 2.0) {
+          col = vec3(0.075, 0.075, 0.08) + vec3(0.03) * nz;
+        }
+        float gentle = smoothstep(0.45, 0.16, slope);
+        float lowland = smoothstep(3.0, 14.0, tH) * (1.0 - smoothstep(320.0, 520.0, tH + nz * 80.0));
+        vec3 heath = vec3(0.075, 0.11, 0.05) + vec3(0.035, 0.03, 0.0) * nz;     // grass, crowberry, bilberry
+        float veg = 0.0, bumpK = 1.0, roughK = 0.93;
+        if (dep < 0.0) {
+          veg = gentle * lowland;
+        } else if (dep == 0.0) {                       // bare rock: heath only in the hollows
+          veg = gentle * lowland * smoothstep(0.45, 0.7, nz + 0.25 * gentle);
+        } else if (dep == 1.0) {                       // scree: pale blocky rubble, some moss low down
+          // blocks up close, an even pale grey from afar (no sparkle)
+          float blocks = mix(0.5, rockFbm(vWPos * 0.35), exp(-tDist / 90.0));
+          vec3 rub = vec3(0.25, 0.24, 0.225) * (0.78 + 0.44 * blocks);
+          col = mix(col, rub, 0.85);
+          veg = lowland * 0.25 * smoothstep(0.55, 0.75, nz);
+          bumpK = 1.6; roughK = 1.0;
+        } else if (dep <= 4.0) {                       // moraine: green, stony; patchier when thin
+          float stones = dep == 2.0 ? 0.15 : dep == 3.0 ? 0.35 : 0.55;
+          veg = lowland * (1.0 - stones * smoothstep(0.4, 0.7, rockFbm(vWPos * 0.3)));
+          col = mix(col, vec3(0.2, 0.19, 0.17), 0.4);
+          bumpK = 0.8;
+        } else if (dep == 5.0) {                       // beach: shingle and sand
+          col = mix(vec3(0.42, 0.39, 0.33), vec3(0.3, 0.29, 0.27), smoothstep(0.4, 0.7, rockFbm(vWPos * 0.6)));
+          bumpK = 0.35; roughK = 0.85;
+        } else if (dep == 6.0) {                       // dunes: pale sand, marram grass on top
+          col = vec3(0.6, 0.56, 0.46) * (0.92 + 0.16 * nz);
+          veg = 0.45 * smoothstep(0.45, 0.65, rockFbm(vWPos * 0.15)) * smoothstep(4.0, 9.0, tH);
+          heath = vec3(0.2, 0.22, 0.09);
+          bumpK = 0.2; roughK = 0.9;
+        } else {                                       // weathered material: brown grit
+          col = mix(col, vec3(0.22, 0.17, 0.12), 0.7);
+          veg = gentle * lowland * 0.35;
+        }
+        col = mix(col, heath, veg);
         float snow = smoothstep(560.0, 720.0, tH + nz * 120.0) * smoothstep(0.55, 0.28, slope);
         col = mix(col, vec3(0.82, 0.85, 0.9), snow);
-        float tide = smoothstep(2.2, 0.3, tH) * smoothstep(-1.5, 0.0, tH);
-        col = mix(col, vec3(0.05, 0.045, 0.03), tide);
+        // Shore zones, with the real tide (spring range about 2.4 m): black
+        // lichen just above high water, wracks (Fucus) between the tides,
+        // and everything below the falling water still wet and dark.
+        float lichen = smoothstep(0.9, 1.4, tH) * (1.0 - smoothstep(2.3, 3.0, tH)) * (1.0 - veg);
+        col = mix(col, vec3(0.035, 0.035, 0.03), 0.8 * lichen * step(-0.5, dep));
+        float wrack = smoothstep(-1.5, -1.0, tH) * (1.0 - smoothstep(0.6, 1.1, tH)) * smoothstep(0.3, 0.55, rockFbm(vWPos * 0.4)) * step(dep, 4.5);
+        col = mix(col, vec3(0.1, 0.085, 0.035), wrack);
+        float tide = smoothstep(uTide + 1.0, uTide + 0.05, tH) * smoothstep(-2.0, -1.0, tH);
+        col *= 1.0 - 0.45 * tide;
         // the sea floor: sand and shell on the gentle bottom, gravel, dark
         // rock on the steep sides, mud in the deep basins
-        float under = smoothstep(-0.3, -1.5, tH);
+        // (below the lowest tides; scree runs on under water as a boulder field)
+        float under = smoothstep(-1.2, -2.2, tH);
         vec3 sand = mix(vec3(0.42, 0.4, 0.33), vec3(0.3, 0.29, 0.25), nz);
-        vec3 bed = mix(sand, vec3(0.13, 0.13, 0.12), smoothstep(0.18, 0.45, slope));
+        vec3 bed = mix(sand, vec3(0.13, 0.13, 0.12), max(smoothstep(0.18, 0.45, slope), dep == 1.0 ? 0.8 : 0.0));
         bed = mix(bed, vec3(0.2, 0.19, 0.16), smoothstep(-40.0, -110.0, tH));
         col = mix(col, bed, under);
-        // mountain lakes: the height model has them dead flat
-        float lake = (1.0 - smoothstep(0.0006, 0.0018, slope)) * step(2.0, tH);
+        // lakes: found in the height model (flat, connected) by the build tool
+        float cv0 = coverAt(tp);
+        float lake = cv0 < 0.0 ? 0.0 : step(7.5, mod(cv0, 16.0)) * step(mod(cv0, 16.0), 8.5);
         col = mix(col, vec3(0.02, 0.028, 0.034), lake);
         float strata = 1.0 - 0.06 * smoothstep(0.3, 0.9, sin(vWPos.y * 0.31 + big * 9.0 + nz * 5.0)) * smoothstep(0.35, 0.7, slope);
         diffuseColor.rgb = col * mix((0.72 + 0.56 * big) * strata, 1.0, max(lake, snow * 0.5));`)
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
-        roughnessFactor = mix(roughnessFactor, 0.12, lake);
-        roughnessFactor = mix(roughnessFactor, 0.55, tide);`)
+        roughnessFactor = mix(roughnessFactor * roughK, 0.12, lake);
+        roughnessFactor = mix(roughnessFactor, 0.45, tide);`)
+      .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
+        // dry rock and turf are nearly matt; only lakes and the wet shore shine
+        {
+          float shine = max(lake, tide);
+          reflectedLight.directSpecular *= mix(0.15, 1.0, shine);
+          reflectedLight.indirectSpecular *= mix(0.5, 1.0, shine);
+        }`)
       .replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>
         normal = normalize((viewMatrix * vec4(terN, 0.0)).xyz);`)
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
         {
-          float bh = rockFbm(vWPos * 0.11) + 0.45 * rockFbm(vWPos * 0.47);
-          float bumpFade = exp(-tDist / 350.0) * (1.0 - lake) * (1.0 - 0.6 * snow);
-          vec2 dH = clamp(vec2(dFdx(bh), dFdy(bh)) * uBumpScale * bumpFade, -0.6, 0.6);
+          // the finer octave only close by, where a pixel is smaller than its grain
+          float bh = rockFbm(vWPos * 0.11) + 0.45 * rockFbm(vWPos * 0.47) * exp(-tDist / 35.0);
+          // fine relief only near by, and not on turf: far off, or against the
+          // light, it would sparkle (specular aliasing)
+          float bumpFade = exp(-tDist / 160.0) * (1.0 - lake) * (1.0 - 0.6 * snow) * (1.0 - 0.75 * veg);
+          if (bumpK > 1.5) bh += 0.5 * rockFbm(vWPos * 0.6) * exp(-tDist / 50.0);   // scree: blocks
+          vec2 dH = clamp(vec2(dFdx(bh), dFdy(bh)) * uBumpScale * bumpK * bumpFade, -0.45, 0.45);
           normal = perturbRock(-vViewPosition, normal, dH, faceDirection);
         }`);
   };

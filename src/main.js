@@ -13,7 +13,8 @@ import { Engine } from './core/Engine.js';
 import { SkyDome } from './world/SkyDome.js';
 import { Ocean } from './world/Ocean.js';
 import { Environment } from './world/Environment.js';
-import { Terrain, heightAt, isNavigable } from './world/Terrain.js';
+import { Terrain, heightAt } from './world/Terrain.js';
+import { tideLevel } from './world/Tide.js';
 import { Boat } from './entities/Boat.js';
 import { Player } from './entities/Player.js';
 import { Input } from './systems/Input.js';
@@ -100,6 +101,7 @@ if (IS_TOUCH) document.body.classList.add('touch');
 let mode = '3p';
 let lastNear = null;
 let stickWas = false, stickStepT = 0;
+let tideCheck = -1;
 
 const HINTS = IS_TOUCH ? {
   '3p': 'джойстик: ←→ руль, ↑↓ ход · рычаг справа — ход · палец по экрану — облёт, щипок — ближе/дальше',
@@ -278,7 +280,15 @@ function tick() {
     boat.steer(dt, { turn, target });
   }
 
-  boat.update(dt, time, isNavigable);
+  // The tide, as predicted for Reine right now (real clock). Deep enough to
+  // float means 4 m of water over the bottom at the present level.
+  if (time - tideCheck > 5 || tideCheck < 0) {
+    if (tideCheck < 0) boat.position.y = tideLevel();   // start afloat at today's level
+    tideCheck = time;
+    ocean.setTide(tideLevel());
+    ocean.tideRising = tideLevel(Date.now() + 600000) > ocean.tide;
+  }
+  boat.update(dt, time, (x, z) => heightAt(x, z) < ocean.tide - 4);
   environment.follow(boat.position);
 
   if (mode === 'walk') {

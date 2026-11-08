@@ -91,7 +91,9 @@ export class Bridge {
 
   // ocean: { info: {bft}, hs }, weather: text
   setSea(ocean, weather) {
-    const text = `${weather} · ${ocean.info.bft} балла · волна ${ocean.hs.toFixed(1)} м`;
+    // water level: the real tide at Reine now, above mean sea level
+    const tide = `прилив ${ocean.tide >= 0 ? '+' : '−'}${Math.abs(ocean.tide).toFixed(1)} м ${ocean.tideRising ? '↑' : '↓'}`;
+    const text = `${weather} · ${ocean.info.bft} балла · волна ${ocean.hs.toFixed(1)} м · ${tide}`;
     if (text !== this.seaText) {
       this.seaText = text;
       this.f.sea.textContent = text;
