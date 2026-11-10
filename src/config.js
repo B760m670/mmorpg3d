@@ -85,6 +85,11 @@ export const PRESETS = {
   },
 };
 
+// The trawler is put away for now: the game is turning to a large old
+// sailing ship (being built). With trawler: false her model, people, quay and
+// bridge systems are hidden and the camera looks round the spot she lay at.
+export const SHIP = { trawler: false };
+
 export const BOAT = {
   // Principal dimensions of the modelled vessel (Macduff 23.95 m stern trawler).
   length: 23.95,

@@ -108,7 +108,8 @@ export class Village {
     this.racks = this.placeRacks(buildingsData.x_z_type);
     per.hjell = this.racks;
     this.counts = {};
-    for (const [kind, list] of Object.entries(per)) {
+    // buildings can be left out (only the land and its stones)
+    for (const [kind, list] of Object.entries(this.buildings === false ? {} : per)) {
       if (!pieces[kind] || !list.length) continue;
       this.counts[kind] = list.length;
       const xf = list.map((b, n) => this.placeBuilding(kind, b, n));

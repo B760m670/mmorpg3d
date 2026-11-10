@@ -6,6 +6,15 @@ ocean, hazy distance fog, a chase camera and a drivable trawler, all graded
 with ACES tone mapping and bloom. The land and the sea floor are real: the
 Reine area of Lofoten, Norway, from open elevation and bathymetry data.
 
+> **Change of course (November 2026).** The game is turning to sailing a large
+> old ship, a galleon of about 1600-1630, in a dark, misty world. The trawler
+> and everything built for her (bridge systems, trawl, quay, people aboard) are
+> put away for now: `SHIP.trawler` in `src/config.js` is `false`, which hides
+> her model, people and quay and leaves a camera looking round the spot she
+> lay at. The houses are gone from the land: only the terrain and its stones
+> remain, as the map and the height model give them. The sections below
+> describe the trawler as it was built.
+
 This is **Phase 1**: a correct, extensible skeleton. The visuals are deliberately
 achieved with cheap shader tricks so the architecture (systems, physics, camera,
 presets) is real and won't be thrown away as we raise fidelity.
