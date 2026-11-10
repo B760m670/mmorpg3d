@@ -146,7 +146,7 @@ export class Diver {
 
   // The hull, in the ship's own frame: full aft, fining to the stem.
   //   h: { halfLen, halfBeam, keel, top } (m)
-  _keepOutOfHull(model, h = { halfLen: 24.5, halfBeam: 5.85, keel: -4.8, top: 14 }) {
+  _keepOutOfHull(model, h = { halfLen: 24.5, halfBeam: 7.5, keel: -4.8, top: 14 }) {
     _loc.copy(this.pos);
     model.worldToLocal(_loc);
     const z = _loc.z;
@@ -162,7 +162,7 @@ export class Diver {
   }
 
   // Close enough to the ship to climb aboard up her side?
-  nearShip(model, halfLen = 27, halfBeam = 8) {
+  nearShip(model, halfLen = 27, halfBeam = 10.5) {
     if (!model || !this.atSurface) return false;
     _loc.copy(this.pos);
     model.worldToLocal(_loc);

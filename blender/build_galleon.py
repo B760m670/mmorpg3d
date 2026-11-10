@@ -77,7 +77,11 @@ def frange(a, b, step):
 # National Maritime Museums, Sketchfab): a high side, strong tumblehome, a
 # tall narrow stern in tiers, two tiers of ports between heavy wales.
 LPP = 47.5            # between perpendiculars: aft perpendicular s = 0 at the sternpost
-HB = 5.85             # half the greatest breadth (11.7 m)
+HB = 7.5              # half the greatest breadth: 15.0 m, length/beam about 3.2,
+                      # the galleon's proportion (the Spanish "as, dos, tres":
+                      # beam 1, keel 2, length 3). Vasa's own 11.7 m made her
+                      # narrow and crank: she capsized on her first voyage
+KB = HB / 5.85        # widths below were measured on Vasa: scaled with the beam
 S_MID = 24.0          # origin amidships
 Z_KEEL = -4.8         # keel bottom (draught 4.8 m)
 Z_RAB = -4.4          # rabbet: planking meets the keel
@@ -159,10 +163,10 @@ def W_aft(z):
     if z <= 0.6:
         return 0.0
     if z <= Z_WT:
-        return 3.5 * ((z - 0.6) / (Z_WT - 0.6)) ** 0.62
+        return 3.5 * KB * ((z - 0.6) / (Z_WT - 0.6)) ** 0.62
     if z <= Z_CTR:
-        return lerp(3.5, 3.9, smooth(Z_WT, Z_CTR, z))
-    return lerp(3.9, 2.3, (z - Z_CTR) / (Z_TOP_STERN - Z_CTR))
+        return lerp(3.5, 3.9, smooth(Z_WT, Z_CTR, z)) * KB
+    return lerp(3.9, 2.3, (z - Z_CTR) / (Z_TOP_STERN - Z_CTR)) * KB
 
 
 def s_fwd(z):
@@ -177,18 +181,20 @@ def s_fwd(z):
 def W_fwd(z):
     if z <= Z_STEMHEAD:
         return 0.0
-    return min(3.2, 3.2 * ((z - Z_STEMHEAD) / 0.6) ** 0.5)
+    return min(3.2, 3.2 * ((z - Z_STEMHEAD) / 0.6) ** 0.5) * KB
 
 
 def Y0(z):
-    """Midship section: flat floor, hard round bilge, greatest breadth at the
-    lower gundeck, sides falling in steadily above it."""
+    """Midship section: flat floor, round bilge, greatest breadth at the
+    lower gundeck; above it the side stays full over the wales and then
+    curves in, more and more, to the narrow top (a convex tumblehome, not
+    a straight one: the round, barrel-like body of a ship of the time)."""
     if z <= Z_MB:
         q = clamp((Z_MB - z) / (Z_MB - Z_RAB))
-        n = 2.6
+        n = 2.3
         return KEEL_HW + (HB - KEEL_HW) * (1 - q ** n) ** (1 / n)
     d = z - Z_MB
-    return HB - 0.2374 * d - 0.000362 * d * d
+    return HB * (1.0 - 0.0153 * d - 0.00231 * d * d)
 
 
 def half_breadth(s, z):
@@ -725,6 +731,7 @@ for _lv, _gs in GRATINGS.items():
     HOLES.setdefault(_lv, []).extend(_gs)
 WHIPSTAFF_S = 13.9         # the whipstaff, under the half deck's steering hatch
 DECKS = {}                 # level -> (s0, s1) of the walkable surface
+STAIR_FEET = []            # the break stairs (starboard; mirrored): x0, x1, s0, s1, foot level
 EDGE = 1.0e3               # x standing for "out to the ship's side" in strips and walls
 COLL = []                  # parts of the collision mesh (built with the scene)
 
@@ -985,6 +992,8 @@ def build_decks():
             x = sgn * (wl - 1.0)
             run = (z1 - z0) * 0.9
             stair("break_stair", x - 0.4, x + 0.4, s - face * 0.05, z1, s + face * run, z0)
+            if sgn > 0:
+                STAIR_FEET.append((x - 0.4, x + 0.4, min(s, s + face * run), max(s, s + face * run), z0))
 
     # the ladders down through the hatches, from deck to deck to the hold
     for _nm, x0, x1, st, sb, up, lo in STAIRS:
@@ -1059,6 +1068,11 @@ def build_interior():
         for s, zc, w, h in PORTS:
             base = zf(s)
             if abs(zc - (base + 0.75)) > 0.05:
+                continue
+            # no gun where it would stand in the way of a stair up a break
+            y = half_breadth(s, base + 0.8) - 0.43
+            if any(abs(z0 - base) < 0.6 and s0 - 0.9 < s < s1 + 0.9 and x0 - 0.4 < y and y - 2.6 * sc < x1 + 0.4
+                   for x0, x1, s0, s1, z0 in STAIR_FEET):
                 continue
             gun(s, base, sc, bore)
 
@@ -2179,7 +2193,7 @@ def paint_hull():
     tone = 0.72 + 0.55 * (h1 - np.floor(h1))
     grain = fnoise(H, W, H // 6, W // 160, 1) * 0.6 + fnoise(H, W, H // 2, W // 24, 2) * 0.4
     big = fnoise(H, W, 12, 48, 3)
-    oak = np.array([0.17, 0.114, 0.07], np.float32)
+    oak = np.array([0.15, 0.1, 0.062], np.float32)
     col = oak[None, None, :] * (tone * (0.7 + 0.6 * grain) * (0.8 + 0.4 * big))[..., None]
     # weathering: pale bleached streaks running down, dark wet streaks
     pale = np.clip(fnoise(H, W, 10, W // 5, 21) * 2.2 - 1.2, 0, 1) * 0.5
@@ -2190,7 +2204,7 @@ def paint_hull():
     height = grain * 0.25
     # tarred bottom, weed at the waterline, salt above it
     wl = -0.25 + 0.06 * fnoise(H, W, 4, 90, 4)
-    tar = np.array([0.07, 0.056, 0.042], np.float32)
+    tar = np.array([0.045, 0.036, 0.027], np.float32)
     k = np.clip((wl - Zg) / 0.12, 0, 1)
     col = col * (1 - k[..., None]) + (tar * (0.85 + 0.3 * grain)[..., None]) * k[..., None]
     weed = np.clip(1 - np.abs(Zg + 0.32) / 0.32, 0, 1) * np.clip(fnoise(H, W, 30, 400, 5) * 1.6 - 0.4, 0, 1)
@@ -2201,11 +2215,11 @@ def paint_hull():
     # red upper works above the top wale, framed panels, gilt mouldings
     rt = np.vectorize(rail_top, otypes=[np.float32])(s)[None, :].repeat(H, 0)
     red_on = zr > WALES[-1][0] + WALES[-1][1] / 2
-    red = np.array([0.13, 0.062, 0.04], np.float32) * (0.85 + 0.3 * grain)[..., None] * (0.9 + 0.2 * big)[..., None]
+    red = np.array([0.11, 0.035, 0.022], np.float32) * (0.85 + 0.3 * grain)[..., None] * (0.9 + 0.2 * big)[..., None]
     col = np.where(red_on[..., None], red, col)
     rough = np.where(red_on, 0.66, rough)
     pil = (np.abs(((S + 0.6) % 1.3) - 0.65) < 0.05) & red_on & (Zg < rt - 0.18)
-    col = np.where(pil[..., None], np.array([0.09, 0.05, 0.035]), col)
+    col = np.where(pil[..., None], np.array([0.06, 0.022, 0.015]), col)
     gilt = np.array([0.4, 0.29, 0.11], np.float32)
     for line in ((np.abs(zr - (WALES[-1][0] + 0.32)) < 0.03) & red_on, (np.abs(Zg - (rt - 0.16)) < 0.028) & (Zg < rt),
                  red_on & (np.abs(zr - (D_QD + 0.18)) < 0.025)):
@@ -2215,21 +2229,21 @@ def paint_hull():
     # wales painted black under their timbers
     for zc0, hh in WALES:
         on = np.abs(Zg - (zc0 + sh)) < hh / 2 + 0.02
-        col = np.where(on[..., None], np.array([0.05, 0.036, 0.026]), col)
+        col = np.where(on[..., None], np.array([0.02, 0.015, 0.011]), col)
     # port lids: a dark gap round each, streaks running down from it
     texel_s, texel_z = (S_MAX - S_MIN) / W, (Z_TOP_STERN - Z_RAB) / H
     streak = fnoise(H, W, 6, W // 6, 7)
     for (ps, pz, w, h) in PORTS:
         i0, i1 = int((ps - w / 2 - 0.05 - S_MIN) / texel_s), int((ps + w / 2 + 0.05 - S_MIN) / texel_s)
         j0, j1 = int((pz - h / 2 - 0.05 - Z_RAB) / texel_z), int((pz + h / 2 + 0.05 - Z_RAB) / texel_z)
-        col[j0:j1, i0:i1] = [0.025, 0.018, 0.013]
+        col[j0:j1, i0:i1] = [0.008, 0.006, 0.005]
         height[j0:j1, i0:i1] -= 0.6
         jd = max(0, j0 - int(1.3 / texel_z))
         fade = np.linspace(0, 1, j0 - jd, dtype=np.float32)[:, None]
         col[jd:j0, i0 + 3:i1 - 3] *= (1 - 0.35 * fade * streak[jd:j0, i0 + 3:i1 - 3])[..., None]
     col = col * (1 + 0.35 * worn[..., None])
     # seams last, rain streaks and grime over all
-    col = np.where(seam[..., None], col * 0.35, col)
+    col = np.where(seam[..., None], col * 0.3, col)
     height = height - seam * 1.0
     rain = np.clip(fnoise(H, W, 8, W // 3, 8) * 1.5 - 0.5, 0, 1) * np.clip((Zg + 0.2) / 3.0, 0, 1)
     col = col * (1 - 0.3 * rain[..., None])
@@ -2350,6 +2364,13 @@ def bake(ob, kind, w, h, samples, non_color=False, **kw):
     return a.reshape(h, w, 4)
 
 
+def to_srgb(lin):
+    """Linear colour -> sRGB for an 8-bit colour image: the hull is painted in
+    linear values (as material colours are), but a colour texture holds sRGB."""
+    lin = np.clip(lin, 0, 1)
+    return np.where(lin <= 0.0031308, lin * 12.92, 1.055 * np.power(lin, 1 / 2.4) - 0.055).astype(np.float32)
+
+
 def shade_from_ao(rgb, occ):
     shade = 0.3 + 0.7 * occ ** 1.15
     dirt = np.array([0.92, 0.88, 0.8], np.float32)
@@ -2388,7 +2409,7 @@ for _k, _im in IN_TEX.items():
     use_maps(M[_k], "UVMap", color=_im, normal=IN_NRM if _k in ("in_plank", "crate", "cask") else None)
 bake_setup()
 if SHAPE:
-    use_maps(M["hull"], "UVMap", color=make_image("hull_texture", hull_col), normal=HULL_NORMAL, rough=HULL_ROUGH)
+    use_maps(M["hull"], "UVMap", color=make_image("hull_texture", to_srgb(hull_col)), normal=HULL_NORMAL, rough=HULL_ROUGH)
     QUICK = True
 for o in (RIGM, LITE):
     o.hide_render = False
@@ -2396,10 +2417,10 @@ for o in (RIGM, LITE):
 if not SHAPE:
     HULL.data.uv_layers.active = HULL.data.uv_layers["UVMap"]
     if QUICK:
-        hull_img = make_image("hull_texture", hull_col)
+        hull_img = make_image("hull_texture", to_srgb(hull_col))
     else:
         hull_ao = bake(HULL, "AO", TEX_W, TEX_H, 40, non_color=True)
-        hull_img = make_image("hull_texture", shade_from_ao(hull_col, hull_ao[..., :1]))
+        hull_img = make_image("hull_texture", to_srgb(shade_from_ao(hull_col, hull_ao[..., :1])))
     use_maps(M["hull"], "UVMap", color=hull_img, normal=HULL_NORMAL, rough=HULL_ROUGH)
 
     me = FIT.data

@@ -276,7 +276,7 @@ function overTheSide() {
   const walking = mode === 'walk';
   const side = walking ? (Math.sign(player.pos.x) || 1) : 1;
   const z = walking ? THREE.MathUtils.clamp(player.pos.z, -18, 20) : 12;
-  _dv.set(side * 8.0, 0, z);
+  _dv.set(side * 10.5, 0, z);
   ship.model.localToWorld(_dv);
   _dv.y = ocean.sampleWater(_dv.x, _dv.z, clock.elapsedTime).height + 0.1;
   camera.getWorldDirection(_dir);
@@ -289,7 +289,7 @@ function overTheSide() {
 }
 // Up her side by the battens amidships, onto the upper deck in the waist.
 function climbAboard() {
-  if (!diver.nearShip(ship.model, 27, 8) || !ship.collider) {
+  if (!diver.nearShip(ship.model, 27, 10.5) || !ship.collider) {
     if (touch) touch.toast('Подплывите к борту корабля', 2);
     return;
   }
@@ -306,7 +306,7 @@ function climbAboard() {
 
 // What E would do where you stand, in words (for the touch button).
 function actionHere() {
-  if (mode === 'swim') return diver.nearShip(ship.model, 27, 8) ? 'на борт' : false;
+  if (mode === 'swim') return diver.nearShip(ship.model, 27, 10.5) ? 'на борт' : false;
   if (mode === 'helm') return 'отойти';
   if (mode !== 'walk' || player.climb) return false;
   if (player.nearHelm) return 'к колдерштоку';

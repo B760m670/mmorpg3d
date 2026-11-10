@@ -6,7 +6,7 @@ import { CAMERA } from '../config.js';
 // and the beakhead. Zooming in or swinging round the ship would otherwise put
 // the camera inside her.
 const KEEP_OUT = [
-  [-6.6, 6.6, -5, 9, -34, 28],
+  [-8.4, 8.4, -5, 9, -34, 28],
   [-4.5, 4.5, 9, 16, 18, 28],
   [-3.2, 3.2, 4, 8, -36, -26],
 ];
@@ -31,7 +31,7 @@ export class FollowCamera {
     this._lookCurrent = new THREE.Vector3();
     // player-controlled framing: pinch / wheel zoom, drag to orbit the ship
     this.zoom = 1;
-    this.yaw = 0;
+    this.yaw = 0.55;     // from her quarter: astern and to one side, so she shows her body
     this.pitch = 0;
     // framing and keep-out boxes for the ship followed
     this.cfg = { distance: CAMERA.distance, height: CAMERA.height, lookHeight: CAMERA.lookHeight, keepOut: KEEP_OUT };

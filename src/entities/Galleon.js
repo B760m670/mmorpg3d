@@ -64,8 +64,8 @@ function hingeAt(node, point, parent) {
 }
 
 export const GALLEON = {
-  length: 47.5, beam: 11.7, draught: 4.8,
-  halfHull: [24.5, 5.8],            // waterline half length and half beam (hull foam, wake)
+  length: 47.5, beam: 15.0, draught: 4.8,     // a galleon's proportion: length/beam 3.2
+  halfHull: [24.5, 7.45],           // waterline half length and half beam (hull foam, wake)
   mass: 6.5e5,                      // kg: displacement with added mass, eased for play
   drag: 3600,                       // N per (m/s)^2 of way through the water
   rudderMax: 23,                    // deg, as on Vasa
@@ -101,7 +101,7 @@ export class Galleon {
     this._euler = new THREE.Euler();
     this.rig = RIG;
     // the hull for a swimmer to keep out of (model space, m)
-    this.hullShape = { halfLen: 24.5, halfBeam: 5.85, keel: -4.8, top: 14 };
+    this.hullShape = { halfLen: 24.5, halfBeam: 7.5, keel: -4.8, top: 14 };
     this.collider = null;
     this.interior = null;
     this.whip = null;

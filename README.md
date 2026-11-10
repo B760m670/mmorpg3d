@@ -11,13 +11,18 @@ tone mapping and bloom.
 A large sailing ship of the 1620s, carrying both guns and cargo, built after
 the Swedish royal ship **Vasa** (1628), the one ship of that age that survives
 whole. `blender/build_galleon.py` builds her in Blender from Vasa's recorded
-dimensions (47.5 m between perpendiculars, 11.7 m beam, 4.8 m draught, 52.5 m
-from keel to main truck, a 23° rudder), checked against the photogrammetry
-the Swedish National Maritime Museums published of the ship herself (looked
-at in the Sketchfab viewer, not downloaded):
+dimensions (47.5 m between perpendiculars, 4.8 m draught, 52.5 m from keel to
+main truck, a 23° rudder), checked against the photogrammetry the Swedish
+National Maritime Museums published of the ship herself (looked at in the
+Sketchfab viewer, not downloaded). One thing is changed on purpose: the
+beam. Vasa's 11.7 m made her narrow and crank, and she capsized on her first
+voyage; ours has the galleon's proportion, 15.0 m (length/beam about 3.2,
+the Spanish rule "as, dos, tres": beam 1, keel 2, length 3).
 
-* hull: flat floor, hard bilge, greatest breadth at the lower gundeck, strong
-  tumblehome; six heavy wales; 24 ports in two tiers with their lids hanging
+* hull: flat floor, round bilge, greatest breadth at the lower gundeck; above
+  it the side stays full over the wales and curves in to the narrow top (a
+  convex tumblehome: the round, barrel-like body of the ships of the time);
+  six heavy wales; 24 ports in two tiers with their lids hanging
   open, red inside, plus ports in the castles; oak strakes with seams, butts
   and weathering (painted texture, baked ambient occlusion);
 * stern in tiers, as on Vasa: planked tuck with the stern chasers, counter, a
