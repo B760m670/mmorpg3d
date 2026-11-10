@@ -2,7 +2,7 @@
 # https://github.com/microsoft/Microsoft-Rocketbox), with the library's own
 # motion-captured animations, converted for the game: one skinned mesh
 # (7 600 triangles), the Biped skeleton, 1024 px textures, clips
-# idle / look / walk / run / helm. Output: src/assets/person.glb
+# idle / look / walk / run / helm. Output: public/models/person.glb
 #
 # Run with Blender's Python (bpy), the Rocketbox repository checked out:
 #   python build_person.py <rocketbox>/Assets <converted textures dir> <out.glb>

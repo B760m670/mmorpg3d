@@ -22,7 +22,6 @@ import { FollowCamera } from './systems/FollowCamera.js';
 import { TouchControls } from './systems/TouchControls.js';
 import { Bridge } from './ui/Bridge.js';
 import { Instruments } from './ui/Instruments.js';
-import trawlerUrl from './assets/trawler.glb?url';
 import villageUrl from './assets/village.glb?url';
 import { Village } from './world/Village.js';
 import { Underwater, WATER } from './world/Underwater.js';
@@ -42,7 +41,13 @@ import { Harbour } from './ship/Harbour.js';
 import { Radio } from './ship/Radio.js';
 import { ShipAccess } from './ship/ShipAccess.js';
 import { Stations } from './ship/Stations.js';
-import crewUrl from './assets/person.glb?url';
+// The trawler and her crew are put away: their models are not part of the
+// page, only of the development server (public/models).
+const MODELS = `${import.meta.env.BASE_URL}models/`;
+const trawlerUrl = `${MODELS}trawler.glb`;
+const crewUrl = `${MODELS}person.glb`;
+import { Galleon, GALLEON } from './entities/Galleon.js';
+import galleonUrl from './assets/galleon.glb.gz?url';
 
 const container = document.getElementById('app');
 const loading = document.getElementById('loading');
@@ -132,8 +137,7 @@ const boat = new Boat();
 // clear water for about 3 km (the skerries east of Reine are to port).
 boat.heading = THREE.MathUtils.degToRad(25);
 boat.water = (x, z, t) => ocean.sampleWater(x, z, t);
-boat.load(trawlerUrl, () => {
-  if (!SHIP.trawler) { boat.model.visible = false; return; }   // put away
+if (SHIP.trawler) boat.load(trawlerUrl, () => {
   instruments.attach(boat.model);
   const mats = new Set();
   boat.model.traverse((o) => { if (o.isMesh) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => m && mats.add(m)); });
@@ -145,6 +149,23 @@ boat.load(trawlerUrl, () => {
 });
 scene.add(boat.object);
 
+// The galleon: while the trawler is put away, she is the ship.
+const ship = SHIP.trawler ? null : new Galleon();
+if (ship) {
+  ship.water = (x, z, t) => ocean.sampleWater(x, z, t);
+  ship.position.set(SHIP.spawn.x, 0, SHIP.spawn.z);
+  ship.heading = THREE.MathUtils.degToRad(SHIP.spawn.heading);
+  ship.load(galleonUrl);
+  scene.add(ship.object);
+  ocean.uniforms.uBoatHalf.value.set(...GALLEON.halfHull);
+}
+const vessel = ship || boat;     // what the camera follows and the sea, sound and rain know of
+const shipHud = document.createElement('div');
+shipHud.style.cssText = 'position:fixed;left:12px;bottom:12px;padding:8px 12px;border-radius:10px;background:rgba(14,12,10,.55);color:#efe6d6;font:13px/1.45 Georgia,serif;pointer-events:none;z-index:15;display:none';
+document.body.appendChild(shipHud);
+let hudT = 0;
+const _wind = { x: 0, z: 0 };
+
 const input = new Input();
 const player = new Player(camera);
 const diver = new Diver(camera);
@@ -153,6 +174,12 @@ let torchUser = null;          // null: automatic (deep or dark), else on/off as
 let wasUnder = false;
 const bridge = new Bridge();
 const follow = new FollowCamera(camera);
+if (ship) {
+  follow.cfg = {
+    distance: 78, height: 20, lookHeight: 13,
+    keepOut: [[-6.6, 6.6, -5, 9, -34, 28], [-4.5, 4.5, 9, 16, 18, 28], [-3.2, 3.2, 4, 8, -36, -26]],
+  };
+}
 follow.groundAt = (x, z) => Math.max(0, heightAt(x, z));
 follow.waterAt = (x, z, t) => ocean.sampleWater(x, z, t).height;
 
@@ -201,9 +228,9 @@ const HINTS = IS_TOUCH ? {
   walk: '<b>WASD</b> идти · <b>Shift</b> бегом · <b>V</b> вид от 1-го / 3-го лица · <b>E</b> к штурвалу (стоя у него) · <b>P</b> пульт на мостике / щит в машинном · <b>J</b> за борт · <b>F</b> вид со стороны · клик — осмотреться',
   swim: '<b>WASD</b> плыть туда, куда смотрите · <b>Space</b> вверх · <b>C</b> вниз · <b>Shift</b> быстрее · <b>L</b> фонарь · <b>E</b> на борт (у борта) · клик — осмотреться',
 };
-// while the new ship is being built there is only the world to look at
-if (!SHIP.trawler) HINTS['3p'] = IS_TOUCH ? 'палец по экрану — облёт, щипок — ближе/дальше · «нырнуть» — под воду'
-  : 'мышь — облёт, колесо — ближе/дальше · <b>N</b> день/ночь · <b>B</b> погода · <b>M</b> звук · <b>J</b> под воду';
+// the galleon: rudder and sail, nothing more
+if (!SHIP.trawler) HINTS['3p'] = IS_TOUCH ? 'джойстик: ←→ руль, ↑↓ поставить / убрать паруса · палец по экрану — облёт, щипок — ближе/дальше'
+  : '<b>A/D</b> руль · <b>W/S</b> поставить / убрать паруса · мышь — облёт, колесо — ближе/дальше · <b>N</b> день/ночь · <b>B</b> погода · <b>M</b> звук · <b>J</b> за борт';
 const WEATHER_RU = { clear: 'ясно', fair: 'переменная облачность', 'overcast, showers': 'пасмурно, ливни', storm: 'шторм' };
 const weatherRu = () => `${WEATHER_RU[weather.state.name] || weather.state.name}${weather.auto ? ' · меняется сама' : ''}`;
 
@@ -225,9 +252,8 @@ function setMode(m) {
   if (m === 'helm') player.takeHelm();
   if (m === 'swim') { follow.enabled = false; orbit.enabled = false; }
   if (m === '3p') {
-    follow.enabled = SHIP.trawler;
-    orbit.enabled = !SHIP.trawler;
-    if (orbit.enabled) { orbit.target.copy(boat.position); camera.position.set(boat.position.x - 60, boat.position.y + 18, boat.position.z + 70); }
+    follow.enabled = true;
+    orbit.enabled = false;
     if (document.pointerLockElement) document.exitPointerLock();
   }
   input.dragging = m === '3p';
@@ -279,7 +305,7 @@ function applyPreset(name) {
   instruments.setNight(order[presetIndex] === 'night');
 }
 applyPreset(order[presetIndex]);
-follow.snap(boat);
+follow.snap(vessel);
 
 // ---------------------------------------------------------------- weather
 // A front changes the light a few times a second while it passes (the
@@ -334,6 +360,18 @@ diver.onBreath = (out) => {
   if (out && wasUnder) underwater.exhale(camera);
 };
 function overTheSide() {
+  if (ship) {
+    if (!ship.model) return;
+    _dv.set(8.0, 0, 12);
+    ship.model.localToWorld(_dv);
+    _dv.y = ocean.sampleWater(_dv.x, _dv.z, clock.elapsedTime).height + 0.1;
+    diver.enter(_dv, ship.heading - Math.PI / 2);
+    torchUser = null;
+    sound.splash();
+    setMode('swim');
+    if (touch) touch.toast('За бортом. Вода 7 °C, сухой гидрокостюм, баллон 12 л на 200 бар.', 4);
+    return;
+  }
   const side = mode === 'walk' ? (Math.sign(player.pos.x) || 1) : 1;
   const z = mode === 'walk' ? THREE.MathUtils.clamp(player.pos.z, -8, 10) : 5;
   _dv.set(side * 6.0, 0, z);
@@ -348,6 +386,12 @@ function overTheSide() {
   if (touch) touch.toast(Math.abs(boat.speed) > 0.8 ? 'За бортом. Судно на ходу — оно уйдёт без вас!' : 'За бортом. Вода 7 °C, сухой гидрокостюм, баллон 12 л на 200 бар.', 4);
 }
 function climbAboard() {
+  if (ship) {          // no walking her decks yet: back to the view from outside
+    if (!diver.nearShip(ship.model, 27, 8)) { if (touch) touch.toast('Подплывите к борту корабля', 2); return; }
+    diver.air = 200;
+    setMode('3p');
+    return;
+  }
   if (!diver.nearShip(boat.model)) {
     if (touch) touch.toast('Подплывите к борту судна', 2);
     return;
@@ -410,7 +454,7 @@ function tick() {
     }
     else if (mode === 'swim') climbAboard();
   }
-  if (input.pressed('j') && (mode === '3p' || mode === 'walk') && boat.model) overTheSide();
+  if (input.pressed('j') && (mode === '3p' || mode === 'walk') && vessel.model) overTheSide();
   if (input.pressed('v') && mode === 'walk') {
     thirdPerson = !thirdPerson;
     if (touch) touch.toast(thirdPerson ? 'Вид от третьего лица' : 'Вид от первого лица', 1.5);
@@ -470,6 +514,22 @@ function tick() {
     boat.steer(dt, { turn, target });
   }
   if (sensors.ap.mode === 'auto') boat.wheel = sensors.ap.wheel;
+  if (ship && mode === '3p') {
+    const turn = (input.held('a') || input.held('arrowleft') ? 1 : 0) - (input.held('d') || input.held('arrowright') ? 1 : 0);
+    let target = null;
+    if (input.stickActive) {
+      const x = input.touchX, ax = Math.abs(x);
+      target = ax < 0.12 ? 0 : -Math.sign(x) * ((ax - 0.12) / 0.88) * GALLEON.rudderMax;
+      const y = input.touchY;
+      if (Math.abs(y) > 0.6 && Math.abs(y) > ax) {
+        stickStepT -= dt;
+        if (stickStepT <= 0) { ship.sail(y > 0 ? +1 : -1); stickStepT = 0.9; }
+      } else stickStepT = 0;
+    }
+    ship.steer(turn, target);
+    if (input.pressed('w') || input.pressed('arrowup')) ship.sail(+1);
+    if (input.pressed('s') || input.pressed('arrowdown')) ship.sail(-1);
+  }
 
   // The tide, as predicted for Reine right now (real clock). Deep enough to
   // float means 4 m of water over the bottom at the present level.
@@ -501,10 +561,17 @@ function tick() {
   boat.constrain = (cdt) => { anchor.constrain(cdt, boat, _windCtx); trawl.constrain(cdt, boat); harbour.constrain(cdt, boat); };
   sensors.shallowSet = harbour.state === 'free' ? 5 : 0;   // the sounder's shallow alarm, off alongside
   boat.update(dt, time, (x, z) => heightAt(x, z) < ocean.tide - 4);
+  if (ship) {
+    // the true wind, eased in the lee of the mountains
+    const wd = SEA.windDir, wl = Math.hypot(wd[0], wd[1]);
+    const ws = weather.v.wind * (0.55 + 0.45 * terrain.exposure(ship.position.x, ship.position.z));
+    _wind.x = (wd[0] / wl) * ws; _wind.z = (wd[1] / wl) * ws;
+    ship.update(dt, time, _wind, (x, z) => heightAt(x, z) < ocean.tide - 5.5);
+  }
   anchor.draw(boat, _windCtx);
   if (boat.model && SHIP.trawler) { trawl.draw(boat, _windCtx); harbour.draw(boat); }
   anchor.watch(sensors.gps);
-  environment.follow(boat.position);
+  environment.follow(vessel.position);
 
   if (mode === 'walk') {
     if (!(stations && stations.emergency)) player.update(dt, input.moveX, input.moveY, input.held('shift'), boat.collider);   // at the emergency tiller the stick steers
@@ -519,9 +586,9 @@ function tick() {
   } else if (mode === '3p') {
     follow.orbit(input.lookDX, input.lookDY);
     follow.zoomBy(input.zoom);
-    if (follow.enabled) follow.update(dt, boat, time);
+    if (follow.enabled) follow.update(dt, vessel, time);
     else {
-      orbit.target.lerp(boat.position, 0.05);
+      orbit.target.lerp(vessel.position, 0.05);
       orbit.update();
     }
   } else {
@@ -561,7 +628,7 @@ function tick() {
       placeEl.style.display = html ? 'block' : 'none';
     }
   }
-  const near = mode === 'swim' ? diver.nearShip(boat.model)
+  const near = mode === 'swim' ? (ship ? diver.nearShip(ship.model, 27, 8) : diver.nearShip(boat.model))
     : mode === 'walk' && (player.nearHelm ? 'к штурвалу' : ladderHere ? (ladderHere.fromTop ? 'вниз по трапу' : 'вверх по трапу') : placeAct || false);
   if (stations) stations.update(dt, { mode, pos: player.pos, moveX: input.moveX });
   if (touch) touch.setPanel(nearSwitchboard() ? 'щит' : mode === '3p' || mode === 'helm' || (mode === 'walk' && onBridgeNow()) ? 'пульт' : null);
@@ -569,6 +636,16 @@ function tick() {
     touch.setMode(mode, near);
     if (!SHIP.trawler) { touch.lever.style.display = 'none'; touch.btnHorn.hidden = true; touch.btnView.hidden = true; }
     lastNear = near;
+  }
+  if (ship) {
+    hudT -= dt;
+    if (hudT <= 0 && mode === '3p') {
+      hudT = 0.25;
+      const d = ship.describe();
+      const r = Math.round(ship.rudder);
+      shipHud.innerHTML = `<b>${ship.knots.toFixed(1)} уз</b> · ${d.lvl}<br>ветер ${d.course}, ${ship.aws.toFixed(0)} м/с<br>руль ${r === 0 ? 'прямо' : `${Math.abs(r)}° ${r > 0 ? 'лево' : 'право'}`}`;
+    }
+    shipHud.style.display = mode === '3p' ? 'block' : 'none';
   }
   if (SHIP.trawler) bridge.update(boat, sensors);
   else if (bridge.el && bridge.el.style.display !== 'none') bridge.el.style.display = 'none';
@@ -588,6 +665,7 @@ function tick() {
   // the lights: navigation lights, floods, searchlight, the room you are in
   const dark = order[presetIndex] === 'night' ? 1 : Math.min(1, weather.v.dark * 0.6);
   shipLights.update(dt, { camera, dark, onBridge, belowDecks, lamp, swimming: mode === 'swim' });
+  if (ship) ship.setNight(dark);
   ocean.setPools(shipLights.pools(boat.model, ocean.tide));
   if (SHIP.trawler) panels.update(dt);
   // Below decks only the deckhead lights and your lamp light the spaces: the
@@ -626,14 +704,13 @@ function tick() {
   seaLife.update(dt, time, camera, { under, surfaceY: ocean.tide, seaRough: ocean.uniforms.uSeaRough.value });
   if (mode === 'swim') diveHud.update(diver, { torch, nearShip: near, touch: IS_TOUCH });
   terrain.leaf = mode === 'swim' ? 80 : 320;      // finer ground when you are down there
-  if (SHIP.trawler) ocean.setBoat(boat);
-  else { ocean.uniforms.uBoatPos.value.set(1e7, 1e7); ocean.uniforms.uBoatSpeed.value = 0; }   // no hull in the water: no hull foam or wake
+  ocean.setBoat(vessel);
   ocean.update(time, dt, camera, sky.sunDirection);
   bridge.setSea(ocean, weatherRu());
   clouds.update(time, camera, flash);
   nightSky.update(time, camera);
   falls.update(time, camera, weather.v.rain);
-  rain.update(dt, camera, weather.v.rain, weather.v.wind, boat.model);
+  rain.update(dt, camera, weather.v.rain, weather.v.wind, vessel.model);
   if (SHIP.trawler) {
     spray.update(dt, boat, weather.v.wind);
     if (boat.slam > 0) sound.slam(boat.slam);
@@ -642,11 +719,11 @@ function tick() {
   // deck through the open door, not at all below or in the water
   radio.update(dt, { near: under ? 0 : onBridge ? 1 : mode === 'walk' && !belowDecks ? 0.35 : mode === '3p' ? 0.25 : 0.1 });
   sound.update(dt, {
-    camera, ship: boat.model, rpm: SHIP.trawler ? boat.rpm : 0, speed: boat.speed, heave: boat.heaveV, rollRate: boat.rollV,
-    sea: ocean.uniforms.uSeaRough.value, exposure: terrain.exposure(boat.position.x, boat.position.z),
+    camera, ship: vessel.model, rpm: SHIP.trawler ? boat.rpm : 0, speed: vessel.speed, heave: vessel.heaveV, rollRate: vessel.rollV,
+    sea: ocean.uniforms.uSeaRough.value, exposure: terrain.exposure(vessel.position.x, vessel.position.z),
     wind: weather.v.wind, rain: weather.v.rain, dark: weather.v.dark, night: order[presetIndex] === 'night',
     inside: onBridge || belowDecks, engineRoom, vhfIdle: radio.on && !radio.busy, aboard: mode === 'walk' || mode === 'helm', fallFlow: falls.flow,
-    underwater: under, shipDist: camera.position.distanceTo(boat.position),
+    underwater: under, shipDist: camera.position.distanceTo(vessel.position),
     engineRunning: SHIP.trawler && boat.engineRunning, gens: SHIP.trawler ? elec.gens.filter((g) => g.state === 'running' || g.state === 'runup').length : 0, genHz: elec.busF || 50,
     alarm: alarms.unacked > 0 || sensors.bnwas.stage >= 2,
     chain: anchor.speed, chainPos: boat.model ? anchor.hawseWorld(boat) : null,
@@ -677,4 +754,4 @@ function tick() {
 }
 tick();
 
-window.__scene = { engine, sky, ocean, boat, player, instruments, weather, clouds, rain, spray, sound, falls, environment, terrain, village, follow, orbit, heightAt, applyPreset, setMode, input, diver, underwater, seaLife, elec, sensors, shipLights, panels, alarms, nearSwitchboard, whistle, anchor, crew, trawl, harbour, radio, access, get stations() { return stations; }, setThird: (v) => { thirdPerson = v; }, overTheSide: () => overTheSide(), get mode() { return mode; } };
+window.__scene = { engine, sky, ocean, boat, ship, player, instruments, weather, clouds, rain, spray, sound, falls, environment, terrain, village, follow, orbit, heightAt, applyPreset, setMode, input, diver, underwater, seaLife, elec, sensors, shipLights, panels, alarms, nearSwitchboard, whistle, anchor, crew, trawl, harbour, radio, access, get stations() { return stations; }, setThird: (v) => { thirdPerson = v; }, overTheSide: () => overTheSide(), get mode() { return mode; } };

@@ -15,6 +15,43 @@ Reine area of Lofoten, Norway, from open elevation and bathymetry data.
 > remain, as the map and the height model give them. The sections below
 > describe the trawler as it was built.
 
+## The galleon
+
+A large sailing ship of the 1620s, carrying both guns and cargo, built after
+the Swedish royal ship **Vasa** (1628), the one ship of that age that survives
+whole. `blender/build_galleon.py` builds her in Blender from Vasa's recorded
+dimensions (47.5 m between perpendiculars, 11.7 m beam, 4.8 m draught, 52.5 m
+from keel to main truck, a 23 deg rudder) and was checked view by view against
+the photogrammetry the Swedish National Maritime Museums published of the ship
+herself (looked at in the Sketchfab viewer, not downloaded):
+
+* hull: flat floor, hard bilge, greatest breadth at the lower gundeck, strong
+  tumblehome; six heavy wales; 24 ports in two tiers with lids, plus ports in
+  the castles; oak strakes with seams, butts, weathering (painted texture);
+* stern in tiers, as on Vasa: planked tuck with the stern chasers, counter, a
+  cornice on carved brackets, the great cabin's gallery fronted by standing
+  figures, the upper gallery as an arcade, the arms (our own emblem: an
+  eight-pointed star in a ring over a wave) between two supporters, the
+  crest, carved posts at the corners, three lanterns; fluted, two-tier quarter
+  galleries; carved figures are the game's Rocketbox person (MIT), posed;
+* beakhead with head rails, grating and a leaping lion figurehead;
+* bowsprit with sprit topmast; fore and main masts with topmast and
+  topgallant, mizzen with topmast; round tops; shrouds on deadeyes and
+  channels with ratlines, stays, backstays; eleven yards as separate nodes.
+
+The sails are made in the game (`src/ship/Sails.js`): ten, as on Vasa, set or
+furled by steps, filling with the wind, shivering when it comes too far
+forward and taken aback when it comes ahead; the yards brace round by
+themselves. `src/entities/Galleon.js` sails her: apparent wind, a square-rig
+drive curve (nothing closer than about 60 deg to the wind), leeway, heel,
+1200 t that carry their way, rudder that answers only with way on. She starts
+off **Vindstad** in Reinefjorden, the largest stretch of level land beside deep
+water in the area, where a harbour could be built.
+
+Controls: **A/D** rudder, **W/S** set / take in sail; on a phone the stick
+(sideways rudder, up and down sail). The model is packed by
+`tools/pack_glb.sh` (quantized, gzipped; the game unzips it with fflate).
+
 This is **Phase 1**: a correct, extensible skeleton. The visuals are deliberately
 achieved with cheap shader tricks so the architecture (systems, physics, camera,
 presets) is real and won't be thrown away as we raise fidelity.
@@ -367,7 +404,7 @@ Avatar Library** (`Male_Adult_07`, MIT licence,
 the library's Biped skeleton, with its colour and normal maps. His animations
 are the library's own motion capture: standing (two takes), looking about,
 walking, jogging. `blender/build_person.py` converts the avatar and the takes
-for the game (`src/assets/person.glb`, 2.6 MB): the takes are retargeted
+for the game (`public/models/person.glb`, 2.6 MB): the takes are retargeted
 onto the avatar bone by bone (their rest pose has the arms level, the
 avatar's has them down), textures are resized to 1024 px with the islands
 bled so their edges do not pick up the background. In the game
@@ -484,7 +521,7 @@ The realism here is **not** the engine — it's the water shader + fog + post.
 ## The trawler
 
 The player's vessel is a 23.95 m Scottish stern trawler built procedurally in
-Blender by `blender/build_trawler.py` and exported to `src/assets/trawler.glb`.
+Blender by `blender/build_trawler.py` and exported to `public/models/trawler.glb`.
 
 Reference data, all from Macduff Ship Design's page for the 23.95 m trawler
 *Adventurer II*:
@@ -506,7 +543,7 @@ Rebuild the model (needs Python 3.13; takes ~3 minutes):
 ```bash
 python3.13 -m venv .blenv && .blenv/bin/pip install bpy==5.2.3 pillow
 .blenv/bin/python blender/build_trawler.py -- out --render
-cp out/trawler.glb src/assets/trawler.glb
+cp out/trawler.glb public/models/trawler.glb
 ```
 
 ### Below decks

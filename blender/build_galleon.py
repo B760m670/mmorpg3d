@@ -73,29 +73,35 @@ def frange(a, b, step):
 
 
 # ------------------------------------------------------------------ data
+# Proportions checked against the photogrammetry of Vasa herself (Swedish
+# National Maritime Museums, Sketchfab): a high side, strong tumblehome, a
+# tall narrow stern in tiers, two tiers of ports between heavy wales.
 LPP = 47.5            # between perpendiculars: aft perpendicular s = 0 at the sternpost
 HB = 5.85             # half the greatest breadth (11.7 m)
-S_MID = 23.75         # origin amidships
+S_MID = 24.0          # origin amidships
 Z_KEEL = -4.8         # keel bottom (draught 4.8 m)
 Z_RAB = -4.4          # rabbet: planking meets the keel
 KEEL_HW = 0.22
 Z_MB = 1.0            # height of greatest breadth (lower gundeck)
-Z_WT = 3.4            # wing transom: top of the flat tuck
-Z_STEMHEAD = 4.8      # stem head, foot of the beakhead bulkhead
-Z_TOP_STERN = 12.9    # top of the stern
-S_MIN, S_MAX = -3.2, 51.6   # extent of the hull texture along the ship
+Z_WT = 4.0            # wing transom: top of the flat tuck, over the stern chasers
+Z_CTR = 6.6           # top of the counter, foot of the stern galleries
+Z_STEMHEAD = 5.2      # stem head, foot of the beakhead bulkhead
+Z_TOP_STERN = 13.4    # top of the stern panel (the crest stands above it)
+S_MIN, S_MAX = -3.4, 52.0   # extent of the hull texture along the ship
 
 # decks, amidships, above the waterline (sheer added along the ship)
-D_HOLD, D_ORLOP, D_LGD, D_UGD = -3.6, -1.6, 0.75, 3.0
-D_QD, D_FC, D_POOP, D_ROYAL = 5.3, 5.3, 7.8, 10.1
-BRK_ROYAL, BRK_POOP, BRK_QD, BRK_FC = 3.4, 9.55, 21.55, 37.55     # deck breaks (stations)
+D_HOLD, D_ORLOP, D_LGD, D_UGD = -3.4, -1.3, 1.0, 3.4
+D_QD, D_FC, D_POOP, D_ROYAL = 5.75, 5.9, 8.0, 10.2
+BRK_ROYAL, BRK_POOP, BRK_QD, BRK_FC = 3.0, 9.2, 23.0, 38.0     # deck breaks (stations)
+WAIST_H = 2.2         # the waist bulwark stands high over the upper gundeck
+CASTLE_H = 1.0        # solid side of the castles; an open rail stands on it
 
 # masts: station, and heights of lower masthead / top / topmast head /
 # topmast crosstrees / topgallant head (m above the waterline)
 MASTS = {
-    "fore":   dict(s=40.6, r0=0.48, top=19.6, head=21.8, tm=33.4, ct=31.4, tg=41.4, rtop=1.7),
-    "main":   dict(s=24.4, r0=0.53, top=21.6, head=24.0, tm=37.0, ct=34.6, tg=46.4, rtop=1.95),
-    "mizzen": dict(s=10.6, r0=0.33, top=16.6, head=18.6, tm=27.2, ct=None, tg=None, rtop=1.2),
+    "fore":   dict(s=41.2, r0=0.48, top=20.2, head=22.4, tm=34.0, ct=32.0, tg=42.0, rtop=1.7),
+    "main":   dict(s=24.4, r0=0.53, top=22.0, head=24.4, tm=37.4, ct=35.0, tg=46.8, rtop=1.95),
+    "mizzen": dict(s=10.8, r0=0.33, top=17.4, head=19.4, tm=28.0, ct=None, tg=None, rtop=1.2),
 }
 
 
@@ -105,7 +111,10 @@ def Y(s):
 
 
 def sheer(s):
-    return 1.15 * ((s - 26.0) / 26.0) ** 2
+    """Sheer: 1.5 m at the sternpost, 1.0 m at the stem."""
+    if s < 26.0:
+        return 1.5 * ((26.0 - s) / 26.0) ** 2
+    return 1.0 * ((s - 26.0) / 25.0) ** 2
 
 
 def deck_level(s):
@@ -123,37 +132,37 @@ def deck_level(s):
 
 
 def rail_top(s):
-    """Top of the ship's side: stepped at the deck breaks, rising aft to the
-    crest of the stern."""
-    z = D_ROYAL + 1.1
-    z = lerp(z, D_POOP + 1.1, smooth(BRK_ROYAL - 0.15, BRK_ROYAL + 0.15, s))
-    z = lerp(z, D_QD + 1.2, smooth(BRK_POOP - 0.15, BRK_POOP + 0.15, s))
-    z = lerp(z, D_UGD + 1.75, smooth(BRK_QD - 0.15, BRK_QD + 0.15, s))
-    z = lerp(z, D_FC + 1.2, smooth(BRK_FC - 0.15, BRK_FC + 0.15, s))
+    """Top of the solid side: stepped at the deck breaks, rising aft to the
+    top of the stern."""
+    z = D_ROYAL + CASTLE_H
+    z = lerp(z, D_POOP + CASTLE_H, smooth(BRK_ROYAL - 0.15, BRK_ROYAL + 0.15, s))
+    z = lerp(z, D_QD + CASTLE_H, smooth(BRK_POOP - 0.15, BRK_POOP + 0.15, s))
+    z = lerp(z, D_UGD + WAIST_H, smooth(BRK_QD - 0.15, BRK_QD + 0.15, s))
+    z = lerp(z, D_FC + CASTLE_H, smooth(BRK_FC - 0.15, BRK_FC + 0.15, s))
     z += sheer(s)
-    return z + (Z_TOP_STERN - z) * (1 - smooth(-1.6, 1.0, s))
+    return z + (Z_TOP_STERN - z) * (1 - smooth(-1.8, 0.6, s))
 
 
 def s_aft(z):
     """After boundary of the hull: the raked sternpost up to the wing
-    transom, then the counter curving aft and the upper stern."""
+    transom, the counter curving aft, then the upper stern, raked."""
     if z <= Z_WT:
-        return lerp(1.2, -0.3, (z - Z_RAB) / (Z_WT - Z_RAB))
-    if z <= 5.8:
-        return -0.3 - 1.9 * math.sin(0.5 * math.pi * (z - Z_WT) / (5.8 - Z_WT))
-    return -2.2 - 0.06 * (z - 5.8)
+        return lerp(1.2, -0.45, (z - Z_RAB) / (Z_WT - Z_RAB))
+    if z <= Z_CTR:
+        return -0.45 - 1.45 * math.sin(0.5 * math.pi * (z - Z_WT) / (Z_CTR - Z_WT))
+    return -1.9 - 0.08 * (z - Z_CTR)
 
 
 def W_aft(z):
     """Half width of the stern: the flat tuck from just above the water, the
-    counter, the upper stern narrowing with the tumblehome."""
-    if z <= 0.0:
+    counter, the tall upper stern narrowing with the tumblehome."""
+    if z <= 0.6:
         return 0.0
     if z <= Z_WT:
-        return 3.9 * (z / Z_WT) ** 0.7
-    if z <= 5.8:
-        return lerp(3.9, 4.3, smooth(Z_WT, 5.8, z))
-    return lerp(4.3, 2.45, (z - 5.8) / (Z_TOP_STERN - 5.8))
+        return 3.5 * ((z - 0.6) / (Z_WT - 0.6)) ** 0.62
+    if z <= Z_CTR:
+        return lerp(3.5, 3.9, smooth(Z_WT, Z_CTR, z))
+    return lerp(3.9, 2.3, (z - Z_CTR) / (Z_TOP_STERN - Z_CTR))
 
 
 def s_fwd(z):
@@ -161,25 +170,25 @@ def s_fwd(z):
     beakhead bulkhead."""
     if z <= Z_STEMHEAD:
         u = clamp((z - Z_RAB) / (Z_STEMHEAD - Z_RAB))
-        return 41.5 + 9.3 * (1 - (1 - u) ** 1.8)
-    return s_fwd(Z_STEMHEAD) - 0.15 * (z - Z_STEMHEAD)
+        return 41.5 + 9.5 * (1 - (1 - u) ** 1.8)
+    return s_fwd(Z_STEMHEAD) - 0.12 * (z - Z_STEMHEAD)
 
 
 def W_fwd(z):
     if z <= Z_STEMHEAD:
         return 0.0
-    return min(3.1, 3.1 * ((z - Z_STEMHEAD) / 1.2) ** 0.5)
+    return min(3.2, 3.2 * ((z - Z_STEMHEAD) / 1.2) ** 0.5)
 
 
 def Y0(z):
-    """Midship section: flat floor, round bilge, greatest breadth at the
-    lower gundeck, strong tumblehome above."""
+    """Midship section: flat floor, hard round bilge, greatest breadth at the
+    lower gundeck, sides falling in steadily above it."""
     if z <= Z_MB:
         q = clamp((Z_MB - z) / (Z_MB - Z_RAB))
-        n = 2.4
+        n = 2.6
         return KEEL_HW + (HB - KEEL_HW) * (1 - q ** n) ** (1 / n)
     d = z - Z_MB
-    return HB - 0.2192 * d - 0.00458 * d * d
+    return HB - 0.2374 * d - 0.000362 * d * d
 
 
 def half_breadth(s, z):
@@ -233,7 +242,7 @@ def _columns():
 
 U = _columns()
 ZTOP = [rail_top(col_s(u, 6.0)) for u in U]
-LANTERNS = [(-2.0, ZTOP[0] + 0.25, 0.36), (0.0, ZTOP[0] + 1.15, 0.48), (2.0, ZTOP[0] + 0.25, 0.36)]
+LANTERNS = [(-1.7, ZTOP[0] + 0.85, 0.31), (0.0, ZTOP[0] + 1.7, 0.41), (1.7, ZTOP[0] + 0.85, 0.31)]
 NV = 96
 
 
@@ -264,7 +273,7 @@ def material(name, color, rough=0.5, metal=0.0, emit=None, grime=0.0, bump=0.0, 
     p.inputs["Metallic"].default_value = metal
     if emit:
         p.inputs["Emission Color"].default_value = (*emit, 1.0)
-        p.inputs["Emission Strength"].default_value = 3.0
+        p.inputs["Emission Strength"].default_value = 1.0
     if not (grime or bump or grain or carve):
         return m
     link = nt.links.new
@@ -492,16 +501,17 @@ def baluster_row(name, a, b, h, mat, rail_mat, gap=0.32, side=False):
 # ------------------------------------------------------------------ materials
 M = {
     "hull": material("hull_livery", (1, 1, 1), rough=0.8),
-    "stern": material("stern_carved", (0.24, 0.055, 0.036), rough=0.7, grime=0.35, carve=0.1, bump=0.01),
-    "red": material("paint_red", (0.32, 0.065, 0.042), rough=0.72, grime=0.4, grain="y", bump=0.003),
-    "red_z": material("paint_red_vertical", (0.32, 0.065, 0.042), rough=0.72, grime=0.4, grain="z", bump=0.003),
-    "oak": material("oak", (0.2, 0.125, 0.07), rough=0.8, grime=0.45, grain="y", bump=0.004),
-    "oak_x": material("oak_across", (0.2, 0.125, 0.07), rough=0.8, grime=0.45, grain="x", bump=0.004),
-    "oak_z": material("oak_vertical", (0.2, 0.125, 0.07), rough=0.8, grime=0.45, grain="z", bump=0.004),
-    "dark": material("dark_wood", (0.07, 0.05, 0.036), rough=0.75, grime=0.3, grain="y", bump=0.004),
-    "dark_z": material("dark_wood_vertical", (0.07, 0.05, 0.036), rough=0.75, grime=0.3, grain="z", bump=0.004),
-    "gold": material("gilt", (0.5, 0.35, 0.11), rough=0.42, metal=0.75, grime=0.55, carve=0.2, bump=0.01),
-    "carved": material("carved_dark", (0.12, 0.08, 0.05), rough=0.7, grime=0.3, carve=0.3, bump=0.015),
+    "stern": material("stern_carved", (0.14, 0.095, 0.06), rough=0.72, grime=0.5, carve=0.16, bump=0.03),
+    "red": material("paint_red", (0.2, 0.052, 0.034), rough=0.74, grime=0.45, grain="y", bump=0.003),
+    "red_z": material("paint_red_vertical", (0.2, 0.052, 0.034), rough=0.74, grime=0.45, grain="z", bump=0.003),
+    "oak": material("oak", (0.14, 0.092, 0.056), rough=0.8, grime=0.5, grain="y", bump=0.004),
+    "oak_x": material("oak_across", (0.14, 0.092, 0.056), rough=0.8, grime=0.5, grain="x", bump=0.004),
+    "oak_z": material("oak_vertical", (0.14, 0.092, 0.056), rough=0.8, grime=0.5, grain="z", bump=0.004),
+    "dark": material("dark_wood", (0.055, 0.04, 0.03), rough=0.75, grime=0.3, grain="y", bump=0.004),
+    "dark_z": material("dark_wood_vertical", (0.055, 0.04, 0.03), rough=0.75, grime=0.3, grain="z", bump=0.004),
+    "gold": material("gilt", (0.4, 0.29, 0.1), rough=0.48, metal=0.6, grime=0.6, carve=0.15, bump=0.01),
+    "carved": material("carved_dark", (0.15, 0.1, 0.064), rough=0.72, grime=0.45, carve=0.2, bump=0.03),
+    "figure": material("carved_figure", (0.17, 0.115, 0.072), rough=0.7, grime=0.45, bump=0.004),
     "iron": material("iron", (0.07, 0.068, 0.066), rough=0.62, metal=0.55),
     "grating": material("grating", (0.16, 0.11, 0.07), rough=0.85, grime=0.5, grain="x", bump=0.004),
     "hold": material("hold_dark", (0.01, 0.008, 0.006), rough=1.0),
@@ -509,8 +519,8 @@ M = {
     "spar": material("spar", (0.16, 0.11, 0.075), rough=0.75),
     "rope": material("rope", (0.05, 0.042, 0.032), rough=0.95),
     "deadeye": material("deadeye", (0.09, 0.06, 0.04), rough=0.8),
-    "window": material("light_window", (0.03, 0.03, 0.03), rough=0.15, metal=0.3, emit=(1.0, 0.55, 0.22)),
-    "lantern": material("light_lantern", (0.6, 0.45, 0.25), rough=0.2, emit=(1.0, 0.62, 0.28)),
+    "window": material("light_window", (0.02, 0.022, 0.024), rough=0.12, metal=0.3, emit=(0.12, 0.06, 0.025)),
+    "lantern": material("light_lantern", (0.16, 0.13, 0.09), rough=0.15, metal=0.2, emit=(0.14, 0.08, 0.035)),
 }
 PLAIN = {M["spar"], M["rope"], M["deadeye"], M["iron"]}       # the rig: no bake
 LIGHTS = {M["window"], M["lantern"]}
@@ -577,7 +587,9 @@ def build_hull():
     extrude_x("sternpost", outer + inner, -0.23, 0.23, M["dark"])
 
 
-WALES = [(-0.2, 0.34), (0.8, 0.30), (2.45, 0.28), (4.52, 0.26)]
+# heavy wales, as counted on the scan: two by the waterline, one under and one
+# over the lower ports, one under and one over the upper ports
+WALES = [(-0.35, 0.32), (0.45, 0.30), (1.15, 0.28), (2.55, 0.30), (3.35, 0.26), (4.95, 0.28)]
 
 
 def build_wales():
@@ -590,7 +602,7 @@ def build_wales():
         ss = sorted(set(frange(s0, s0 + 1.5, 0.08) + frange(s0 + 1.5, s1 - 1.5, 0.3) + frange(s1 - 1.5, s1, 0.08)))
         bm = bmesh.new()
         rings = []
-        t = 0.14
+        t = 0.2
         for s in ss:
             zl, zh = zc(s) - h / 2, zc(s) + h / 2
             yl, yh = half_breadth(s, zl), half_breadth(s, zh)
@@ -607,16 +619,18 @@ def build_wales():
 
 
 PORTS = []      # (s, zc, w, h): painted into the hull texture, lids as geometry
-for _k in range(12):
-    _s = 8.6 + _k * 2.85
-    PORTS.append((_s, D_LGD + 0.92 + sheer(_s), 0.78, 0.74))
-for _k in range(11):
-    _s = 10.0 + _k * 2.85
-    PORTS.append((_s, D_UGD + 0.78 + sheer(_s), 0.64, 0.6))
-for _s in (12.6, 15.5, 18.4):
-    PORTS.append((_s, D_QD + 0.72 + sheer(_s), 0.5, 0.46))
-for _s in (39.0, 42.4):
-    PORTS.append((_s, D_FC + 0.72 + sheer(_s), 0.5, 0.46))
+for _k in range(12):                       # lower gundeck, the 24-pounders
+    _s = 7.6 + _k * 2.95
+    PORTS.append((_s, D_LGD + 0.75 + sheer(_s), 0.95, 0.86))
+for _k in range(12):                       # upper gundeck, staggered
+    _s = 9.0 + _k * 2.95
+    PORTS.append((_s, D_UGD + 0.75 + sheer(_s), 0.82, 0.74))
+for _s in (11.8, 14.7, 17.6, 20.5):        # half deck
+    PORTS.append((_s, D_QD + 0.55 + sheer(_s), 0.55, 0.5))
+for _s in (40.0, 43.4):                    # forecastle
+    PORTS.append((_s, D_FC + 0.55 + sheer(_s), 0.55, 0.5))
+for _s in (4.8, 7.6):                      # cabins under the poop
+    PORTS.append((_s, D_POOP + 0.55 + sheer(_s), 0.45, 0.42))
 
 
 def build_ports():
@@ -747,96 +761,227 @@ def build_decks():
                 cyl("ladder_side", (x + dx, Y(sb), z0), (x + dx, Y(s), z1), 0.05, M["oak"], seg=6)
 
 
+# ------------------------------------------------------------------ carved figures
+PERSON = os.path.join(HERE, "..", "public", "models", "person.glb")
+FIGURE = None
+
+
+def figure_template(tris=1700):
+    """A standing man for the carvings: the Rocketbox person of the game
+    (MIT), posed, frozen, decimated, height 1, feet at 0, facing +Y."""
+    global FIGURE
+    if FIGURE is not None:
+        return FIGURE
+    before = set(bpy.data.objects)
+    bpy.ops.import_scene.gltf(filepath=PERSON)
+    new = [o for o in bpy.data.objects if o not in before]
+    arm = next(o for o in new if o.type == "ARMATURE")
+    meshes = [o for o in new if o.type == "MESH" and o.parent == arm]
+    act = bpy.data.actions.get("idle")
+    if arm.animation_data is None:
+        arm.animation_data_create()
+    arm.animation_data.action = act
+    ad = arm.animation_data
+    if hasattr(ad, "action_slot") and ad.action_slot is None and len(act.slots):
+        ad.action_slot = act.slots[0]
+    bpy.context.scene.frame_set(6)
+    dg = bpy.context.evaluated_depsgraph_get()
+    bm = bmesh.new()
+    for o in meshes:
+        ev = o.evaluated_get(dg)
+        me = ev.to_mesh()
+        me.transform(o.matrix_world)
+        bm.from_mesh(me)
+        ev.to_mesh_clear()
+    for o in new:
+        bpy.data.objects.remove(o, do_unlink=True)
+    bpy.context.scene.frame_set(0)
+    zs = [v.co.z for v in bm.verts]
+    z0, z1 = min(zs), max(zs)
+    hgt = z1 - z0
+    cx = sum(v.co.x for v in bm.verts) / len(bm.verts)
+    cy = sum(v.co.y for v in bm.verts) / len(bm.verts)
+    for v in bm.verts:
+        v.co = Vector(((v.co.x - cx) / hgt, (v.co.y - cy) / hgt, (v.co.z - z0) / hgt))
+    # which way does he face? the toes stand out ahead of the heels
+    feet = [v.co for v in bm.verts if v.co.z < 0.04]
+    hips = [v.co for v in bm.verts if 0.45 < v.co.z < 0.55]
+    fx = sum(c.x for c in feet) / len(feet) - sum(c.x for c in hips) / len(hips)
+    fy = sum(c.y for c in feet) / len(feet) - sum(c.y for c in hips) / len(hips)
+    ang = math.atan2(fx, fy)          # rotate so that he faces +Y
+    bmesh.ops.transform(bm, matrix=Matrix.Rotation(ang, 4, "Z"), verts=bm.verts)
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=0.002)
+    me = bpy.data.meshes.new("figure_full")
+    bm.to_mesh(me)
+    n_tris = sum(len(f.verts) - 2 for f in bm.faces)
+    bm.free()
+    tmp = bpy.data.objects.new("figure_tmp", me)
+    bpy.context.scene.collection.objects.link(tmp)
+    mod = tmp.modifiers.new("dec", "DECIMATE")
+    mod.ratio = min(1.0, tris / max(1, n_tris))
+    dg = bpy.context.evaluated_depsgraph_get()
+    FIGURE = bpy.data.meshes.new_from_object(tmp.evaluated_get(dg))
+    bpy.data.objects.remove(tmp, do_unlink=True)
+    print("figure template", n_tris, "->", len(FIGURE.polygons), "faces")
+    return FIGURE
+
+
+def figure(name, foot, height, facing, mat=None, side=False, lean=0.0, girth=1.15):
+    """A carved figure standing at foot, facing the angle about Z (0 = +Y,
+    i.e. forward; pi = aft). Carvings are stockier than life: girth."""
+    bm = bmesh.new()
+    bm.from_mesh(figure_template())
+    m = (Matrix.Translation(Vector(foot)) @ Matrix.Rotation(facing, 4, "Z") @ Matrix.Rotation(lean, 4, "X")
+         @ Matrix.Diagonal((height * girth, height * girth, height, 1.0)))
+    bmesh.ops.transform(bm, matrix=m, verts=bm.verts)
+    return new_obj(name, bm, mat or M["figure"], smooth_shade=True, side=side)
+
+
+def carved_post(name, p0, p1, r, mat, side=False, knobs=6):
+    """A turned and carved post: a shaft with collars and knops along it."""
+    p0, p1 = Vector(p0), Vector(p1)
+    cyl(name, p0, p1, r, mat, seg=8, side=side)
+    for k in range(1, knobs):
+        p = p0.lerp(p1, k / knobs)
+        sphere(name + "_knop", p, r * 1.6, mat, seg=8, scale=(1, 1, 0.7), side=side)
+
+
 # ------------------------------------------------------------------ stern
 def build_stern():
-    zq = D_QD + sheer(-1.0)          # great cabin floor, at the stern
-    zp = D_POOP + sheer(-1.0)        # poop deck, over the great cabin
-    zr0 = D_ROYAL + sheer(-1.0)      # poop royal, over the upper cabin
+    """The stern as on Vasa, from the water up: planked tuck with the stern
+    chasers, the counter, a cornice on carved brackets, the great cabin's
+    gallery fronted by standing figures, a second cornice, the upper gallery
+    as an arcade, the arms in a carved frame between two supporters, the
+    crest, and tall carved posts at the corners; quarter galleries round the
+    sides with fluted domes."""
     zt = ZTOP[0]
+    zq = D_QD + sheer(-1.0)          # great cabin floor at the stern
+    zp = D_POOP + sheer(-1.0)        # poop deck over it
+    zr0 = D_ROYAL + sheer(-1.0)      # poop royal over the upper cabin
 
-    def on_stern(x, z, ds=0.0):
+    def at(x, z, ds=0.0):
         return Vector((x, Y(s_aft(z) + ds), z))
 
-    def window_row(name, zc, h, n, wfrac, ww):
+    def cornice(name, z, h, proj, n_brackets=0, mat=None):
+        w = W_aft(z)
+        s = s_aft(z)
+        box(name, (0, Y(s - proj / 2 + 0.03), z), (2 * w + 0.2, proj, h), mat or M["carved"])
+        box(name + "_lip", (0, Y(s - proj + 0.03), z + h / 2 - 0.04), (2 * w + 0.28, 0.1, 0.1), M["gold"])
+        if n_brackets:
+            for x in frange(-w + 0.2, w - 0.2, (2 * w - 0.4) / (n_brackets - 1)):
+                box(name + "_bracket", (x, Y(s - proj * 0.45), z - h / 2 - 0.2), (0.14, proj * 0.8, 0.4), M["carved"])
+                sphere(name + "_bracket_head", (x, Y(s - proj * 0.85), z - h / 2 - 0.3), 0.11, M["carved"], seg=8)
+
+    def windows(name, zc, h, n, wfrac, ww):
         w = W_aft(zc)
         for x in frange(-w * wfrac, w * wfrac, 2 * w * wfrac / (n - 1)):
-            p = on_stern(x, zc, -0.02)
-            panel(name, p, (1, 0, 0), (0, -0.06, 1), ww, h, M["window"], 0.03)
+            p = at(x, zc, -0.02)
+            up = (0, -0.08, 1)
+            panel(name, p, (1, 0, 0), up, ww, h, M["window"], 0.03)
             for dz in (-h / 2 - 0.03, h / 2 + 0.03):
-                panel(name + "_frame", p + Vector((0, -0.02, dz)), (1, 0, 0), (0, -0.06, 1), ww + 0.16, 0.09, M["dark"], 0.06)
+                panel(name + "_frame", p + Vector((0, -0.02, dz)), (1, 0, 0), up, ww + 0.16, 0.09, M["dark"], 0.06)
             for dx in (-ww / 2 - 0.04, 0.0, ww / 2 + 0.04):
-                panel(name + "_frame", p + Vector((dx, -0.02, 0)), (1, 0, 0), (0, -0.06, 1), 0.08 if dx else 0.04, h + 0.1, M["dark"], 0.06)
-            panel(name + "_bar", p + Vector((0, -0.025, 0)), (1, 0, 0), (0, -0.06, 1), ww, 0.035, M["dark"], 0.05)
+                panel(name + "_frame", p + Vector((dx, -0.02, 0)), (1, 0, 0), up, 0.08 if dx else 0.04, h + 0.1, M["dark"], 0.06)
+            panel(name + "_bar", p + Vector((0, -0.025, 0)), (1, 0, 0), up, ww, 0.035, M["dark"], 0.05)
 
-    def gallery(name, zf, depth, z_roof, roof=True):
-        """Open gallery across the stern: floor, balustrade, columns, roof."""
-        w = W_aft(zf) - 0.05
-        sg = s_aft(zf)
-        box(name + "_floor", (0, Y(sg - depth / 2), zf - 0.07), (2 * w, depth, 0.14), M["carved"])
-        box(name + "_trim", (0, Y(sg - depth + 0.03), zf - 0.13), (2 * w + 0.1, 0.1, 0.3), M["gold"])
-        baluster_row(name + "_balustrade", (-w, Y(sg - depth + 0.05), zf), (w, Y(sg - depth + 0.05), zf), 0.95,
-                     M["oak_z"], M["dark"], gap=0.28)
-        if not roof:
-            return
-        for x in frange(-w, w, 2 * w / 5):
-            cyl(name + "_column", (x, Y(sg - depth + 0.08), zf), (x, Y(sg - depth + 0.08), z_roof - 0.05), 0.085, M["carved"], seg=8)
-            sphere(name + "_column_cap", (x, Y(sg - depth + 0.08), z_roof - 0.1), 0.14, M["gold"], seg=8)
-        wr = W_aft(z_roof)
-        sr = s_aft(z_roof)
-        box(name + "_roof", (0, Y(sr - depth / 2 - 0.12), z_roof + 0.07), (2 * wr + 0.3, depth + 0.25, 0.16), M["carved"])
-        box(name + "_roof_trim", (0, Y(sr - depth - 0.22), z_roof + 0.07), (2 * wr + 0.35, 0.08, 0.28), M["gold"])
-
-    # the great cabin: an open gallery before its windows; the upper cabin
-    # under the poop royal with a narrower gallery
-    gallery("gallery", zq - 0.05, 1.1, zp - 0.15)
-    window_row("stern_window", zq + 1.0, 1.1, 5, 0.74, 0.78)
-    gallery("upper_gallery", zp + 0.05, 0.75, zr0 - 0.2, roof=False)
-    window_row("upper_window", zp + 0.95, 0.85, 5, 0.7, 0.62)
-    box("upper_cornice", (0, Y(s_aft(zr0 - 0.15) - 0.25), zr0 - 0.12), (2 * W_aft(zr0) + 0.2, 0.5, 0.16), M["carved"])
-    box("upper_cornice_trim", (0, Y(s_aft(zr0 - 0.15) - 0.5), zr0 - 0.12), (2 * W_aft(zr0) + 0.25, 0.08, 0.26), M["gold"])
-
-    # stern chasers in the tuck, the helm port in the counter
-    for x in (-1.55, 1.55):
-        z = D_LGD + 0.92 + sheer(0.0)
-        panel("stern_port", on_stern(x, z, -0.03), (1, 0, 0), (0, -0.19, 1), 0.7, 0.66, M["oak"], 0.07)
-    box("helm_port", (0, Y(s_aft(3.75) - 0.02), 3.75), (0.9, 0.08, 0.5), M["hold"])
-    # mouldings across the counter
-    for z in (Z_WT + 0.05, 4.6, zq - 0.45):
+    # tuck: stern chasers either side of the post; counter: upper gundeck
+    # ports, the helm port, mouldings
+    z = D_LGD + 0.75 + sheer(-0.3)
+    for x in (-1.6, 1.6):
+        panel("stern_port", at(x, z, -0.03), (1, 0, 0), (0, -0.19, 1), 0.66, 0.62, M["oak"], 0.07)
+    z = D_UGD + 0.75 + sheer(-1.0)
+    for x in (-1.75, 1.75):
+        panel("stern_port", at(x, z, -0.04), (1, 0, 0), (0, -0.45, 1), 0.62, 0.55, M["oak"], 0.07)
+    box("helm_port", (0, Y(s_aft(Z_WT + 0.35) - 0.03), Z_WT + 0.35), (0.9, 0.08, 0.5), M["hold"])
+    for z in (Z_WT, Z_WT + 1.2, Z_CTR - 0.15):
         w = W_aft(z)
-        rod("counter_moulding", [on_stern(x, z, -0.04) for x in frange(-w, w, w / 4)], 0.07, M["gold"] if z > 4 else M["dark"], seg=6)
+        rod("counter_moulding", [at(x, z, -0.05) for x in frange(-w, w, w / 5)], 0.08, M["dark"], seg=6)
 
-    # top of the stern: the emblem between carved panels, pilasters, crest
+    # cornice over the counter: the floor of the great cabin's gallery
+    cornice("stern_cornice", zq - 0.12, 0.3, 1.05, n_brackets=11)
+    sg = s_aft(zq)
+    w1 = W_aft(zq) - 0.05
+    xs = frange(-w1 + 0.15, w1 - 0.15, (2 * w1 - 0.3) / 8)
+    for x in xs:                      # standing figures carry the roof
+        box("gallery_plinth", (x, Y(sg - 0.88), zq + 0.08), (0.42, 0.42, 0.16), M["carved"])
+        figure("gallery_figure", (x, Y(sg - 0.88), zq + 0.16), (zp - 0.32) - (zq + 0.16) - 0.16, math.pi, girth=1.3)
+        box("gallery_capital", (x, Y(sg - 0.88), zp - 0.4), (0.46, 0.46, 0.16), M["carved"])
+    for a, b in zip(xs[:-1], xs[1:]):  # low balustrade between them
+        baluster_row("gallery_balustrade", (a + 0.25, Y(sg - 0.9), zq + 0.03), (b - 0.25, Y(sg - 0.9), zq + 0.03),
+                     0.6, M["oak_z"], M["dark"], gap=0.22)
+    windows("stern_window", zq + 1.05, 0.95, 5, 0.7, 0.55)
+    cornice("stern_cornice", zp - 0.18, 0.3, 1.15, n_brackets=9)
+
+    # upper gallery: an arcade standing out from the upper cabin's windows
+    za, zb = zp + 0.05, zr0 - 0.45
+    w2 = W_aft(za) - 0.08
+    box("arcade_floor", (0, Y(s_aft(za) - 0.36), za - 0.05), (2 * w2, 0.75, 0.12), M["carved"])
+    xs = frange(-w2, w2, 2 * w2 / 6)
+    sa = s_aft(za) - 0.7
+    for x in xs:
+        carved_post("arcade_pillar", (x, Y(sa), za), (x, Y(sa), zb - 0.35), 0.075, M["carved"], knobs=3)
+    for a, b in zip(xs[:-1], xs[1:]):
+        r = (b - a) / 2
+        arc = [Vector(((a + b) / 2 - r * math.cos(math.pi * k / 8), Y(sa), zb - 0.35 + r * 0.75 * math.sin(math.pi * k / 8))) for k in range(9)]
+        rod("arcade_arch", arc, 0.07, M["carved"], seg=6)
+        baluster_row("arcade_balustrade", (a + 0.1, Y(sa), za), (b - 0.1, Y(sa), za), 0.55, M["oak_z"], M["dark"], gap=0.2)
+    box("arcade_head", (0, Y(sa + 0.02), zb + 0.1), (2 * w2 + 0.1, 0.2, 0.5), M["carved"])
+    windows("upper_window", zp + 0.95, 0.75, 5, 0.66, 0.48)
+    cornice("stern_cornice", zr0 - 0.2, 0.26, 0.6)
+
+    # the arms: our emblem in a carved oval frame, a supporter either side
     zc = (zr0 + zt) / 2 + 0.05
-    for x in (-1.95, 1.95):
-        p = on_stern(x, zc, -0.04)
-        panel("stern_panel", p, (1, 0, 0), (0, -0.06, 1), 0.85, zt - zr0 - 0.45, M["carved"], 0.06)
-        panel("stern_panel_frame", p + Vector((0, -0.01, 0)), (1, 0, 0), (0, -0.06, 1), 1.0, zt - zr0 - 0.3, M["gold"], 0.03)
-    for f in (-0.96, -0.42, 0.42, 0.96):
-        z0, z1 = zp - 0.1, zt - 0.08
-        cyl("stern_pilaster", on_stern(f * W_aft(z0), z0, -0.1), on_stern(f * W_aft(z1), z1, -0.1), 0.1, M["carved"], seg=8)
-    pts = []
-    for k in range(17):
-        a = -1 + 2 * k / 16
-        pts.append((a * (W_aft(zt) + 0.1), zt + 0.05 + 0.95 * math.cos(0.5 * math.pi * a) ** 0.8))
-    pts += [(W_aft(zt) + 0.1, zt - 0.1), (-W_aft(zt) - 0.1, zt - 0.1)]
-    plate_y("stern_crest", pts, s_aft(zt) + 0.02, 0.2, M["carved"])
-    rod("stern_crest_trim", [Vector((x, Y(s_aft(zt) - 0.09), z)) for x, z in pts[:17]], 0.06, M["gold"], seg=6)
-
-    # the emblem, our own: a ring, an eight-pointed star, a wave below
-    sc = s_aft(zc) - 0.09
-    rr = min(0.72, (zt - zr0) / 2 - 0.12)
-    ring = [Vector((rr * math.cos(2 * math.pi * k / 32), Y(sc), zc + 0.08 + rr * math.sin(2 * math.pi * k / 32))) for k in range(33)]
-    rod("emblem_ring", ring, 0.06, M["gold"], seg=6)
+    sc = s_aft(zc)
+    ell = []
+    for k in range(25):
+        a = 2 * math.pi * k / 24
+        ell.append((1.05 * math.cos(a), zc + 0.68 * math.sin(a)))
+    plate_y("arms_field", ell, sc - 0.06, 0.08, M["red_z"])
+    rod("arms_frame", [Vector((x, Y(sc - 0.11), z)) for x, z in ell], 0.08, M["gold"], seg=6)
+    rr = 0.5
+    ring = [Vector((rr * math.cos(2 * math.pi * k / 32), Y(sc - 0.13), zc + 0.05 + rr * math.sin(2 * math.pi * k / 32))) for k in range(33)]
+    rod("emblem_ring", ring, 0.045, M["gold"], seg=6)
     star = []
     for k in range(16):
         a = math.pi / 2 + 2 * math.pi * k / 16
         r = rr * (0.86 if k % 4 == 0 else 0.55 if k % 2 == 0 else 0.24)
-        star.append((r * math.cos(a), zc + 0.08 + r * math.sin(a)))
-    plate_y("emblem_star", star, sc - 0.02, 0.07, M["gold"])
-    wave = [Vector((rr * (-1 + 2 * k / 12), Y(sc - 0.03), zc + 0.08 - rr - 0.12 + 0.07 * math.sin(k * math.pi / 3))) for k in range(13)]
-    rod("emblem_wave", wave, 0.045, M["gold"], seg=6)
+        star.append((r * math.cos(a), zc + 0.05 + r * math.sin(a)))
+    plate_y("emblem_star", star, sc - 0.15, 0.06, M["gold"])
+    wave = [Vector((rr * (-1 + 2 * k / 12), Y(sc - 0.15), zc + 0.05 - rr - 0.1 + 0.06 * math.sin(k * math.pi / 3))) for k in range(13)]
+    rod("emblem_wave", wave, 0.04, M["gold"], seg=6)
+    for k in range(5):                 # a coronet over the frame
+        a = math.pi * (0.25 + 0.125 * k)
+        sphere("arms_coronet", (0.6 * math.cos(a) * 1.2, Y(sc - 0.12), zc + 0.68 + 0.18 * math.sin(a)), 0.08, M["gold"], seg=6)
+    for sx in (-1, 1):
+        x = sx * 1.55
+        figure("arms_supporter", (x, Y(s_aft(zr0) - 0.35), zr0 + 0.02), zt - zr0 - 0.12, math.pi - sx * 0.35)
 
-    # lanterns on the crest: the middle one larger
+    # crest over the top: an arched board with a little arcade, a carved crown
+    pts = []
+    wt = W_aft(zt) + 0.05
+    for k in range(17):
+        a = -1 + 2 * k / 16
+        pts.append((a * wt, zt + 0.02 + 1.0 * math.cos(0.5 * math.pi * a) ** 0.8))
+    pts += [(wt, zt - 0.12), (-wt, zt - 0.12)]
+    plate_y("stern_crest", pts, s_aft(zt) + 0.02, 0.2, M["carved"])
+    rod("stern_crest_trim", [Vector((x, Y(s_aft(zt) - 0.09), z)) for x, z in pts[:17]], 0.06, M["gold"], seg=6)
+    xs = frange(-wt * 0.7, wt * 0.7, wt * 1.4 / 5)
+    for a, b in zip(xs[:-1], xs[1:]):
+        r = (b - a) / 2
+        arc = [Vector(((a + b) / 2 - r * math.cos(math.pi * k / 6), Y(s_aft(zt) - 0.1), zt + 0.12 + r * math.sin(math.pi * k / 6))) for k in range(7)]
+        rod("crest_arcade", arc, 0.04, M["carved"], seg=5)
+    sphere("crest_crown", (0, Y(s_aft(zt)), zt + 1.15), 0.28, M["gold"], seg=10, scale=(1.3, 0.6, 1))
+
+    # tall carved posts at the corners of the stern
+    for sx in (-1, 1):
+        zs = frange(zq - 0.1, zt + 1.3, 0.5)
+        pts = [Vector((sx * (W_aft(min(z, zt)) + 0.06), Y(s_aft(min(z, zt)) - 0.12), z)) for z in zs]
+        rod("corner_post", pts, 0.13, M["carved"], seg=8)
+        for p in pts[1:-1:2]:
+            sphere("corner_post_knop", p, 0.2, M["carved"], seg=8, scale=(1, 1, 0.7))
+        sphere("corner_finial", pts[-1] + Vector((0, 0, 0.25)), 0.26, M["gold"], seg=10, scale=(1, 1, 1.4))
+
+    # lanterns over the crest: the middle one larger
     for x, z, r in LANTERNS:
         s = s_aft(zt) - 0.75
         cyl("lantern_bracket", (x, Y(s_aft(zt) + 0.05), z - 0.6), (x, Y(s), z - 0.15), 0.06, M["iron"], seg=6)
@@ -850,120 +995,216 @@ def build_stern():
         cyl("lantern_roof", (x, Y(s), z + r * 2.4), (x, Y(s), z + r * 3.5), r * 1.3, M["gold"], seg=10, r2=0.02)
         sphere("lantern_finial", (x, Y(s), z + r * 3.6), r * 0.22, M["gold"], seg=8)
 
-    # quarter galleries (one built, mirrored): a turret of two tiers on the
-    # quarter, a bulbous drop below and a dome above
-    bay_s = [-0.7, -0.45, 0.1, 0.8, 1.5, 2.1, 2.6, 2.85]
-    bay_o = [0.0, 0.42, 0.78, 0.9, 0.9, 0.78, 0.42, 0.0]
-    z_lo, z_hi = zq - 0.55, zr0 + 0.25
+    # quarter galleries: a round bay of two tiers on each quarter (one built,
+    # mirrored), a fluted bulb below, a fluted dome above
+    sc_, rs, rx = 0.15, 2.25, 1.15
+    z_d0, z_lo, z_hi, z_top = zq - 1.9, zq - 0.1, zr0 - 0.2, zr0 + 1.05
+    NP = 41
 
-    def prof(z):
-        if z < z_lo:
-            t = (z - (z_lo - 1.4)) / 1.4
-            return math.sin(0.5 * math.pi * clamp(t)) ** 0.7
-        if z > z_hi:
-            t = (z - z_hi) / 1.3
-            return math.cos(0.5 * math.pi * clamp(t)) ** 0.8
-        return 1.0 + (0.12 if abs(z - (zp + 0.05)) < 0.12 else 0.0)
+    def ring(z, f, flute):
+        out = []
+        for k in range(NP):
+            ph = -0.5 * math.pi + math.pi * k / (NP - 1)
+            s = sc_ + rs * math.sin(ph) * (0.8 + 0.2 * min(f, 1.0))
+            rib = 1 + flute * (abs(math.cos(8 * ph)) ** 0.5 - 0.6)
+            x = half_breadth(s, z) - 0.06 + rx * math.cos(ph) * f * rib
+            out.append((x, Y(s), z))
+        return out
 
-    zs = [z_lo - 1.4 + k * 0.2 for k in range(8)] + [z_lo, z_lo + 0.12, zp - 0.07, zp - 0.05, zp + 0.17, zp + 0.19, z_hi - 0.12, z_hi]
-    zs += [z_hi + 1.3 * k / 7 for k in range(1, 8)]
+    rows = []
+    for k in range(9):                                 # the fluted bulb under it
+        t_ = k / 8
+        rows.append(ring(lerp(z_d0, z_lo, t_), math.sin(0.5 * math.pi * t_) ** 0.7, 0.14))
+    rows.append(ring(z_lo + 0.1, 1.0, 0.03))           # lower tier
+    rows.append(ring(zp - 0.35, 1.0, 0.03))
+    for k in range(7):                                 # a fluted hood over it
+        t_ = k / 6
+        rows.append(ring(lerp(zp - 0.3, zp + 0.3, t_), 1.0 + 0.2 * math.sin(math.pi * t_) - 0.12 * t_, 0.14))
+    rows.append(ring(zp + 0.36, 0.88, 0.03))           # upper tier, smaller
+    rows.append(ring(z_hi, 0.88, 0.03))
+    for k in range(1, 9):                              # the fluted dome
+        t_ = k / 8
+        rows.append(ring(lerp(z_hi, z_top, t_), max(0.02, 0.92 * math.cos(0.5 * math.pi * t_) ** 0.7), 0.14))
     bm = bmesh.new()
-    rings = []
-    for z in zs:
-        f = prof(z)
-        rings.append([bm.verts.new((half_breadth(s, z) - 0.06 + o * f, Y(s), z)) for s, o in zip(bay_s, bay_o)])
-    for a, b in zip(rings[:-1], rings[1:]):
-        for k in range(len(bay_s) - 1):
+    vrows = [[bm.verts.new(p) for p in r] for r in rows]
+    for a, b in zip(vrows[:-1], vrows[1:]):
+        for k in range(NP - 1):
             bm.faces.new([a[k], a[k + 1], b[k + 1], b[k]])
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
-    for f in bm.faces:
-        if f.normal.x < 0:
-            f.normal_flip()
+    if sum(f.normal.x for f in bm.faces) < 0:
+        bmesh.ops.reverse_faces(bm, faces=bm.faces)
     ob = new_obj("quarter_gallery", bm, M["stern"], smooth_shade=True, side=True)
-    ob.data.set_sharp_from_angle(angle=math.radians(50))
-    cx = half_breadth(1.2, z_hi + 1.3)
-    sphere("quarter_gallery_finial", (cx + 0.05, Y(1.15), z_hi + 1.35), 0.15, M["gold"], seg=8, side=True)
-    for z in (z_lo + 0.06, zp + 0.06, z_hi - 0.06):
-        pts = [Vector((half_breadth(s, z) - 0.02 + o * prof(z) + 0.03, Y(s), z)) for s, o in zip(bay_s, bay_o)]
-        rod("quarter_gallery_band", pts[1:-1], 0.06, M["gold"], seg=6, side=True)
-    for zc_, h in ((zq + 0.95, 1.0), (zp + 0.95, 0.85)):
-        for k in (2, 3, 4):
-            s = (bay_s[k] + bay_s[k + 1]) / 2
-            o = (bay_o[k] + bay_o[k + 1]) / 2
-            x = half_breadth(s, zc_) - 0.06 + o + 0.02
-            d = Vector((half_breadth(bay_s[k + 1], zc_) + bay_o[k + 1] - half_breadth(bay_s[k], zc_) - bay_o[k], bay_s[k + 1] - bay_s[k], 0)).normalized()
-            panel("quarter_window", (x, Y(s), zc_), d, (0, 0, 1), 0.5, h, M["window"], 0.03, side=True)
-            panel("quarter_window_frame", (x + 0.01, Y(s), zc_), d, (0, 0, 1), 0.6, 0.06, M["dark"], 0.05, side=True)
-            panel("quarter_window_frame", (x + 0.01, Y(s), zc_), d, (0, 0, 1), 0.05, h + 0.06, M["dark"], 0.05, side=True)
+    ob.data.set_sharp_from_angle(angle=math.radians(55))
+    top = rows[-1][NP // 2]
+    sphere("quarter_gallery_finial", (top[0], top[1], top[2] + 0.15), 0.16, M["gold"], seg=8, scale=(1, 1, 1.5), side=True)
+    for z, f in ((z_lo + 0.1, 1.0), (zp - 0.33, 1.0), (zp + 0.38, 0.88), (z_hi - 0.02, 0.88)):
+        r = ring(z, f, 0.0)
+        rod("quarter_gallery_band", [Vector((p[0] + 0.03, p[1], p[2])) for p in r[3:-3]], 0.055, M["gold"], seg=6, side=True)
+    for zc_, h, f in ((zq + 0.9, 0.95, 1.0), (zp + 0.95, 0.8, 0.88)):
+        r = ring(zc_, f, 0.0)
+        for k in (12, 20, 28):
+            p, q = Vector(r[k - 2]), Vector(r[k + 2])
+            c = Vector(r[k]) + Vector((0.03, 0, 0))
+            d = (q - p).normalized()
+            panel("quarter_window", c, d, (0, 0, 1), 0.45, h, M["window"], 0.03, side=True)
+            panel("quarter_window_frame", c + Vector((0.01, 0, 0)), d, (0, 0, 1), 0.55, 0.06, M["dark"], 0.05, side=True)
+            panel("quarter_window_frame", c + Vector((0.01, 0, 0)), d, (0, 0, 1), 0.05, h + 0.06, M["dark"], 0.05, side=True)
+        for k in (8, 16, 24, 32):
+            p = Vector(r[k]) + Vector((0.05, 0, 0))
+            cyl("quarter_gallery_rib", p - Vector((0, 0, h / 2 + 0.1)), p + Vector((0, 0, h / 2 + 0.1)), 0.06, M["carved"], seg=6, side=True)
+
+
+# ------------------------------------------------------------------ the sides above the decks
+def build_upper_works():
+    """Open rails on the castles' sides (turned balusters on the half deck
+    and forecastle, posts and rails on the poop and poop royal, as on the
+    scan), carved brackets on the waist between the upper ports."""
+    def side_x(s, z):
+        return half_breadth(s, z) - 0.1
+
+    def run(s0, s1, kind):
+        ss = frange(s0, s1, {"baluster": 0.3, "timber": 0.55}.get(kind, 0.85))
+        top = []
+        for s in ss:
+            zt = rail_top(s) + 0.07
+            x = side_x(s, zt)
+            if kind == "timber":
+                box("side_timber", (x, Y(s), zt + 0.5), (0.15, 0.15, 1.0), M["carved"], side=True)
+                sphere("side_timber_head", (x + 0.05, Y(s), zt + 0.86), 0.11, M["carved"], seg=8, side=True)
+            elif kind == "baluster":
+                cyl("side_baluster", (x, Y(s), zt), (x, Y(s), zt + 0.78), 0.035, M["oak_z"], seg=6, side=True)
+                sphere("side_baluster_knop", (x, Y(s), zt + 0.4), 0.06, M["oak_z"], seg=6, side=True)
+            else:
+                box("side_post", (x, Y(s), zt + 0.42), (0.12, 0.12, 0.84), M["dark_z"], side=True)
+            top.append(Vector((x, Y(s), zt + 0.86)))
+        rod("side_rail", top, 0.06, M["dark"], seg=6, side=True)
+        if kind != "baluster":
+            rod("side_rail_mid", [p - Vector((0, 0, 0.42)) for p in top], 0.04, M["dark"], seg=5, side=True)
+
+    run(s_aft(rail_top(-1.0)) + 0.55, BRK_ROYAL - 0.1, "post")
+    run(BRK_ROYAL + 0.1, BRK_POOP - 0.1, "post")
+    run(BRK_POOP + 0.15, BRK_QD - 0.15, "timber")
+    run(BRK_FC + 0.15, s_fwd(rail_top(49.0)) - 0.6, "timber")
+    # carved brackets up the waist's high side, between the upper ports
+    for k in range(12):
+        s = 9.0 + k * 2.95 + 1.475
+        if not (BRK_QD + 0.4 < s < BRK_FC - 0.4):
+            continue
+        z0 = WALES[-1][0] + sheer(s) + 0.16
+        z1 = rail_top(s) - 0.05
+        p, n, ts, tz = hull_frame(s, (z0 + z1) / 2)
+        panel("waist_bracket", p + n * 0.1, ts, tz, 0.2, z1 - z0, M["carved"], 0.2, side=True)
+        sphere("waist_bracket_head", p + n * 0.22 + tz * ((z1 - z0) / 2 - 0.15), 0.12, M["carved"], seg=8, side=True)
+        sphere("waist_bracket_scroll", p + n * 0.2 - tz * ((z1 - z0) / 2 - 0.12), 0.1, M["carved"], seg=8, side=True)
 
 
 # ------------------------------------------------------------------ head
 def build_head():
-    zs = frange(-1.6, Z_STEMHEAD - 0.1, 0.4)
+    zh = Z_STEMHEAD
+    zs = frange(-1.6, zh - 0.1, 0.4)
     prof = [(s_fwd(z) + 0.2, z) for z in zs]
-    prof += [(53.4, 4.62), (56.0, 4.55), (56.7, 4.1), (56.2, 3.3), (54.6, 2.3), (52.6, 1.0), (51.0, -0.6), (s_fwd(-1.6) + 0.4, -1.75)]
+    prof += [(53.8, zh - 0.12), (56.4, zh - 0.25), (57.2, zh - 0.7), (56.7, zh - 1.6), (55.0, zh - 2.7), (53.0, zh - 4.0),
+             (51.4, -0.5), (s_fwd(-1.6) + 0.4, -1.75)]
     extrude_x("head_knee", prof, -0.2, 0.2, M["dark"])
-    # head rails, both sides, and the timbers between them
     for sgn in (1,):
-        up = curve_pts((half_breadth(46.6, 5.75) + 0.05, Y(46.6), 5.75), (2.3, Y(52.0), 4.9), (0.28, Y(55.9), 5.0), 12)
-        lo = curve_pts((half_breadth(47.6, 4.25) + 0.05, Y(47.6), 4.25), (1.7, Y(51.8), 3.5), (0.26, Y(55.4), 3.9), 12)
+        up = curve_pts((half_breadth(47.0, 6.4) + 0.05, Y(47.0), 6.4), (2.4, Y(52.4), 5.5), (0.3, Y(56.3), 5.5), 12)
+        lo = curve_pts((half_breadth(48.0, 4.7) + 0.05, Y(48.0), 4.7), (1.8, Y(52.2), 4.0), (0.28, Y(55.9), 4.4), 12)
         rod("head_rail", up, 0.1, M["red"], seg=8, side=True)
         rod("head_rail", lo, 0.09, M["red"], seg=8, side=True)
         for k in (3, 6, 9):
             cyl("head_timber", lo[k], up[k], 0.07, M["carved"], seg=6, side=True)
-        # cathead and anchor
-        sc, zc = 46.2, 6.35
+        for k in (2, 5, 8):           # small figures on the head rails, as on Vasa's beak
+            p = up[k]
+            figure("head_figure", (p.x - 0.05, p.y, p.z + 0.05), 0.85, -0.5 * math.pi + 0.3, side=True)
+        sc, zc = 46.6, D_FC + sheer(46.6) + 0.45
         p0 = Vector((half_breadth(sc, zc) - 0.3, Y(sc - 0.4), zc))
         p1 = Vector((half_breadth(sc, zc) + 1.5, Y(sc + 0.8), zc + 0.15))
         cyl("cathead", p0, p1, 0.17, M["dark"], seg=8, side=True)
         sphere("cathead_end", p1 + Vector((0.12, 0.08, 0)), 0.2, M["gold"], seg=8, side=True)
-        xa = half_breadth(45.6, 3.4) + 0.55
-        top, crown = Vector((xa, Y(45.9), 6.0)), Vector((xa, Y(45.9), 1.7))
+        xa = half_breadth(46.0, 3.8) + 0.55
+        top, crown = Vector((xa, Y(46.3), zc - 0.4)), Vector((xa, Y(46.3), zc - 4.3))
         cyl("anchor_shank", top, crown, 0.11, M["iron"], seg=8, side=True)
-        box("anchor_stock", (xa, Y(45.9), 5.75), (0.22, 3.2, 0.22), M["dark"], side=True)
+        box("anchor_stock", (xa, Y(46.3), top.z - 0.25), (0.22, 3.2, 0.22), M["dark"], side=True)
         for d in (-1, 1):
-            tip = Vector((xa + 0.12, Y(45.9 + d * 1.25), 2.85))
+            tip = Vector((xa + 0.12, Y(46.3 + d * 1.25), crown.z + 1.15))
             cyl("anchor_arm", crown, tip, 0.1, M["iron"], seg=8, side=True)
             panel("anchor_fluke", tip + Vector((0.0, -d * 0.12, -0.2)), (0, d, 0.45), (0, -0.45, 1), 0.55, 0.6, M["iron"], 0.05, side=True)
         cyl("anchor_ring", top + Vector((0, 0, 0.1)), top + Vector((0, 0, 0.45)), 0.16, M["iron"], seg=8, cap=False, side=True)
         rod("anchor_cable", [p1 + Vector((0, 0, -0.1)), top + Vector((0, 0, 0.4))], 0.045, M["rope"], seg=5, side=True)
     # beakhead grating between the rails
     bm = bmesh.new()
-    zg = 4.88
+    zg = zh + 0.08
     prev = None
-    for s in frange(s_fwd(zg) - 0.05, 55.0, 0.35):
-        w = lerp(2.0, 0.35, (s - 50.7) / 4.3)
+    for s in frange(s_fwd(zg) - 0.05, 55.4, 0.35):
+        w = lerp(2.1, 0.35, (s - 51.0) / 4.4)
         cur = [bm.verts.new((lerp(-w, w, k / 4), Y(s), zg)) for k in range(5)]
         if prev:
             for k in range(4):
                 bm.faces.new([prev[k], prev[k + 1], cur[k + 1], cur[k]])
         prev = cur
     new_obj("beak_grating", bm, M["grating"])
-    # figurehead: a leaping lion, gilded
-    gold = M["gold"]
-    tilt = Matrix.Rotation(math.radians(-24), 3, "X")
-    sphere("lion_body", (0, Y(56.3), 5.25), 1.0, gold, seg=16, scale=(0.5, 1.35, 0.55), rot=tilt)
-    sphere("lion_mane", (0, Y(57.25), 5.95), 0.68, gold, seg=14, scale=(1.0, 0.8, 1.05))
-    sphere("lion_head", (0, Y(57.6), 6.05), 0.46, gold, seg=12, scale=(0.9, 1.1, 0.95))
-    sphere("lion_jaw", (0, Y(57.95), 5.85), 0.25, gold, seg=10, scale=(0.9, 1.2, 0.7))
-    for sx in (-0.3, 0.3):
-        cyl("lion_leg", (sx, Y(57.0), 5.4), (sx * 1.3, Y(57.9), 4.85), 0.14, gold, seg=8, r2=0.1)
-        sphere("lion_paw", (sx * 1.3, Y(57.95), 4.8), 0.15, gold, seg=8)
-        cyl("lion_leg", (sx, Y(55.6), 5.0), (sx * 1.1, Y(55.4), 4.55), 0.15, gold, seg=8, r2=0.11)
-    rod("lion_tail", curve_pts((0, Y(55.3), 5.3), (0, Y(54.6), 6.2), (0, Y(55.2), 6.9), 6), 0.06, gold, seg=6)
-    # knightheads either side of the bowsprit, the bowsprit bitts
-    for x in (-0.6, 0.6):
-        box("knighthead", (x, Y(50.0), D_FC + sheer(50) + 1.15), (0.3, 0.35, 2.5), M["carved"])
-    box("bowsprit_bitts", (0, Y(38.6), D_FC + sheer(38.6) + 0.55), (1.6, 0.35, 0.3), M["oak_x"])
+    build_lion((0.0, 56.9, zh - 0.15))
+    for x in (-0.6, 0.6):           # knightheads either side of the bowsprit
+        box("knighthead", (x, Y(50.3), D_FC + sheer(50.3) + 1.2), (0.3, 0.35, 2.5), M["carved"])
+    box("bowsprit_bitts", (0, Y(39.4), D_FC + sheer(39.4) + 0.55), (1.6, 0.35, 0.3), M["oak_x"])
     for x in (-0.65, 0.65):
-        box("bowsprit_bitt", (x, Y(38.6), D_FC + sheer(38.6) + 0.45), (0.3, 0.3, 1.0), M["oak_z"])
+        box("bowsprit_bitt", (x, Y(39.4), D_FC + sheer(39.4) + 0.45), (0.3, 0.3, 1.0), M["oak_z"])
+    # figures on the beakhead bulkhead, between its doors
+    zb = Z_STEMHEAD + 0.1
+    for x in (-1.6, -0.55, 0.55, 1.6):
+        figure("bulkhead_figure", (x, Y(s_fwd(zb + 1) + 0.25), zb), 1.25, 0.0)
+
+
+def build_lion(base):
+    """The figurehead, a leaping lion 3.2 m long, modelled in metaballs so the
+    body, mane and limbs run into one another like carving."""
+    bx, bs, bz = base
+    mb = bpy.data.metaballs.new("lion")
+    mb.resolution = 0.07
+    mb.threshold = 0.6
+
+    def el(s, z, r, kind="BALL", size=(1, 1, 1), rot=None, x=0.0):
+        e = mb.elements.new()
+        e.type = kind
+        e.co = (bx + x, Y(bs + s), bz + z)
+        e.radius = r
+        if kind != "BALL":
+            e.size_x, e.size_y, e.size_z = size
+        if rot is not None:
+            e.rotation = rot.to_quaternion()
+        return e
+
+    up = Matrix.Rotation(math.radians(28), 3, "X")
+    el(-0.9, 0.95, 0.75, "ELLIPSOID", (0.55, 1.15, 0.6), up)          # body, rising forward
+    el(0.15, 1.45, 0.7, "ELLIPSOID", (0.8, 0.75, 0.85))               # chest under the mane
+    el(0.45, 1.95, 0.72, "ELLIPSOID", (1.05, 0.8, 1.05))              # mane
+    el(0.85, 2.05, 0.46, "ELLIPSOID", (0.85, 1.0, 0.9))               # head
+    el(1.2, 1.88, 0.26, "ELLIPSOID", (0.8, 1.1, 0.7))                 # muzzle
+    for sx in (-1, 1):
+        el(0.95, 1.1, 0.22, "CAPSULE", (0.55, 1, 1), Matrix.Rotation(math.radians(55), 3, "Y") @ Matrix.Rotation(math.radians(-60), 3, "X"), x=sx * 0.3)
+        el(1.25, 0.65, 0.2, x=sx * 0.32)                                 # forepaws, reaching
+        el(-1.5, 0.45, 0.24, "CAPSULE", (0.45, 1, 1), Matrix.Rotation(math.radians(80), 3, "Y"), x=sx * 0.32)
+        el(-1.25, 0.1, 0.19, x=sx * 0.34)                                # hind paws on the knee
+        el(0.75, 2.45, 0.13, x=sx * 0.28)                                # ears
+    for k in range(6):                                                   # tail curling up
+        a = k / 5
+        el(-1.75 - 0.25 * math.sin(a * 2), 0.9 + a * 1.1, 0.1 - 0.008 * k)
+    ob = bpy.data.objects.new("lion_mb", mb)
+    bpy.context.scene.collection.objects.link(ob)
+    dg = bpy.context.evaluated_depsgraph_get()
+    me = bpy.data.meshes.new_from_object(ob.evaluated_get(dg))
+    bpy.data.objects.remove(ob, do_unlink=True)
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    print("lion", len(bm.faces), "faces")
+    new_obj("lion", bm, M["gold"], smooth_shade=True)
 
 
 # ------------------------------------------------------------------ deck fittings
 def build_deck_fittings():
     zu = lambda s: D_UGD + sheer(s)  # noqa: E731
     # capstan in the waist, abaft the mainmast
-    s = 22.75
+    s = 26.2
     z = zu(s)
     cyl("capstan_barrel", (0, Y(s), z), (0, Y(s), z + 0.95), 0.36, M["oak_z"], seg=12, r2=0.3)
     cyl("capstan_head", (0, Y(s), z + 0.95), (0, Y(s), z + 1.25), 0.6, M["dark"], seg=14)
@@ -1135,7 +1376,7 @@ def build_spars():
                          "peak": g(peak + Vector((0, 0, -0.2))), "clew": g(clew), "pivot": g(Vector((0, Y(mz["s"]), 0)))})
 
     # bowsprit with its sprit topmast; spritsail yards hang under it
-    heel = Vector((0, Y(41.5), D_UGD + sheer(41.5) + 0.6))
+    heel = Vector((0, Y(42.3), D_UGD + sheer(42.3) + 0.6))
     a = math.radians(24)
     d = Vector((0, math.cos(a), math.sin(a)))
     Lb = 24.0
@@ -1175,8 +1416,8 @@ def build_spars():
 # ------------------------------------------------------------------ standing rigging
 def build_rigging():
     rope, dead, iron = M["rope"], M["deadeye"], M["iron"]
-    zch = {"fore": 5.05, "main": 5.05, "mizzen": 7.45}
-    chan = {"fore": (35.6, 41.4, 6), "main": (18.6, 25.2, 7), "mizzen": (5.8, 9.2, 4)}
+    zch = {"fore": 5.3, "main": 5.3, "mizzen": 7.9}
+    chan = {"fore": (35.6, 42.0, 8), "main": (18.4, 25.4, 9), "mizzen": (5.2, 9.0, 5)}
     for name, m in MASTS.items():
         if name.startswith("_"):
             continue
@@ -1212,7 +1453,7 @@ def build_rigging():
             ys, zs = half_breadth(s, z - 1.35) + 0.04, z - 1.35
             cyl("chainplate", lo - Vector((0, 0, 0.15)), Vector((ys, Y(s), zs)), 0.04, iron, seg=5, side=True)
             top = Vector((mast_r(m, head.z) + 0.06, Y(m["s"] + lerp(0.35, -0.45, k / (n - 1))), head.z))
-            cyl("shroud", hi + dd * 0.15, top, 0.05, rope, seg=5, side=True)
+            cyl("shroud", hi + dd * 0.15, top, 0.065, rope, seg=5, side=True)
             shrouds.append((hi + dd * 0.15, top))
         ratlines(shrouds, zch[name] + 2.4, m["top"] - 1.1)
         # futtock shrouds, topmast shrouds with their ratlines, topgallant shrouds
@@ -1227,7 +1468,7 @@ def build_rigging():
             cyl("deadeye", base - Vector((0.05, 0, 0)), base + Vector((0.05, 0, 0)), 0.12, dead, seg=8, side=True)
             cyl("futtock", base, Vector((mast_r(m, m["top"] - 2.4) + 0.05, Y(m["s"]), m["top"] - 2.4)), 0.035, iron, seg=4, side=True)
             top = Vector((0.24, Y(m["st"] + lerp(0.2, -0.2, k / (nt - 1))), tm_head.z))
-            cyl("tm_shroud", base + Vector((0, 0, 0.15)), top, 0.04, rope, seg=5, side=True)
+            cyl("tm_shroud", base + Vector((0, 0, 0.15)), top, 0.05, rope, seg=5, side=True)
             tshrouds.append((base + Vector((0, 0, 0.15)), top))
         ratlines(tshrouds, m["top"] + 1.0, tm_head.z - 1.0)
         if m["ct"]:
@@ -1252,7 +1493,7 @@ def build_rigging():
     stay(Vector((0, Y(mf["sg"] + 0.12), mf["tg"] - 3.9)), bs["top"] - Vector((0, 0, 0.3)), 0.035)
     stay(Vector((0, Y(mz["s"] + 0.3), mz["top"] - 0.4)), Vector((0, Y(mm["s"] - 0.6), 9.4)), 0.06)
     stay(Vector((0, Y(mz["st"] + 0.2), mz["tm"] - 1.6)), Vector((0, Y(mm["s"]), mm["top"] + 0.4)), 0.04)
-    for name, aft in (("fore", (33.8, 34.6)), ("main", (16.8, 17.6)), ("mizzen", (4.6,))):
+    for name, aft in (("fore", (34.0, 34.8)), ("main", (16.8, 17.6)), ("mizzen", (4.2,))):
         m = MASTS[name]
         tz = (m["ct"] or m["tm"] - 1.2) - 0.25
         for s in aft:
@@ -1276,7 +1517,7 @@ def ratlines(shrouds, z0, z1, step=0.42):
             pts.append(a.lerp(b, (z - a.z) / (b.z - a.z)))
         else:
             for p, q in zip(pts[:-1], pts[1:]):
-                cyl("ratline", p, q, 0.014, M["rope"], seg=3, side=True)
+                cyl("ratline", p, q, 0.02, M["rope"], seg=3, side=True)
 
 
 # ------------------------------------------------------------------ rudder
@@ -1334,6 +1575,7 @@ build_wales()
 build_ports()
 build_decks()
 build_stern()
+build_upper_works()
 build_head()
 build_deck_fittings()
 build_spars()
@@ -1447,12 +1689,16 @@ def paint_hull():
     segp = (S + off) / 6.6
     seg = np.floor(segp)
     h1 = np.sin(idx * 12.9898 + seg * 78.233) * 43758.5453
-    tone = 0.84 + 0.3 * (h1 - np.floor(h1))
+    tone = 0.72 + 0.55 * (h1 - np.floor(h1))
     grain = fnoise(H, W, H // 6, W // 160, 1) * 0.6 + fnoise(H, W, H // 2, W // 24, 2) * 0.4
     big = fnoise(H, W, 12, 48, 3)
-    oak = np.array([0.2, 0.124, 0.068], np.float32)
-    col = oak[None, None, :] * (tone * (0.8 + 0.4 * grain) * (0.85 + 0.3 * big))[..., None]
+    oak = np.array([0.17, 0.114, 0.07], np.float32)
+    col = oak[None, None, :] * (tone * (0.7 + 0.6 * grain) * (0.8 + 0.4 * big))[..., None]
+    # weathering: pale bleached streaks running down, dark wet streaks
+    pale = np.clip(fnoise(H, W, 10, W // 5, 21) * 2.2 - 1.2, 0, 1) * 0.5
+    col = col * (1 - pale[..., None]) + np.array([0.2, 0.18, 0.15]) * pale[..., None]
     seam = (fz < 0.055) | ((segp - seg) < 0.003)
+    worn = np.clip((fz - 0.78) / 0.2, 0, 1) * (0.6 + 0.4 * grain)
     rough = np.full((H, W), 0.82, np.float32)
     height = grain * 0.25
     # tarred bottom, weed at the waterline, salt above it
@@ -1467,14 +1713,14 @@ def paint_hull():
     rough = np.where(Zg < wl, 0.55, rough)
     # red upper works above the top wale, framed panels, gilt mouldings
     rt = np.vectorize(rail_top, otypes=[np.float32])(s)[None, :].repeat(H, 0)
-    red_on = zr > 4.52 + 0.14
-    red = np.array([0.31, 0.062, 0.04], np.float32) * (0.85 + 0.3 * grain)[..., None] * (0.9 + 0.2 * big)[..., None]
+    red_on = zr > WALES[-1][0] + WALES[-1][1] / 2
+    red = np.array([0.13, 0.062, 0.04], np.float32) * (0.85 + 0.3 * grain)[..., None] * (0.9 + 0.2 * big)[..., None]
     col = np.where(red_on[..., None], red, col)
     rough = np.where(red_on, 0.66, rough)
     pil = (np.abs(((S + 0.6) % 1.3) - 0.65) < 0.05) & red_on & (Zg < rt - 0.18)
     col = np.where(pil[..., None], np.array([0.09, 0.05, 0.035]), col)
-    gilt = np.array([0.5, 0.36, 0.13], np.float32)
-    for line in ((np.abs(zr - 4.84) < 0.03) & red_on, (np.abs(Zg - (rt - 0.16)) < 0.028) & (Zg < rt),
+    gilt = np.array([0.4, 0.29, 0.11], np.float32)
+    for line in ((np.abs(zr - (WALES[-1][0] + 0.32)) < 0.03) & red_on, (np.abs(Zg - (rt - 0.16)) < 0.028) & (Zg < rt),
                  red_on & (np.abs(zr - (D_QD + 0.18)) < 0.025)):
         col = np.where(line[..., None], gilt * (0.8 + 0.4 * grain)[..., None], col)
         rough = np.where(line, 0.4, rough)
@@ -1494,6 +1740,7 @@ def paint_hull():
         jd = max(0, j0 - int(1.3 / texel_z))
         fade = np.linspace(0, 1, j0 - jd, dtype=np.float32)[:, None]
         col[jd:j0, i0 + 3:i1 - 3] *= (1 - 0.35 * fade * streak[jd:j0, i0 + 3:i1 - 3])[..., None]
+    col = col * (1 + 0.35 * worn[..., None])
     # seams last, rain streaks and grime over all
     col = np.where(seam[..., None], col * 0.35, col)
     height = height - seam * 1.0
@@ -1711,12 +1958,12 @@ def preview():
     sc.cycles.samples = 24
     sc.cycles.use_denoising = True
     sc.render.resolution_x, sc.render.resolution_y = 1280, 800
-    views = {
-        "profile": ((95.0, 4.0, 14.0), (0.0, 4.0, 15.0), 32),
-        "quarter": ((55.0, -62.0, 14.0), (0.0, -2.0, 13.0), 34),
-        "bow": ((40.0, 70.0, 8.0), (0.0, 10.0, 12.0), 34),
-        "stern": ((12.0, -48.0, 9.0), (0.0, -26.0, 7.0), 42),
-        "deck": ((22.0, -40.0, 26.0), (0.0, 2.0, 5.0), 30),
+    views = {         # the first two from where the scans of Vasa were looked at
+        "ref_side": ((-36.0, Y(30.0), 0.4), (0.0, Y(22.0), 7.5), 18),
+        "ref_stern": ((-17.0, Y(-30.0), 3.5), (0.0, Y(-1.0), 9.0), 32),
+        "profile": ((-125.0, 3.0, 15.0), (0.0, 3.0, 16.0), 42),
+        "bow": ((34.0, Y(75.0), 7.0), (0.0, Y(40.0), 10.0), 30),
+        "deck": ((24.0, -45.0, 30.0), (0.0, 2.0, 6.0), 28),
     }
     for name, (pos, target, lens) in views.items():
         cd.lens = lens

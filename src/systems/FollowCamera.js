@@ -15,8 +15,8 @@ const _p = new THREE.Vector3();
 const _c = new THREE.Vector3();
 const _d = new THREE.Vector3();
 const _q = new THREE.Vector3();
-function inside(p) {
-  return KEEP_OUT.some((b) => p.x > b[0] && p.x < b[1] && p.y > b[2] && p.y < b[3] && p.z > b[4] && p.z < b[5]);
+function inside(p, boxes) {
+  return boxes.some((b) => p.x > b[0] && p.x < b[1] && p.y > b[2] && p.y < b[3] && p.z > b[4] && p.z < b[5]);
 }
 
 // Chase camera that trails behind the boat's heading, damped, with a subtle
@@ -33,6 +33,8 @@ export class FollowCamera {
     this.zoom = 1;
     this.yaw = 0;
     this.pitch = 0;
+    // framing and keep-out boxes for the ship followed (the trawler's by default)
+    this.cfg = { distance: CAMERA.distance, height: CAMERA.height, lookHeight: CAMERA.lookHeight, keepOut: KEEP_OUT };
   }
 
   orbit(dx, dy) {
@@ -58,7 +60,7 @@ export class FollowCamera {
   _fit() {
     const aspect = this.camera.aspect || 1;
     const k = aspect < 1 ? 1 + (1 - aspect) * 1.15 : 1;
-    return { dist: CAMERA.distance * k, height: CAMERA.height * (aspect < 1 ? 1 + (1 - aspect) * 0.5 : 1) };
+    return { dist: this.cfg.distance * k, height: this.cfg.height * (aspect < 1 ? 1 + (1 - aspect) * 0.5 : 1) };
   }
 
   update(dt, boat, time) {
@@ -91,7 +93,7 @@ export class FollowCamera {
 
     this._look.set(
       boat.position.x,
-      boat.position.y + CAMERA.lookHeight,
+      boat.position.y + this.cfg.lookHeight,
       boat.position.z,
     );
     this._lookCurrent.lerp(this._look, k);
@@ -107,14 +109,15 @@ export class FollowCamera {
     m.updateMatrixWorld();
     _inv.copy(m.matrixWorld).invert();
     _p.copy(this.camera.position).applyMatrix4(_inv);
-    if (!inside(_p)) return;
-    _c.set(0, CAMERA.lookHeight, 0);
+    const boxes = this.cfg.keepOut;
+    if (!inside(_p, boxes)) return;
+    _c.set(0, this.cfg.lookHeight, 0);
     _d.copy(_p).sub(_c);
     if (_d.lengthSq() < 1e-4) _d.set(0, 0.3, 1);
     let t = 1;
     for (let i = 0; i < 80; i++) {
       _q.copy(_c).addScaledVector(_d, t);
-      if (!inside(_q)) break;
+      if (!inside(_q, boxes)) break;
       t *= 1.05;
     }
     this.camera.position.copy(_q.applyMatrix4(m.matrixWorld));
@@ -123,7 +126,7 @@ export class FollowCamera {
   snap(boat) {
     const [ox, oy, oz] = this._offset(boat);
     this.camera.position.set(boat.position.x + ox, boat.position.y + oy, boat.position.z + oz);
-    this._lookCurrent.set(boat.position.x, boat.position.y + CAMERA.lookHeight, boat.position.z);
+    this._lookCurrent.set(boat.position.x, boat.position.y + this.cfg.lookHeight, boat.position.z);
     this.camera.lookAt(this._lookCurrent);
   }
 }

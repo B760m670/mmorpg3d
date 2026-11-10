@@ -88,7 +88,16 @@ export const PRESETS = {
 // The trawler is put away for now: the game is turning to a large old
 // sailing ship (being built). With trawler: false her model, people, quay and
 // bridge systems are hidden and the camera looks round the spot she lay at.
-export const SHIP = { trawler: false };
+export const SHIP = {
+  trawler: false,
+  // The galleon starts lying off Vindstad, deep in Reinefjorden: the
+  // largest stretch of level land beside deep water in the area (5.7 ha;
+  // 8 m of water 14 m off the shore; sheltered from the swell by the
+  // mountains all round), where a small harbour could be built. She lies
+  // 40 m off the beach in 11-13 m of water, bow toward the fjord's mouth
+  // (course 100).
+  spawn: { x: -5965, z: -3332, heading: -100 },
+};
 
 export const BOAT = {
   // Principal dimensions of the modelled vessel (Macduff 23.95 m stern trawler).

@@ -161,11 +161,11 @@ export class Diver {
   }
 
   // Close enough to the ship to climb the ladder aboard?
-  nearShip(model) {
+  nearShip(model, halfLen = 12, halfBeam = 7.2) {
     if (!model || !this.atSurface) return false;
     _loc.copy(this.pos);
     model.worldToLocal(_loc);
-    return Math.abs(_loc.z) < 12 && Math.abs(_loc.x) < 7.2;
+    return Math.abs(_loc.z) < halfLen && Math.abs(_loc.x) < halfBeam;
   }
 
   updateCamera() {
