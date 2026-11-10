@@ -1,36 +1,36 @@
 import * as THREE from 'three';
-import META from '../assets/materials/materials.json';
+import DATA from '../../public/materials/materials.json';
 
-// The ship's own materials (tools/make_materials.py): seamless PBR textures
-// at about 2 mm a pixel, laid in metres along the grain of each part. Each
-// is colour + normal + ORM (roughness in G, metalness in B, as glTF).
+// The ship's materials: real, photo-scanned textures (Poly Haven and
+// ambientCG, CC0; tools/pack_scans.py), laid in metres along the grain of
+// each part. Each is colour + normal + ORM (occlusion R, roughness G,
+// metalness B, as glTF). They are separate files next to the page (public/
+// materials), loaded when the ship is built.
 
-const urls = import.meta.glob('../assets/materials/*.webp', { eager: true, query: '?url', import: 'default' });
-const url = (name, kind) => urls[`../assets/materials/${name}_${kind}.webp`];
-
+const META = DATA.materials;
+const BASE = `${import.meta.env.BASE_URL}materials/`;
 const loader = new THREE.TextureLoader();
 const cache = new Map();
 
 function tex(name, kind, renderer) {
   const key = `${name}_${kind}`;
   if (cache.has(key)) return cache.get(key);
-  const t = loader.load(url(name, kind));
+  const t = loader.load(`${BASE}${name}_${kind}.webp`);
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.colorSpace = kind === 'col' ? THREE.SRGBColorSpace : THREE.NoColorSpace;
   t.anisotropy = renderer ? renderer.capabilities.getMaxAnisotropy() : 8;
+  const m = META[name];
+  t.repeat.set(1 / m.size[0], 1 / m.size[1]);      // UVs are in metres
   cache.set(key, t);
   return t;
 }
 
-// name: one of the materials; the UVs are in metres and the texture covers
-// META[name].size metres, so its repeat is 1 / size.
 export function shipMaterial(name, renderer, opts = {}) {
   const m = META[name];
   if (!m) throw new Error(`no material ${name}`);
   const map = tex(name, 'col', renderer), normalMap = tex(name, 'nrm', renderer), orm = tex(name, 'orm', renderer);
-  for (const t of [map, normalMap, orm]) t.repeat.set(1 / m.size[0], 1 / m.size[1]);
   return new THREE.MeshStandardMaterial({
-    name, map, normalMap, roughnessMap: orm, metalnessMap: orm,
+    name, map, normalMap, roughnessMap: orm, metalnessMap: orm, aoMap: opts.ao === false ? null : orm,     // the scan's own crevices
     roughness: 1, metalness: 1, envMapIntensity: opts.env ?? 0.7,
     normalScale: new THREE.Vector2(opts.normal ?? 1, opts.normal ?? 1),
     color: opts.tint ? new THREE.Color(...opts.tint) : 0xffffff,
@@ -59,3 +59,4 @@ export function metricUV(geo, axis = 'x') {
 }
 
 export const MATERIALS = META;
+export const CREDITS = DATA.credits;
