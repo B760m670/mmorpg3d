@@ -73,12 +73,14 @@ export class Spray {
     const fwd = _v.set(-Math.sin(boat.heading), 0, -Math.cos(boat.heading));
     const fx = fwd.x, fz = fwd.z;
     const rx = -fz, rz = fx;   // starboard
+    // the bow, from the shoulders to the stem (the vessel's sprayAt)
+    const b = boat.sprayAt || { from: 8, len: 3.5, half: 2.6, taper: 0.5, up: 0.8 };
     for (let k = 0; k < n; k++) {
       const i = this.next;
       this.next = (this.next + 1) % this.n;
       const side = Math.random() < 0.5 ? -1 : 1;
-      const along = 8 + Math.random() * 3.5;          // shoulders to stem
-      const local = _l.set(side * (2.6 - (along - 8) * 0.5) * (0.8 + Math.random() * 0.4), 0.8 + Math.random(), -along);
+      const along = b.from + Math.random() * b.len;
+      const local = _l.set(side * Math.max(0.3, b.half - (along - b.from) * b.taper) * (0.8 + Math.random() * 0.4), b.up + Math.random(), -along);
       local.applyMatrix4(g.matrixWorld);
       this.pos[i * 3] = local.x; this.pos[i * 3 + 1] = local.y; this.pos[i * 3 + 2] = local.z;
       const out = (2 + Math.random() * 5) * strength;

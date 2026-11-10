@@ -3,7 +3,7 @@
 // of the code stays structural. Day/night are presets of the same scene.
 
 // Terrain: the real Reine area of Lofoten, see world/Terrain.js and
-// tools/build_terrain.py. The boat starts in open water south-east of Reine.
+// tools/build_terrain.py.
 
 
 // Sea states (see world/OceanSpectrum.js). The wind sea follows the JONSWAP
@@ -85,12 +85,9 @@ export const PRESETS = {
   },
 };
 
-// The trawler is put away for now: the game is turning to a large old
-// sailing ship (being built). With trawler: false her model, people, quay and
-// bridge systems are hidden and the camera looks round the spot she lay at.
+// The ship: a large sailing ship of the 1620s (entities/Galleon.js).
 export const SHIP = {
-  trawler: false,
-  // The galleon starts lying off Vindstad, deep in Reinefjorden: the
+  // She starts lying off Vindstad, deep in Reinefjorden: the
   // largest stretch of level land beside deep water in the area (5.7 ha;
   // 8 m of water 14 m off the shore; sheltered from the swell by the
   // mountains all round), where a small harbour could be built. She lies
@@ -98,51 +95,6 @@ export const SHIP = {
   // (course 100).
   spawn: { x: -5965, z: -3332, heading: -100 },
 };
-
-export const BOAT = {
-  // Principal dimensions of the modelled vessel (Macduff 23.95 m stern trawler).
-  length: 23.95,
-  beam: 9.2,
-  rideHeight: 0.35,      // model lift above the design waterline (light ship)
-
-  // Propulsion & resistance. Data sheet: 1500 hp, 2.7 m propeller in nozzle,
-  // 20 t bollard pull. Mass ~ displacement (~410 t) plus surge added mass.
-  mass: 450000,          // kg
-  bollardPull: 196000,   // N (20 t)
-  maxSpeed: 6.2,         // m/s at full ahead (~12 kn)
-  asternEfficiency: 0.55,
-  rpmMax: 1200,          // engine rpm at full
-  rpmLag: 2.2,           // s, engine response to a telegraph order
-
-  // Steering: rudder limits per SOLAS (35 deg, ~2.5 deg/s steering gear),
-  // first-order Nomoto yaw model tuned for a ~100 m turning circle at 12 kn.
-  rudderMax: 35,         // deg
-  rudderRate: 2.5,       // deg/s
-  wheelRate: 14,         // deg/s the helmsman winds the wheel order
-  yawGain: 0.1,          // rad/s per rad of rudder at refSpeed
-  yawTime: 7,            // s
-  refSpeed: 6,           // m/s
-  heelFactor: 0.18,      // heel (rad) per (m/s x rad/s) in a turn
-  // Natural frequencies (rad/s) and damping ratios of the ship's motions:
-  // roll period ~8 s, pitch ~5 s, heave ~5.5 s for a 24 m trawler.
-  seakeeping: { rollW: 0.785, rollZeta: 0.12, pitchW: 1.25, pitchZeta: 0.45, heaveW: 1.15, heaveZeta: 0.55 },
-
-  // Where the helmsman stands on the bridge (model space: x, y up, z aft).
-  helm: [0, 5.4, -4.75],
-  bridgeSpawn: [0, 5.4, -2.2],
-};
-
-// Engine-order telegraph, astern to ahead.
-export const TELEGRAPH = [
-  { name: 'FULL ASTERN', power: -1.0 },
-  { name: 'HALF ASTERN', power: -0.6 },
-  { name: 'SLOW ASTERN', power: -0.35 },
-  { name: 'STOP', power: 0 },
-  { name: 'DEAD SLOW AHEAD', power: 0.2 },
-  { name: 'SLOW AHEAD', power: 0.4 },
-  { name: 'HALF AHEAD', power: 0.7 },
-  { name: 'FULL AHEAD', power: 1.0 },
-];
 
 export const PLAYER = {
   eyeHeight: 1.65,
@@ -154,9 +106,9 @@ export const PLAYER = {
 };
 
 export const CAMERA = {
-  distance: 34,
-  height: 9,
-  lookHeight: 5.5,
+  distance: 78,
+  height: 20,
+  lookHeight: 13,
   damping: 2.2,
   fov: 55,
 };

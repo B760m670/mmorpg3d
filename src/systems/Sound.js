@@ -3,19 +3,18 @@
 // The listener is the camera. Point sources are placed in the world and
 // attenuate with distance, carry direction (HRTF on desktop, stereo panning
 // on phones) and lose their highs with distance (air absorption):
-//   - the ship: diesel exhaust, water sloshing against the hull, bow wash,
-//     wind in the rigging, the VHF radio on the bridge, the horn;
+//   - the ship: water working along her sides, the bow wave, wind in the
+//     rigging, canvas flogging when the wind gets on the wrong side of it;
 //   - the land: surf breaking on the nearest cliffs (found by scanning the
-//     terrain around you), gulls near the shore and over the ship in fair
-//     weather;
+//     terrain around you), waterfalls, gulls near the shore and over the
+//     ship in fair weather;
 //   - the sky: thunder from where the lightning struck, arriving after
 //     distance / 343 m/s.
 // Ambient beds that come from everywhere: open-sea waves, wind, rain. Aboard
-// you also hear the engine through the hull and the hull creaking as she
-// works in a seaway; in the wheelhouse the outside is muffled and the rain
-// drums on the roof. Between fjord walls sound rings (reverb grows with how
-// enclosed you are) and the horn comes back as real echoes from the cliffs,
-// delayed by the path length.
+// a wooden ship you hear her timbers work in a seaway; below decks the
+// outside is muffled, the sea is close through the planking and rain drums
+// on the deck overhead. Between the fjord walls sound rings (reverb grows
+// with how enclosed you are).
 // Browsers allow audio only after a tap or key press: start() is called from
 // the first user gesture.
 
@@ -36,8 +35,7 @@ export class SoundScape {
     this.enclosure = 0;        // 0 open sea .. 1 between walls
     this.gullTimer = 3;
     this.creakTimer = 0;
-    this.radioTimer = 15;
-    this.surfPhase = [];
+    this.flapTimer = 0;
   }
 
   // ------------------------------------------------------------ graph
@@ -63,7 +61,7 @@ export class SoundScape {
     this.master.connect(ctx.destination);
     this.master.gain.setTargetAtTime(this.muted ? 0 : 0.9, ctx.currentTime, 0.8);
 
-    // outside world -> muffled from inside the wheelhouse -> master
+    // outside world -> muffled from below decks -> master
     this.muffle = this.filter('lowpass', 18000, 0.5);
     this.muffle.connect(this.master);
     this.outside = ctx.createGain();
@@ -83,47 +81,38 @@ export class SoundScape {
       this.noise().connect(flt).connect(g).connect(dest);
       return { flt, g };
     };
+    this.bed = bed;
     // ambient beds
     this.seaBed = bed('lowpass', 650, 0.4, this.outside);
     this.wind = bed('bandpass', 620, 1.1, this.outside);
     this.rain = bed('highpass', 2600, 0.5, this.outside);
-    this.roof = bed('bandpass', 1100, 0.9, this.master);
     this.deckRain = bed('bandpass', 3800, 1.2, this.outside);
+    // below decks: rain on the planking overhead, the sea just outboard
+    this.overhead = bed('bandpass', 900, 0.8, this.master);
+    this.hullSea = bed('lowpass', 240, 0.7, this.master);
 
     // ship-borne point sources
-    this.exhaust = this.spatial({ ref: 9 });
-    this.slosh = this.spatial({ ref: 5 });
-    this.wash = this.spatial({ ref: 6 });
-    this.rigging = this.spatial({ ref: 8 });
-    this.radio = this.spatial({ ref: 1.5, dest: this.master, reverb: 0 });
-    this.hornSrc = this.spatial({ ref: 40, reverb: 0.6 });
+    this.slosh = this.spatial({ ref: 6 });
+    this.wash = this.spatial({ ref: 8 });
+    this.rigging = this.spatial({ ref: 10 });
+    this.canvas = this.spatial({ ref: 12, reverb: 0.3 });
     this.sloshBed = bed('lowpass', 420, 0.6, this.slosh.input);
-    this.washBed = bed('bandpass', 950, 0.55, this.wash.input);
-    this.whistle = bed('bandpass', 1900, 9, this.rigging.input);
-
-    // diesel: firing-frequency sawtooth + sub-harmonic, pulsed at the firing
-    // rate, mechanical clatter; out through the exhaust (spatial) and, when
-    // aboard, through the hull
-    this.engLP = this.filter('lowpass', 380, 0.9);
-    this.engOut = ctx.createGain();
-    this.engOut.gain.value = 0;
-    this.engA = ctx.createOscillator(); this.engA.type = 'sawtooth';
-    this.engB = ctx.createOscillator(); this.engB.type = 'square';
-    const ga = ctx.createGain(); ga.gain.value = 0.5;
-    const gb = ctx.createGain(); gb.gain.value = 0.25;
-    this.engA.connect(ga).connect(this.engLP);
-    this.engB.connect(gb).connect(this.engLP);
-    this.pulse = ctx.createGain(); this.pulse.gain.value = 0.7;
-    this.lfo = ctx.createOscillator();
-    const lfoDepth = ctx.createGain(); lfoDepth.gain.value = 0.3;
-    this.lfo.connect(lfoDepth).connect(this.pulse.gain);
-    this.engLP.connect(this.pulse).connect(this.engOut);
-    this.clatter = bed('bandpass', 1400, 2.5, this.engOut);
-    this.engOut.connect(this.exhaust.input);
-    this.hull = this.filter('lowpass', 190, 0.7);
-    this.hullGain = ctx.createGain(); this.hullGain.gain.value = 0;
-    this.engOut.connect(this.hull).connect(this.hullGain).connect(this.master);
-    for (const o of [this.engA, this.engB, this.lfo]) o.start();
+    this.washBed = bed('bandpass', 850, 0.5, this.wash.input);
+    // wind in the rigging: a moan of the shrouds and the whistle of the
+    // running rigging, both rising with the wind
+    this.moan = bed('bandpass', 210, 7, this.rigging.input);
+    this.whistle = bed('bandpass', 1500, 9, this.rigging.input);
+    // canvas: the flutter of a sail shaking, and its cracks (events)
+    this.flutter = bed('bandpass', 380, 1.4, this.canvas.input);
+    this.flutterAM = ctx.createGain();
+    this.flutter.g.disconnect();
+    this.flutter.g.connect(this.flutterAM).connect(this.canvas.input);
+    this.flutterLfo = ctx.createOscillator();
+    this.flutterLfo.frequency.value = 7;
+    const lfoDepth = ctx.createGain(); lfoDepth.gain.value = 0.5;
+    this.flutterLfo.connect(lfoDepth).connect(this.flutterAM.gain);
+    this.flutterAM.gain.value = 0.5;
+    this.flutterLfo.start();
 
     // surf on the nearest cliffs
     const nSurf = this.mobile ? 3 : 4;
@@ -146,30 +135,6 @@ export class SoundScape {
     // under water: the low roar of the sea all around (surf, swell on rock)
     this.uwBed = bed('lowpass', 260, 0.7, this.master);
     this.uwHiss = bed('bandpass', 1800, 0.6, this.master);
-
-    this.initWhistle();
-    this.initRooms();
-
-    // anchor chain and windlass
-    this.chainSrc = this.spatial({ ref: 8, reverb: 0.3 });
-    this.chainG = ctx.createGain(); this.chainG.gain.value = 0;
-    this.noise().connect(this.filter('bandpass', 2600, 1.4)).connect(this.chainG).connect(this.chainSrc.input);
-    const wo = ctx.createOscillator(); wo.type = 'square'; wo.frequency.value = 165;
-    this.winchG = ctx.createGain(); this.winchG.gain.value = 0;
-    wo.connect(this.filter('lowpass', 700, 2)).connect(this.winchG).connect(this.chainSrc.input);
-    wo.start();
-
-    // generator sets and the alarm buzzer
-    this.genOsc = ctx.createOscillator(); this.genOsc.type = 'sawtooth'; this.genOsc.frequency.value = 75;
-    const genLP = this.filter('lowpass', 260, 1.2);
-    this.genGain = ctx.createGain(); this.genGain.gain.value = 0;
-    this.genOsc.connect(genLP).connect(this.genGain).connect(this.master);
-    this.genOsc.start();
-    this.buzOsc = ctx.createOscillator(); this.buzOsc.type = 'square'; this.buzOsc.frequency.value = 2400;
-    const buzBP = this.filter('bandpass', 2400, 3);
-    this.buzGain = ctx.createGain(); this.buzGain.gain.value = 0;
-    this.buzOsc.connect(buzBP).connect(this.buzGain).connect(this.master);
-    this.buzOsc.start();
 
     // gulls: a few voices that move around
     this.gulls = [];
@@ -302,8 +267,10 @@ export class SoundScape {
     return ship.localToWorld(v);
   }
 
-  // s: { camera, ship (boat.model), rpm, speed, heave, rollRate, sea 0..1,
-  //      exposure 0..1, wind, rain, dark, night, inside, aboard }
+  // s: { camera, ship (the model), speed, heave, rollRate, sea 0..1,
+  //      exposure 0..1, wind, rain, dark, night, below (below decks),
+  //      aboard, canvas 0..1 (sail set), flog 0..1 (canvas shaking),
+  //      underwater, shipDist, fallFlow }
   update(dt, s) {
     if (!this.ctx || !s.ship) return;
     const t = this.ctx.currentTime;
@@ -317,70 +284,45 @@ export class SoundScape {
     this.scanTimer -= dt;
     if (this.scanTimer <= 0) { this.scanTimer = 0.7; this.scanShores(L.x, L.z); }
 
-    // under water the air-borne world is a dull rumble from above; the
-    // ship's propeller and diesel carry through the water instead
+    // under water the air-borne world is a dull rumble from above; below
+    // decks it comes through oak a foot thick
     const uw = !!s.underwater;
-    set(this.muffle.frequency, uw ? 320 : s.inside ? 650 : 18000, 0.15);
-    set(this.outside.gain, uw ? 0.4 : 1, 0.2);
+    set(this.muffle.frequency, uw ? 320 : s.below ? 520 : 18000, 0.15);
+    set(this.outside.gain, uw ? 0.4 : s.below ? 0.7 : 1, 0.2);
     set(this.uwBed.g.gain, uw ? 0.22 + 0.25 * s.sea : 0, 0.3);
     set(this.uwHiss.g.gain, uw ? 0.015 : 0, 0.3);
     set(this.reverbSend.gain, 0.03 + 0.45 * this.enclosure, 1.0);
 
     // --- the ship
     const ship = s.ship;
-    const n = Math.abs(s.rpm);
-    const engRpm = 600 + n * 600;                   // idles at 600, 1200 at full
-    const fire = (engRpm / 60) * 3;                 // 6 cylinders, four-stroke
-    set(this.engA.frequency, fire, 0.4);
-    set(this.engB.frequency, fire * 0.5, 0.4);
-    set(this.lfo.frequency, fire * 0.5, 0.4);
-    set(this.engLP.frequency, 260 + n * 380, 0.4);
-    const run = s.engineRunning !== false;
-    set(this.engOut.gain, run ? 0.14 + 0.3 * n * n : 0, run ? 0.3 : 1.5);
-    set(this.clatter.g.gain, run ? 0.05 + 0.08 * n : 0, 0.3);
-    // generator sets: 1500 rpm, six cylinders: 75 Hz firing, loud in the
-    // engine room, a hum through the ship
-    set(this.genOsc.frequency, 75 * (s.genHz || 50) / 50, 0.3);
-    set(this.genGain.gain, s.gens ? (s.engineRoom ? 0.32 : s.aboard ? 0.035 : 0.006) * (0.7 + 0.3 * s.gens) : 0, 0.4);
-    // the anchor chain: rattling out through the hawse, or clanking in over
-    // the windlass gypsy with the whine of its hydraulic motor
-    const wpos = s.winchPos || s.chainPos;
-    if (wpos) this.place(this.chainSrc, wpos.x, wpos.y, wpos.z, L);
-    const cr = Math.abs(s.chain || 0);
-    this.chainT = (this.chainT || 0) - dt;
-    if (cr > 0.01 && this.chainT <= 0) {
-      this.chainT = Math.max(0.03, 0.21 / (cr * 4 + 0.5));            // a link over the gypsy
-      const t0 = this.ctx.currentTime;
-      this.chainG.gain.setValueAtTime(0.25 + 0.35 * Math.min(1, cr / 2) + Math.random() * 0.15, t0);
-      this.chainG.gain.exponentialRampToValueAtTime(0.01, t0 + 0.06);
-    }
-    set(this.winchG.gain, (s.chain || 0) < -0.01 ? 0.12 : (s.winch || 0) > 0.05 ? 0.16 : 0, 0.2);
-    // the alarm buzzer on the bridge (and its repeater below)
-    this.buzT = (this.buzT || 0) + dt;
-    const beep = s.alarm && (this.buzT % 1.0) < 0.5;
-    set(this.buzGain.gain, beep ? (s.inside && !s.engineRoom ? 0.1 : s.aboard ? 0.05 : 0.025) : 0, 0.01);
-    const prop = uw ? 1.6 * Math.exp(-(s.shipDist || 0) / 90) * (0.4 + 0.6 * n) : 0;
-    set(this.hullGain.gain, s.engineRoom ? 2.2 : s.aboard ? 0.7 : prop, 0.3);
-    set(this.hull.frequency, s.engineRoom ? 900 : 190, 0.3);
-    let p = this.shipPoint(ship, 1.3, 9.5, -1.5);
-    this.place(this.exhaust, p.x, p.y, p.z, L);
-
-    p = this.shipPoint(ship, 0, 0.3, 0);
+    const work = Math.min(0.4, Math.abs(s.heave) * 0.15 + Math.abs(s.rollRate) * 1.2);
+    let p = this.shipPoint(ship, 0, 0.3, 0);
     this.place(this.slosh, p.x, p.y, p.z, L);
-    set(this.sloshBed.g.gain, 0.12 + 0.35 * s.sea + Math.min(0.35, Math.abs(s.heave) * 0.15 + Math.abs(s.rollRate) * 1.2));
-    p = this.shipPoint(ship, 0, 1, -11);
+    set(this.sloshBed.g.gain, 0.12 + 0.35 * s.sea + work);
+    set(this.hullSea.g.gain, s.below ? 0.25 + 0.5 * s.sea + work + Math.min(0.3, Math.max(0, s.speed) * 0.05) : 0, 0.4);
+    p = this.shipPoint(ship, 0, 1, -22);
     this.place(this.wash, p.x, p.y, p.z, L);
-    set(this.washBed.g.gain, Math.min(1, Math.max(0, s.speed) / 6) * (0.25 + 0.25 * s.sea));
-    set(this.washBed.flt.frequency, 700 + Math.max(0, s.speed) * 70);
-    p = this.shipPoint(ship, 0, 13, -3);
+    set(this.washBed.g.gain, Math.min(1, Math.max(0, s.speed) / 4) * (0.3 + 0.3 * s.sea));
+    set(this.washBed.flt.frequency, 650 + Math.max(0, s.speed) * 80);
+    p = this.shipPoint(ship, 0, 20, 0);
     this.place(this.rigging, p.x, p.y, p.z, L);
     const w = Math.min(1, s.wind / 20);
-    set(this.whistle.g.gain, Math.max(0, w - 0.4) * 0.35 * (0.4 + this.gust));
-    set(this.whistle.flt.frequency, 1500 + 900 * this.gust, 0.5);
-    p = this.shipPoint(ship, 0, 7.35, -6.0);
-    this.place(this.radio, p.x, p.y, p.z, L);
-    p = this.shipPoint(ship, 0, 12.5, -4);
-    this.place(this.hornSrc, p.x, p.y, p.z, L);
+    set(this.moan.g.gain, Math.max(0, w - 0.2) * 0.5 * (0.5 + this.gust), 0.6);
+    set(this.moan.flt.frequency, 170 + 90 * w + 40 * this.gust, 0.8);
+    set(this.whistle.g.gain, Math.max(0, w - 0.4) * 0.3 * (0.4 + this.gust));
+    set(this.whistle.flt.frequency, 1300 + 900 * this.gust, 0.5);
+    // canvas shaking: a flutter while it lifts, and loud cracks as it fills
+    // and empties
+    p = this.shipPoint(ship, 0, 16, -2);
+    this.place(this.canvas, p.x, p.y, p.z, L);
+    const flog = (s.canvas || 0) * (s.flog || 0) * Math.min(1, s.wind / 6);
+    set(this.flutter.g.gain, flog * 0.5, 0.3);
+    set(this.flutterLfo.frequency, 5 + 6 * w + 2 * this.gust, 0.5);
+    this.flapTimer -= dt;
+    if (flog > 0.05 && this.flapTimer <= 0) {
+      this.flapTimer = 0.35 + Math.random() * 1.6 * (1.2 - flog);
+      this.flap(0.3 + 0.7 * flog);
+    }
 
     // --- ambient beds
     set(this.seaBed.g.gain, (0.05 + 0.3 * s.sea) * (0.4 + 0.6 * s.exposure));
@@ -388,8 +330,8 @@ export class SoundScape {
     set(this.wind.g.gain, wl * 0.5);
     set(this.wind.flt.frequency, 400 + 700 * w + 300 * this.gust, 0.5);
     set(this.rain.g.gain, s.rain * 0.2);
-    set(this.roof.g.gain, s.inside ? s.rain * 0.35 : 0);
-    set(this.deckRain.g.gain, s.aboard && !s.inside ? s.rain * 0.12 : 0);
+    set(this.overhead.g.gain, s.below ? s.rain * 0.3 : 0);
+    set(this.deckRain.g.gain, s.aboard && !s.below ? s.rain * 0.12 : 0);
 
     // --- surf on the cliffs: each voice surges with its own swell period
     this.surf.forEach((v, i) => {
@@ -414,15 +356,6 @@ export class SoundScape {
       });
     }
 
-    // --- machinery and life below
-    if (this.rooms && s.rooms) {
-      for (const [k, r] of Object.entries(this.rooms)) {
-        const on = !!s.rooms[k];
-        set(r.g.gain, on ? r.level : 0, 0.4);
-        if (on) { p = this.shipPoint(ship, r.pos[0], r.pos[1], r.pos[2]); this.place(r.sp, p.x, p.y, p.z, L); }
-      }
-    }
-
     // --- gulls: fair weather, daylight, more near the shore
     this.gullTimer -= dt;
     const near = this.shores.length ? Math.max(0, 1 - this.shores[0].d / 600) : 0;
@@ -432,18 +365,13 @@ export class SoundScape {
       if (Math.random() < gullChance) this.gullCall(L);
     }
 
-    // --- the hull working in a seaway (aboard only)
+    // --- her timbers working: always a little, more in a seaway, most
+    // below decks
     this.creakTimer -= dt;
-    if (s.aboard && this.creakTimer <= 0 && Math.abs(s.rollRate) + Math.abs(s.heave) * 0.05 > 0.04) {
-      this.creakTimer = 1.5 + Math.random() * 4;
-      if (Math.random() < 0.6) this.creak(Math.min(1, Math.abs(s.rollRate) * 6));
-    }
-
-    // --- VHF chatter on the bridge
-    this.radioTimer -= dt;
-    if (this.radioTimer <= 0) {
-      this.radioTimer = 25 + Math.random() * 50;
-      if (s.inside && s.vhfIdle) this.radioChatter();
+    if (s.aboard && this.creakTimer <= 0) {
+      const motion = Math.min(1, Math.abs(s.rollRate) * 6 + Math.abs(s.heave) * 0.3 + s.sea * 0.4);
+      this.creakTimer = (s.below ? 0.8 : 1.6) + Math.random() * (5 - 3.5 * motion);
+      if (Math.random() < 0.4 + 0.5 * motion) this.creak((0.2 + 0.8 * motion) * (s.below ? 1 : 0.6));
     }
   }
 
@@ -539,113 +467,53 @@ export class SoundScape {
     src.stop(t + 1.2);
   }
 
+  // Oak and pine working against each other: a slow, rising groan with a
+  // dry tick or two at its end.
   creak(strength) {
     const ctx = this.ctx, t = ctx.currentTime;
     const src = this.noise();
-    const bp = this.filter('bandpass', 180 + Math.random() * 120, 18);
+    const f0 = 140 + Math.random() * 160;
+    const bp = this.filter('bandpass', f0, 22);
+    const bp2 = this.filter('bandpass', f0 * 2.1, 16);
     const env = ctx.createGain();
-    const dur = 0.4 + Math.random() * 0.5;
-    bp.frequency.linearRampToValueAtTime(bp.frequency.value * (1.3 + Math.random() * 0.5), t + dur);
+    const dur = 0.5 + Math.random() * 0.9;
+    bp.frequency.linearRampToValueAtTime(f0 * (1.25 + Math.random() * 0.5), t + dur);
+    bp2.frequency.linearRampToValueAtTime(f0 * 2.1 * (1.2 + Math.random() * 0.4), t + dur);
     env.gain.setValueAtTime(0, t);
-    env.gain.linearRampToValueAtTime((0.25 + 0.5 * strength), t + dur * 0.4);
+    env.gain.linearRampToValueAtTime(0.3 + 0.6 * strength, t + dur * 0.5);
     env.gain.exponentialRampToValueAtTime(0.001, t + dur);
-    src.connect(bp).connect(env).connect(this.master);
+    src.connect(bp).connect(env);
+    src.connect(bp2).connect(env);
+    env.connect(this.master);
     src.stop(t + dur + 0.05);
+    if (Math.random() < 0.5) {
+      const tick = this.noise();
+      const hp = this.filter('bandpass', 2200 + Math.random() * 1500, 4);
+      const tg = ctx.createGain();
+      const tt = t + dur * (0.6 + Math.random() * 0.4);
+      tg.gain.setValueAtTime(0, tt);
+      tg.gain.linearRampToValueAtTime(0.25 * strength, tt + 0.004);
+      tg.gain.exponentialRampToValueAtTime(0.001, tt + 0.05);
+      tick.connect(hp).connect(tg).connect(this.master);
+      tick.stop(tt + 0.08);
+    }
   }
 
-  // machinery and life in the spaces below, each at its place in the ship
-  // (model space) and heard through the steel: the air compressor knocking,
-  // the hydraulic pump's whine, the conveyors, the shower, the television
-  initRooms() {
-    const ctx = this.ctx;
-    const mk = (pos, level, build) => {
-      const sp = this.spatial({ ref: 1.2, rolloff: 1.7, dest: this.master, reverb: 0.25 });
-      const g = ctx.createGain(); g.gain.value = 0; g.connect(sp.input);
-      build(g);
-      return { sp, g, pos, level };
-    };
-    const lfo = (hz, depth, target) => { const o = ctx.createOscillator(); o.frequency.value = hz; const k = ctx.createGain(); k.gain.value = depth; o.connect(k).connect(target); o.start(); return o; };
-    this.rooms = {
-      comp: mk([1.05, -1.2, 2.975], 0.5, (g) => {
-        const am = ctx.createGain(); am.gain.value = 0.55; lfo(13, 0.45, am.gain);
-        this.noise().connect(this.filter('bandpass', 230, 1.4)).connect(am).connect(g);
-        const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = 49; const og = ctx.createGain(); og.gain.value = 0.08;
-        o.connect(this.filter('lowpass', 300, 0.7)).connect(og).connect(g); o.start();
-      }),
-      hyd: mk([0, -0.65, 3.825], 0.35, (g) => {
-        const o = ctx.createOscillator(); o.frequency.value = 372; const og = ctx.createGain(); og.gain.value = 0.06; o.connect(og).connect(g); o.start();
-        lfo(0.7, 4, o.frequency);
-        this.noise().connect(this.filter('bandpass', 900, 0.8)).connect(g);
-      }),
-      conveyor: mk([1.6, 3.0, 5.475], 0.45, (g) => {
-        this.noise().connect(this.filter('lowpass', 220, 0.8)).connect(g);
-        const am = ctx.createGain(); am.gain.value = 0.15; lfo(7.5, 0.13, am.gain);
-        this.noise().connect(this.filter('bandpass', 1500, 2.5)).connect(am).connect(g);
-      }),
-      shower: mk([3.0, 4.2, -0.405], 0.35, (g) => {
-        this.noise().connect(this.filter('highpass', 1500, 0.7)).connect(this.filter('lowpass', 7000, 0.7)).connect(g);
-      }),
-      tv: mk([-1.0, 4.0, -4.525], 0.3, (g) => {
-        // speech-like murmur: band-passed noise with a syllable rhythm
-        const am = ctx.createGain(); am.gain.value = 0.35; lfo(4.3, 0.3, am.gain); lfo(1.1, 0.2, am.gain);
-        const f = this.filter('bandpass', 900, 1.3); lfo(2.3, 300, f.frequency);
-        this.noise().connect(f).connect(am).connect(g);
-      }),
-    };
-  }
-
-  // the VHF loudspeaker: squelch opens on a signal (a burst of noise, then a
-  // faint hiss under the voice), and closes with the familiar tail
-  radioOpen(vol = 1) {
-    if (!this.ctx || this._rx) return;
+  // A sail cracking full and empty: a short, heavy slap of canvas.
+  flap(strength) {
+    if (!this.ctx) return;
     const ctx = this.ctx, t = ctx.currentTime;
     const src = this.noise();
-    const band = this.filter('bandpass', 1700, 0.6);
+    const lp = this.filter('lowpass', 1600, 0.7);
+    const bp = this.filter('bandpass', 260, 1.2);
     const g = ctx.createGain();
     g.gain.setValueAtTime(0, t);
-    g.gain.linearRampToValueAtTime(0.32 * vol, t + 0.01);
-    g.gain.exponentialRampToValueAtTime(Math.max(0.002, 0.035 * vol), t + 0.2);
-    src.connect(band).connect(g).connect(this.radio.input);
-    this._rx = { src, g, vol };
-  }
-
-  radioClose() {
-    if (!this.ctx || !this._rx) return;
-    const t = this.ctx.currentTime;
-    const { src, g, vol } = this._rx;
-    g.gain.cancelScheduledValues(t);
-    g.gain.setValueAtTime(0.28 * vol, t);
-    g.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
-    src.stop(t + 0.3);
-    this._rx = null;
-  }
-
-  radioChatter() {
-    const ctx = this.ctx;
-    let t = ctx.currentTime;
-    const words = 4 + Math.floor(Math.random() * 8);
-    const src = this.noise();
-    const f1 = this.filter('bandpass', 700, 6);
-    const f2 = this.filter('bandpass', 1500, 5);
-    const band = this.filter('bandpass', 1400, 0.8);         // radio bandwidth
-    const env = ctx.createGain();
-    env.gain.setValueAtTime(0, t);
-    src.connect(f1).connect(band);
-    src.connect(f2).connect(band);
-    band.connect(env).connect(this.radio.input);
-    env.gain.linearRampToValueAtTime(0.25, t + 0.02);        // squelch opens
-    t += 0.12;
-    for (let k = 0; k < words; k++) {                         // garbled distant voice
-      const dur = 0.12 + Math.random() * 0.25;
-      f1.frequency.setValueAtTime(400 + Math.random() * 600, t);
-      f2.frequency.setValueAtTime(1100 + Math.random() * 1300, t);
-      env.gain.setValueAtTime(0.5 + Math.random() * 0.4, t);
-      env.gain.setValueAtTime(0.12, t + dur);
-      t += dur + Math.random() * 0.08;
-    }
-    env.gain.setValueAtTime(0.3, t);                          // squelch tail
-    env.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
-    src.stop(t + 0.2);
+    g.gain.linearRampToValueAtTime(0.9 * strength, t + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.18 + 0.1 * strength);
+    src.connect(lp).connect(g);
+    src.connect(bp).connect(g);
+    g.connect(this.canvas.input);
+    src.stop(t + 0.35);
   }
 
   // A green sea against the bow: a dull boom from the bow.
@@ -660,15 +528,6 @@ export class SoundScape {
     g.gain.exponentialRampToValueAtTime(0.001, t + 0.9);
     src.connect(flt).connect(g).connect(this.wash.input);
     src.stop(t + 1);
-    const o = ctx.createOscillator();
-    o.frequency.setValueAtTime(70, t);
-    o.frequency.exponentialRampToValueAtTime(35, t + 0.6);
-    const og = ctx.createGain();
-    og.gain.setValueAtTime(0.6 * strength, t);
-    og.gain.exponentialRampToValueAtTime(0.001, t + 0.7);
-    o.connect(og).connect(this.master);
-    o.start(t);
-    o.stop(t + 0.8);
   }
 
   // Thunder from a strike at distance d (m) in a random direction.
@@ -705,140 +564,5 @@ export class SoundScape {
     src.connect(g).connect(sp.input);
     src.stop(tt + 3.6);
     this.dispose(sp, tt + 3.6 - ctx.currentTime);
-  }
-
-  // The ship's whistle: an air horn (tyfon) of the kind on a vessel of this
-  // size. COLREG Annex III puts its fundamental at 250-700 Hz for vessels
-  // under 75 m (130 dB at 1 m, heard about a mile): one deep tone, not the
-  // two-note chord of a car horn. A diaphragm chopping the air at about
-  // 290 Hz makes a buzz rich in harmonics; the trumpet brings out the band
-  // around 1-1.2 kHz and 2.6 kHz and gives it its bray. When the valve opens
-  // the pressure builds over a tenth of a second: the note "blooms" up to
-  // pitch with a bark of air; on closing it sags and dies. Low air pressure
-  // makes it weak and flat. It sounds from the horn on the wheelhouse roof,
-  // reaches you at the speed of sound, and comes back from every cliff.
-  initWhistle() {
-    const ctx = this.ctx;
-    const f0 = 290;
-    this.whF0 = f0;
-    const N = 60;
-    const real = new Float32Array(N + 1), imag = new Float32Array(N + 1);
-    for (let k = 1; k <= N; k++) {
-      const f = k * f0;
-      const formant = 1 + 2.2 * Math.exp(-(((f - 1150) / 420) ** 2)) + 1.1 * Math.exp(-(((f - 2600) / 750) ** 2));
-      const top = f > 5500 ? Math.exp(-(f - 5500) / 1400) : 1;
-      imag[k] = Math.pow(k, -0.8) * formant * top * (k % 2 ? 1 : 0.85);
-    }
-    const wave = ctx.createPeriodicWave(real, imag);
-    this.whOsc = ctx.createOscillator(); this.whOsc.setPeriodicWave(wave); this.whOsc.frequency.value = f0;
-    this.whOsc2 = ctx.createOscillator(); this.whOsc2.setPeriodicWave(wave); this.whOsc2.frequency.value = f0 * 1.0035;
-    // the diaphragm's flutter
-    const lfo = ctx.createOscillator(); lfo.frequency.value = 6.2;
-    const lfoG = ctx.createGain(); lfoG.gain.value = f0 * 0.0022;
-    lfo.connect(lfoG); lfoG.connect(this.whOsc.frequency); lfoG.connect(this.whOsc2.frequency);
-    const g2 = ctx.createGain(); g2.gain.value = 0.32;
-    // overdriven a little: the brassy edge
-    const shaper = ctx.createWaveShaper();
-    const curve = new Float32Array(1024);
-    for (let i = 0; i < 1024; i++) { const x = (i / 511.5) - 1; curve[i] = Math.tanh(x * 1.8) / Math.tanh(1.8); }
-    shaper.curve = curve;
-    this.whGate = ctx.createGain(); this.whGate.gain.value = 0;
-    const pre = ctx.createGain(); pre.gain.value = 0.55;
-    this.whOsc.connect(pre); this.whOsc2.connect(g2).connect(pre);
-    pre.connect(shaper).connect(this.whGate);
-    // the bark of air as the valve opens
-    this.whBark = ctx.createGain(); this.whBark.gain.value = 0;
-    this.noise().connect(this.filter('bandpass', 1700, 1.3)).connect(this.whBark);
-    this.whOut = ctx.createGain(); this.whOut.gain.value = 0.62;
-    this.whGate.connect(this.whOut);
-    this.whBark.connect(this.whOut);
-    // the way to the listener: delay for the distance, then the horn's place
-    this.whDelay = ctx.createDelay(12);
-    this.whOut.connect(this.whDelay).connect(this.hornSrc.input);
-    for (const o of [this.whOsc, this.whOsc2, lfo]) o.start();
-    this.whOpen = false;
-    this.echoNet = null;
-  }
-
-  // Called every frame: valve open or shut, air pressure (bar), horn position.
-  tyfon(open, pressure, pos) {
-    if (!this.ctx || !this.whOsc) return;
-    const t = this.ctx.currentTime;
-    const L = this._lastL;
-    if (L) {
-      const d = Math.hypot(pos.x - L.x, pos.y - L.y, pos.z - L.z);
-      this.whDelay.delayTime.setTargetAtTime(Math.min(11.5, d / C_SOUND), t, 0.4);
-    }
-    if (open === this.whOpen) return;
-    this.whOpen = open;
-    const f0 = this.whF0;
-    const pk = Math.max(0, Math.min(1, (pressure - 1.5) / 3));      // full tone above 4.5 bar
-    if (open) {
-      const fT = f0 * (0.955 + 0.045 * pk);
-      for (const [o, k] of [[this.whOsc, 1], [this.whOsc2, 1.0035]]) {
-        o.frequency.cancelScheduledValues(t);
-        o.frequency.setValueAtTime(fT * 0.78 * k, t);
-        o.frequency.exponentialRampToValueAtTime(fT * 1.01 * k, t + 0.13);
-        o.frequency.exponentialRampToValueAtTime(fT * k, t + 0.3);
-      }
-      this.whGate.gain.cancelScheduledValues(t);
-      this.whGate.gain.setValueAtTime(this.whGate.gain.value, t);
-      this.whGate.gain.linearRampToValueAtTime((0.35 + 0.65 * pk), t + 0.1);
-      this.whBark.gain.cancelScheduledValues(t);
-      this.whBark.gain.setValueAtTime(0.5 * pk, t);
-      this.whBark.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
-      this._echoes(pos);
-    } else {
-      for (const o of [this.whOsc, this.whOsc2]) {
-        o.frequency.cancelScheduledValues(t);
-        o.frequency.setValueAtTime(o.frequency.value, t);
-        o.frequency.exponentialRampToValueAtTime(o.frequency.value * 0.93, t + 0.22);
-      }
-      this.whGate.gain.cancelScheduledValues(t);
-      this.whGate.gain.setValueAtTime(this.whGate.gain.value, t);
-      this.whGate.gain.setTargetAtTime(0, t, 0.055);
-    }
-  }
-
-  // Echoes off the cliffs within 1.5 km of the ship: a delay line to each,
-  // kept while the ship stays near where they were worked out.
-  _echoes(shipPos) {
-    const ctx = this.ctx;
-    const net = this.echoNet;
-    if (net && Math.hypot(net.x - shipPos.x, net.z - shipPos.z) < 40 && ctx.currentTime - net.t < 30) return;
-    if (net) {
-      const old = net.nodes;
-      setTimeout(() => { for (const n of old) { try { n.disconnect(); } catch (e) { /* gone */ } } }, 12000);
-    }
-    const L = this._lastL || shipPos;
-    const nodes = [];
-    for (let i = 0; i < 20; i++) {
-      const a = (i / 20) * Math.PI * 2;
-      const dx = Math.sin(a), dz = -Math.cos(a);
-      for (let r = 20; r <= 1500; r += 10) {
-        const wx = shipPos.x + dx * r, wz = shipPos.z + dz * r;
-        if (this.terrain.sample(wx, wz) > 5) {
-          const back = Math.hypot(wx - L.x, 20 - L.y, wz - L.z);
-          const delay = (r + back) / C_SOUND;
-          const dl = ctx.createDelay(12);
-          dl.delayTime.value = Math.min(11.5, delay);
-          const eg = ctx.createGain();
-          eg.gain.value = 0.8 * Math.min(1, 160 / (r + back));     // spreading; rock takes some
-          const sp = this.spatial({ ref: 1e6, rolloff: 0, reverb: 0.3 });
-          this.place(sp, wx, 20, wz);
-          sp.air.frequency.value = Math.max(500, 5000 * Math.exp(-(r + back) / 1500));
-          this.whOut.connect(dl).connect(eg).connect(sp.input);
-          nodes.push(dl, eg, sp.input, sp.p);
-          break;
-        }
-      }
-    }
-    this.echoNet = { x: shipPos.x, z: shipPos.z, t: ctx.currentTime, nodes };
-  }
-
-  // A single blast (kept for callers outside the bridge).
-  horn(shipPos, duration = 1.2) {
-    this.tyfon(true, 8, shipPos);
-    setTimeout(() => this.tyfon(false, 8, shipPos), duration * 1000);
   }
 }

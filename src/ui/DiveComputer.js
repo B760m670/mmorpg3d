@@ -68,7 +68,7 @@ export class DiveComputer {
     else if (diver.ppO2 > 1.4) { w = `pO₂ ${diver.ppO2.toFixed(2)} бар — опасно для воздуха`; bad = true; }
     else if (d > 40) w = 'глубже 40 м — предел любительского дайвинга';
     else if (diver.maxDepth > 10 && d > 3 && d < 6.5 && diver.stop < 180) w = `остановка безопасности ${mmss(180 - diver.stop)}`;
-    else if (diver.atSurface && nearShip) w = touch ? 'у борта: «на борт» — подняться по трапу' : 'у борта: E — подняться по трапу';
+    else if (diver.atSurface && nearShip) w = touch ? 'у борта: «на борт» — подняться по борту' : 'у борта: E — подняться по борту';
     else if (diver.atSurface) w = touch ? 'на поверхности · джойстик вниз-взгляд — нырнуть, ▼ — вниз' : 'на поверхности · посмотрите вниз и W — нырнуть, C — вниз';
     else if (torch) w = 'фонарь включён';
     this.set('warn', w);

@@ -1,26 +1,18 @@
-import { TELEGRAPH } from '../config.js';
-
 // Phone controls, kept out of the way of the view:
-//   - bottom-left: a joystick, always visible. At the conn it is the helm
-//     joystick of a modern wheelhouse: left/right puts the rudder over in
-//     proportion and it comes back to midships when you let go (follow-up
-//     steering); holding it up or down steps the engine order. Aboard, the
-//     same stick walks;
+//   - bottom-left: a joystick, always visible. At the conn (outside view or
+//     at the whipstaff) left/right puts the helm over in proportion and it
+//     comes back amidships when you let go; holding it up or down sets or
+//     takes in sail, a step at a time. Aboard, the same stick walks, and on
+//     the shrouds it climbs;
 //   - everywhere else: drag to look (aboard) or to fly the camera around the
-//     ship (third person); pinch with two fingers to zoom;
-//   - bottom-right: the engine-order telegraph lever — slide it up for ahead,
-//     down for astern;
-//   - top-right: view switch, helm button when it applies, "dive" (over the
-//     side), and a menu (☰) with day/night, weather, sound and the horn;
+//     ship (outside view); pinch with two fingers to zoom;
+//   - top-right: the one action that applies where you are (take the helm,
+//     climb, come aboard), "dive" (over the side), the view, and a menu (☰)
+//     with day/night, weather and sound;
 //   - in the water: the stick swims where you look, ▲ / ▼ (held) go up and
 //     down, the torch and "aboard" (at the ship's side) are at the top.
 // Buttons press the same keys as the keyboard, so every action has one code
 // path.
-
-export const ORDER_RU = [
-  'ПОЛНЫЙ НАЗАД', 'СРЕДНИЙ НАЗАД', 'МАЛЫЙ НАЗАД', 'СТОП',
-  'САМЫЙ МАЛЫЙ ВПЕРЁД', 'МАЛЫЙ ВПЕРЁД', 'СРЕДНИЙ ВПЕРЁД', 'ПОЛНЫЙ ВПЕРЁД',
-];
 
 // The published single-file page carries its own <style> in the body, after
 // this sheet in document order, so rules that compete with it use !important.
@@ -38,15 +30,6 @@ const CSS = `
 #tc-menu { top: calc(52px + env(safe-area-inset-top, 0px)); right: calc(10px + env(safe-area-inset-right, 0px));
   display: none; flex-direction: row; flex-wrap: wrap; justify-content: flex-end; gap: 6px; max-width: 70vw; z-index: 7; }
 #tc-menu.open { display: flex; }
-#tc-lever { right: calc(14px + env(safe-area-inset-right, 0px)); bottom: calc(14px + env(safe-area-inset-bottom, 0px));
-  width: 64px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
-#tc-track { position: relative; width: 40px; height: 168px; border-radius: 20px;
-  background: linear-gradient(180deg, rgba(60,200,110,.28), rgba(255,255,255,.07) 50%, rgba(255,90,70,.28));
-  border: 1px solid rgba(255,255,255,0.2); touch-action: none; }
-#tc-track i { position: absolute; left: 50%; width: 14px; height: 1px; margin-left: -7px; background: rgba(255,255,255,.35); }
-#tc-knob { position: absolute; left: 50%; width: 46px; height: 22px; margin: -11px 0 0 -23px; border-radius: 8px;
-  background: #ffcf7a; box-shadow: 0 1px 6px rgba(0,0,0,.5); pointer-events: none; }
-#tc-order { font-size: 10px; text-align: center; color: #ffcf7a; text-shadow: 0 1px 2px #000; width: 110px; }
 #joy-base { left: calc(38px + env(safe-area-inset-left, 0px)) !important; top: auto !important;
   bottom: calc(70px + env(safe-area-inset-bottom, 0px)); margin: 0 !important; }
 body.touch #joy-base { opacity: 0.6; }
@@ -107,59 +90,21 @@ export class TouchControls {
     look.id = 'look-layer';
     document.body.appendChild(look);
 
-    // top-right: view, helm, menu
+    // top-right: the action here, over the side, the view, the menu
     const top = this.el('div', 'tc', 'tc-top');
-    this.btnHelm = this.button(top, 'к штурвалу', 'e');
-    // the whistle: blows while held (holds the H key)
-    this.btnHorn = document.createElement('button');
-    this.btnHorn.textContent = 'гудок';
-    const hornOn = (e) => { e.preventDefault(); e.stopPropagation(); this.input.keys.add('h'); this.btnHorn.style.background = 'rgba(255,176,46,.45)'; };
-    const hornOff = () => { this.input.keys.delete('h'); this.btnHorn.style.background = ''; };
-    this.btnHorn.addEventListener('pointerdown', hornOn);
-    for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) this.btnHorn.addEventListener(ev, hornOff);
-    top.appendChild(this.btnHorn);
-    this.btnPanel = this.button(top, 'пульт', 'p');
-    this.btnCam = this.button(top, '1-е/3-е', 'v');
-    this.btnCam.hidden = true;
-    this.btnPanel.hidden = true;
-    this.btnDive = this.button(top, 'нырнуть', 'j');
+    this.btnHelm = this.button(top, 'к колдерштоку', 'e');
+    this.btnHelm.hidden = true;
+    this.btnDive = this.button(top, 'за борт', 'j');
     this.btnTorch = this.button(top, 'фонарь', 'l');
     this.btnTorch.hidden = true;
-    this.btnView = this.button(top, 'вид', 'f');
+    this.btnView = this.button(top, 'на борт', 'f');
     const menuBtn = this.button(top, '☰', null);
     const menu = this.el('div', 'tc', 'tc-menu');
     menuBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); menu.classList.toggle('open'); });
     this.button(menu, 'день / ночь', 'n');
     this.button(menu, 'погода', 'b');
     this.btnSound = this.button(menu, 'звук: вкл', 'm');
-    this.button(menu, 'гудок', 'h');
-    this.btnHud = this.button(menu, 'приборы', 'i');
     this.menu = menu;
-
-    // bottom-right: telegraph lever
-    const lever = this.el('div', 'tc', 'tc-lever');
-    this.order = this.el('div', '', 'tc-order', lever);
-    const track = this.el('div', '', 'tc-track', lever);
-    for (let i = 0; i < TELEGRAPH.length; i++) {
-      const tick = document.createElement('i');
-      tick.style.top = `${this.levelY(i) * 100}%`;
-      track.appendChild(tick);
-    }
-    this.leverKnob = this.el('div', '', 'tc-knob', track);
-    this.lever = lever;
-
-    this.track = track;
-    const setFromY = (clientY) => {
-      const r = track.getBoundingClientRect();
-      const t = Math.min(1, Math.max(0, (clientY - r.top) / r.height));
-      const idx = Math.round((1 - t) * (TELEGRAPH.length - 1));
-      this.input.telegraphSet = idx;
-      this.showOrder(idx);
-    };
-    let leverId = null;
-    track.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); leverId = e.pointerId; setFromY(e.clientY); });
-    window.addEventListener('pointermove', (e) => { if (e.pointerId === leverId) setFromY(e.clientY); });
-    window.addEventListener('pointerup', (e) => { if (e.pointerId === leverId) leverId = null; });
 
     this.toastEl = this.el('div', 'tc', 'tc-toast');
 
@@ -240,7 +185,7 @@ export class TouchControls {
       b.addEventListener('pointerdown', (e) => {
         e.preventDefault(); e.stopPropagation();
         this.input.press(key);
-        if (parent === this.menu && key !== 'h') this.menu.classList.remove('open');
+        if (parent === this.menu) this.menu.classList.remove('open');
       });
     }
     parent.appendChild(b);
@@ -259,15 +204,6 @@ export class TouchControls {
     return pts.length >= 2 ? Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) : 0;
   }
 
-  levelY(i) {
-    return 0.06 + 0.88 * (1 - i / (TELEGRAPH.length - 1));
-  }
-
-  showOrder(i) {
-    this.leverKnob.style.top = `${this.levelY(i) * 100}%`;
-    this.order.textContent = ORDER_RU[i];
-  }
-
   _stick(x, y) {
     let dx = x - this.origin.x;
     let dy = y - this.origin.y;
@@ -281,15 +217,6 @@ export class TouchControls {
     this.input.stickActive = true;
   }
 
-  // the ship's panels: 'пульт' on the bridge or at the conn, 'щит' at the
-  // main switchboard, hidden elsewhere
-  setPanel(label) {
-    if (label === this._panel) return;
-    this._panel = label;
-    this.btnPanel.hidden = !label;
-    if (label) this.btnPanel.textContent = label;
-  }
-
   toast(html, seconds = 6) {
     this.toastEl.innerHTML = html;
     this.toastEl.classList.add('show');
@@ -301,36 +228,30 @@ export class TouchControls {
     this.btnSound.textContent = muted ? 'звук: выкл' : 'звук: вкл';
   }
 
-  // mode: '3p' | 'helm' | 'walk'; telegraph: current order index
-  setMode(mode, nearHelm) {
+  // mode: '3p' | 'helm' | 'walk' | 'swim'; action: the label of what E
+  // would do here (or false)
+  setMode(mode, action) {
     const swim = mode === 'swim';
-    this.lever.style.display = mode === 'walk' || swim ? 'none' : 'flex';
     document.body.classList.toggle('walking', mode === 'walk' || swim);
     this.mode = mode;
     const conn = mode === '3p' || mode === 'helm';
     if (!conn) this.label.textContent = swim ? 'плыть' : 'идти';
     this._lastRud = null;
-    // in the water nearHelm means "at the ship's side"
-    this.btnHelm.hidden = swim ? !nearHelm : !(mode === 'helm' || (mode === 'walk' && nearHelm));
-    this.btnHelm.textContent = swim ? 'на борт' : mode === 'helm' ? 'отойти' : typeof nearHelm === 'string' ? nearHelm : 'к штурвалу';
+    this.btnHelm.hidden = !action;
+    if (action) this.btnHelm.textContent = action;
     this.btnDive.hidden = !(mode === '3p' || mode === 'walk');
-    this.btnHorn.hidden = !(mode === '3p' || mode === 'helm');
-    this.btnCam.hidden = mode !== 'walk';
     this.btnTorch.hidden = !swim;
     this.btnView.hidden = swim;
     this.btnView.textContent = mode === '3p' ? 'на борт' : 'со стороны';
   }
 
-  update(boat) {
-    if (boat.telegraph !== this._lastOrder) {
-      this._lastOrder = boat.telegraph;
-      this.showOrder(boat.telegraph);
-    }
-    if (this.mode === 'walk' || this.mode === 'swim') return;
-    const r = Math.round(boat.rudder);
+  // the helm, shown under the stick while you have the conn
+  update(ship) {
+    if (!(this.mode === '3p' || this.mode === 'helm')) return;
+    const r = Math.round(ship.rudder);
     if (r !== this._lastRud) {
       this._lastRud = r;
-      this.label.textContent = r === 0 ? 'руль прямо' : `руль ${Math.abs(r)}° ${r > 0 ? 'влево' : 'вправо'}`;
+      this.label.textContent = r === 0 ? 'руль прямо' : `руль ${Math.abs(r)}° ${r > 0 ? 'лево' : 'право'}`;
     }
   }
 }

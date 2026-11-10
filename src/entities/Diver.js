@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { heightAt } from '../world/Terrain.js';
 import { PLAYER } from '../config.js';
 
-// A scuba diver: over the side from the trawler, swimming at the surface and
+// A scuba diver: over the side from the ship, swimming at the surface and
 // diving with a 12 litre, 200 bar cylinder of air, in a drysuit (the water is
 // about 7 deg C in November).
 //
@@ -67,7 +67,7 @@ export class Diver {
   }
 
   // input: moveX/moveY -1..1, up/down booleans, fast boolean
-  // world: { water(x, z) -> surface height, boat (Boat) }
+  // world: { water(x, z) -> surface height, ship (with .model and .hullShape) }
   update(dt, input, world) {
     const p = this.pos;
     const ws = world.water(p.x, p.z);
@@ -116,7 +116,7 @@ export class Diver {
     if (ny < floor) { ny = floor; if (this.vel.y < 0) this.vel.y = 0; }
     p.y = ny;
 
-    if (world.boat && world.boat.model) this._keepOutOfHull(world.boat.model);
+    if (world.ship && world.ship.model) this._keepOutOfHull(world.ship.model, world.ship.hullShape);
 
     // dive computer
     const d = Math.max(0, wsNow - p.y);
@@ -144,24 +144,25 @@ export class Diver {
     }
   }
 
-  // The hull, in the ship's own frame: a box with a fine bow.
-  _keepOutOfHull(model) {
+  // The hull, in the ship's own frame: full aft, fining to the stem.
+  //   h: { halfLen, halfBeam, keel, top } (m)
+  _keepOutOfHull(model, h = { halfLen: 24.5, halfBeam: 5.85, keel: -4.8, top: 14 }) {
     _loc.copy(this.pos);
     model.worldToLocal(_loc);
     const z = _loc.z;
-    if (z < -12.4 || z > 12.4 || _loc.y < -4.6 || _loc.y > 9) return;
-    const t = Math.min(1, Math.max(0, (-z - 3) / 9.4));
-    const hb = 4.75 * Math.sqrt(1 - 0.94 * t * t) + 0.35;
+    if (z < -h.halfLen || z > h.halfLen || _loc.y < h.keel || _loc.y > h.top) return;
+    const t = Math.min(1, Math.max(0, (-z - 0.15 * h.halfLen) / (0.85 * h.halfLen)));
+    const hb = h.halfBeam * Math.sqrt(1 - 0.94 * t * t) + 0.35;
     if (Math.abs(_loc.x) >= hb) return;
     // out the nearer way: sideways, or down under the keel
-    if (_loc.y + 4.6 < hb - Math.abs(_loc.x)) _loc.y = -4.6;
+    if (_loc.y - h.keel < hb - Math.abs(_loc.x)) _loc.y = h.keel;
     else _loc.x = Math.sign(_loc.x || 1) * hb;
     model.localToWorld(_loc);
     this.pos.copy(_loc);
   }
 
-  // Close enough to the ship to climb the ladder aboard?
-  nearShip(model, halfLen = 12, halfBeam = 7.2) {
+  // Close enough to the ship to climb aboard up her side?
+  nearShip(model, halfLen = 27, halfBeam = 8) {
     if (!model || !this.atSurface) return false;
     _loc.copy(this.pos);
     model.worldToLocal(_loc);

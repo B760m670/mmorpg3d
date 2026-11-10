@@ -3,6 +3,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { gunzipSync } from 'fflate';
 import RIG from '../ship/galleon_rig.json';
 import { Sails, Flags, squareDrive } from '../ship/Sails.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 // The ship: a large sailing ship of the 1620s after Vasa, Blender-built
 // (blender/build_galleon.py), and her sailing.
@@ -33,6 +34,33 @@ async function loadBytes(url) {
   const r = await fetch(url);
   if (!r.ok) throw new Error(`galleon model ${url}: HTTP ${r.status}`);
   return new Uint8Array(await r.arrayBuffer());
+}
+
+// A plain float copy of a (possibly quantized) mesh's triangles, moved into
+// the model's frame: the collider is raycast in model space.
+function modelSpaceGeometry(mesh, inv) {
+  const src = mesh.geometry;
+  const p = src.attributes.position;
+  const pos = new Float32Array(p.count * 3);
+  for (let i = 0; i < p.count; i++) { pos[i * 3] = p.getX(i); pos[i * 3 + 1] = p.getY(i); pos[i * 3 + 2] = p.getZ(i); }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  if (src.index) g.setIndex(Array.from(src.index.array));
+  g.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, mesh.matrixWorld));
+  return g;
+}
+
+// Turn `node` about an axis through `point` (model space) by wrapping it in
+// a hinge there: the node's own origin may not be where it hinges (packing
+// moves it to the middle of the mesh).
+// (`point` is in `parent`'s frame)
+function hingeAt(node, point, parent) {
+  const h = new THREE.Object3D();
+  h.position.copy(point);
+  parent.add(h);
+  h.updateMatrixWorld(true);
+  h.attach(node);
+  return h;
 }
 
 export const GALLEON = {
@@ -72,6 +100,33 @@ export class Galleon {
     this.night = 0;
     this._euler = new THREE.Euler();
     this.rig = RIG;
+    // the hull for a swimmer to keep out of (model space, m)
+    this.hullShape = { halfLen: 24.5, halfBeam: 5.85, keel: -4.8, top: 14 };
+    this.collider = null;
+    this.interior = null;
+    this.whip = null;
+    this.bowSpray = 0;
+    this.slam = 0;
+    // where spray is thrown from: the bow's shoulders to the stem
+    this.sprayAt = { from: 19.5, len: 4.5, half: 4.6, taper: 0.9, up: 1.6 };
+    this.lampSpots = (RIG.lamps || []).map((p) => new THREE.Vector3(...p));
+    this.lamps = [0, 1].map(() => {
+      const l = new THREE.PointLight(0xffb565, 0, 9, 1.6);
+      l.castShadow = false;
+      this.group.add(l);      // the group's frame is the model's
+      return l;
+    });
+  }
+
+  // Light the two lanterns nearest `p` (model space); k 0..1 how lit.
+  lightLamps(p, k) {
+    const near = this.lampSpots.map((q) => [q, q.distanceToSquared(p)]).sort((a, b) => a[1] - b[1]);
+    this.lamps.forEach((l, i) => {
+      const n = near[i];
+      if (!n || k <= 0) { l.intensity = 0; return; }
+      l.position.copy(n[0]);
+      l.intensity = 2.6 * k * (0.93 + 0.07 * Math.sin(performance.now() * 0.011 + i * 2));
+    });
   }
 
   get object() { return this.group; }
@@ -94,16 +149,48 @@ export class Galleon {
         if (o.name.startsWith('rig')) o.castShadow = true;
       });
       this.glow = glow;
-      this.rudderNode = model.getObjectByName('rudder');
+      // into her group first, so that everything below is worked out in one
+      // frame (she may already be under way when the model arrives)
+      this.group.add(model);
+      this.group.updateMatrixWorld(true);
+      const inv = new THREE.Matrix4().copy(model.matrixWorld).invert();
+      const toModel = (o) => new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld);
+      // the rudder turns about the hinge line: the local up of its post
+      const rudder = model.getObjectByName('rudder');
+      if (rudder && rudder.parent && rudder.parent !== model) {
+        this.rudderNode = hingeAt(rudder, new THREE.Vector3(), rudder.parent);
+      }
+      // the whipstaff leans athwartships about the rowle in the deck, 0.45 m
+      // above its foot
+      const whip = model.getObjectByName('whipstaff');
+      if (whip && whip.geometry) {
+        whip.geometry.computeBoundingBox();
+        const bb = whip.geometry.boundingBox.clone().applyMatrix4(toModel(whip));
+        const c = bb.getCenter(new THREE.Vector3());
+        this.whip = hingeAt(whip, new THREE.Vector3(c.x, bb.min.y + 0.45, c.z), model);
+      }
+      // the collision mesh: never drawn, raycast in model space
+      const col = model.getObjectByName('collision');
+      if (col) {
+        const geos = [];
+        col.traverse((o) => { if (o.isMesh) geos.push(modelSpaceGeometry(o, inv)); });
+        col.removeFromParent();
+        const geo = geos.length > 1 ? mergeGeometries(geos) : geos[0];
+        if (geo) {
+          geo.computeBoundingSphere();
+          geo.computeBoundingBox();
+          this.collider = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }));
+        }
+      }
+      // the spaces below: drawn only when you could see them
+      this.interior = model.getObjectByName('interior');
       // the yards turn with their mast: hand them to the sails' mast groups
-      model.updateMatrixWorld(true);
       for (const [name, m] of Object.entries(RIG.masts)) {
         for (const y of m.yards) {
           const n = model.getObjectByName(y.node);
           if (n) this.sails.pivots[name].attach(n);
         }
       }
-      this.group.add(model);
       this.model = model;
       this.setNight(this.night);
       if (onReady) onReady(this);
@@ -169,6 +256,8 @@ export class Galleon {
     this.yawRate += (target - this.yawRate) * (dt / GALLEON.yawTime);
     this.heading += this.yawRate * dt;
     if (this.rudderNode) this.rudderNode.rotation.y = -this.rudder * DEG;
+    // the whipstaff's head goes over the way she is to turn
+    if (this.whip) this.whip.rotation.z = this.rudder * DEG * 0.9;
 
     // heel to leeward with the press of sail
     const heelT = THREE.MathUtils.clamp(Math.sin(this.awa) * Math.min(1, q * spread / 9.0e4) * 0.14, -0.16, 0.16);
@@ -190,7 +279,7 @@ export class Galleon {
     }
     this.grounded = Math.max(0, (this.grounded || 0) - dt * 0.5);
 
-    // seakeeping, as for the trawler: heave on the mean level, pitch and roll
+    // seakeeping: heave on the mean level, pitch and roll
     // from the water's slope along and across her, second-order responses
     const lh = GALLEON.length * 0.4, bh = GALLEON.beam * 0.45;
     const water = this.water;
@@ -210,6 +299,14 @@ export class Galleon {
     this.pitch += this.pitchV * dt;
     this.rollV += ((sm.rollW ** 2) * (rollT - this.roll) - 2 * sm.rollZeta * sm.rollW * this.rollV) * dt;
     this.roll = THREE.MathUtils.clamp(this.roll + this.rollV * dt, -0.5, 0.5);
+    // spray: the bow driving into the sea with way on, a burst when she
+    // buries it
+    const bowDip = hBow - (this.position.y - Math.sin(this.pitch) * lh);
+    const way = THREE.MathUtils.clamp((this.speed - 1.0) / 3.5, 0, 1);
+    this.bowSpray = way * THREE.MathUtils.clamp(0.15 + bowDip * 0.5 - this.pitchV * 0.8, 0, 1);
+    this.slam = 0;
+    if (bowDip > 1.1 && this.pitchV < -0.12 && way > 0.3 && !this._buried) { this.slam = Math.min(1, (bowDip - 1.1) * 0.8 + 0.3) * way; this._buried = true; }
+    if (bowDip < 0.6) this._buried = false;
 
     this._euler.set(this.pitch, this.heading, this.roll + this.heel, 'YXZ');
     this.group.position.copy(this.position);

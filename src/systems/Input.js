@@ -6,7 +6,6 @@
 //   stickActive    the touch stick is being dragged
 //   lookDX/lookDY  accumulated mouse / touch look deltas (pixels)
 //   zoom           camera zoom factor accumulated this frame (wheel / pinch)
-//   telegraphSet   engine-order index set directly (telegraph lever), or null
 //
 // Touch buttons call press(key) so every action has exactly one code path.
 export class Input {
@@ -21,8 +20,6 @@ export class Input {
     this.moveX = 0;
     this.moveY = 0;
     this.zoom = 1;
-    this.telegraphSet = null;
-    this.wheelSet = null;
     this.dragging = false;
 
     target.addEventListener('keydown', (e) => {
@@ -71,7 +68,5 @@ export class Input {
     this.lookDX = 0;
     this.lookDY = 0;
     this.zoom = 1;
-    this.telegraphSet = null;
-    this.wheelSet = null;
   }
 }

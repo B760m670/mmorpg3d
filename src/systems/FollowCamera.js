@@ -2,13 +2,13 @@ import * as THREE from 'three';
 import { CAMERA } from '../config.js';
 
 // Boxes the camera must stay out of, in the ship's own frame (metres; design
-// waterline y = 0, bow toward -Z): hull with bulwark rails, wheelhouse with
-// its masts, the stern gantry. Zooming in or swinging round the ship would
-// otherwise put the camera inside the hull.
+// waterline y = 0, bow toward -Z): the hull to the rails, the stern castle
+// and the beakhead. Zooming in or swinging round the ship would otherwise put
+// the camera inside her.
 const KEEP_OUT = [
-  [-5.3, 5.3, -4.0, 6.7, -13.0, 12.7],
-  [-4.0, 4.0, 5.0, 9.3, -7.0, 0.6],
-  [-4.5, 4.5, 4.0, 10.1, 7.1, 10.7],
+  [-6.6, 6.6, -5, 9, -34, 28],
+  [-4.5, 4.5, 9, 16, 18, 28],
+  [-3.2, 3.2, 4, 8, -36, -26],
 ];
 const _inv = new THREE.Matrix4();
 const _p = new THREE.Vector3();
@@ -33,7 +33,7 @@ export class FollowCamera {
     this.zoom = 1;
     this.yaw = 0;
     this.pitch = 0;
-    // framing and keep-out boxes for the ship followed (the trawler's by default)
+    // framing and keep-out boxes for the ship followed
     this.cfg = { distance: CAMERA.distance, height: CAMERA.height, lookHeight: CAMERA.lookHeight, keepOut: KEEP_OUT };
   }
 

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="ru">
   <head>
     <meta charset="UTF-8" />
     <meta
@@ -9,7 +9,7 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="theme-color" content="#0b0f12" />
-    <title>Open World — Ocean</title>
+    <title>Галеон у Лофотенов</title>
     <style>
       :root { color-scheme: dark; }
       * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -42,17 +42,6 @@
         background: rgba(235, 244, 248, 0.38);
         transform: translate(-50%, -50%);
       }
-      #touch-buttons {
-        position: fixed; right: 14px; bottom: calc(18px + env(safe-area-inset-bottom));
-        display: flex; flex-direction: column; gap: 10px; z-index: 6;
-      }
-      .tbtn {
-        font: 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
-        color: #eaf2f6; background: rgba(18, 26, 32, 0.6);
-        border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 10px;
-        padding: 13px 15px; -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
-      }
-
       #hud {
         position: fixed;
         left: 16px;
@@ -82,11 +71,8 @@
   </head>
   <body>
     <div id="app"></div>
-    <div id="hud">
-      <div><b>W / ↑</b> throttle &nbsp; <b>S / ↓</b> reverse &nbsp; <b>A D / ← →</b> steer</div>
-      <div><b>N</b> day / night &nbsp; <b>C</b> free camera</div>
-    </div>
-    <div id="loading">loading ocean…</div>
+    <div id="hud"></div>
+    <div id="loading">загрузка…</div>
     <script>
   // If start-up fails, say so on the loading screen instead of hanging.
   (function () {

@@ -14,7 +14,7 @@ import * as THREE from 'three';
 const NX = 10, NY = 9;
 
 // Dark weathered canvas, sewn in vertical cloths, with our emblem on the
-// courses and topsails: an eight-pointed star in a ring over a wave.
+// courses and topsails: an eight-pointed star.
 function canvasTexture(emblem) {
   const c = document.createElement('canvas');
   c.width = 512; c.height = 512;
@@ -58,22 +58,13 @@ function canvasTexture(emblem) {
       ctx.save();
       ctx.translate(256, 270);
       ctx.strokeStyle = col; ctx.fillStyle = col;
-      ctx.lineWidth = 12;
-      ctx.beginPath(); ctx.arc(0, 0, 118, 0, Math.PI * 2); ctx.stroke();
       ctx.beginPath();
       for (let k = 0; k < 16; k++) {
         const a = -Math.PI / 2 + (Math.PI * 2 * k) / 16;
-        const r = k % 4 === 0 ? 102 : k % 2 === 0 ? 64 : 26;
+        const r = k % 4 === 0 ? 150 : k % 2 === 0 ? 96 : 38;
         ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
       }
       ctx.closePath(); ctx.fill();
-      ctx.lineWidth = 9;
-      ctx.beginPath();
-      for (let k = 0; k <= 24; k++) {
-        const x = -110 + (220 * k) / 24;
-        ctx.lineTo(x, 150 + Math.sin((k / 24) * Math.PI * 4) * 9);
-      }
-      ctx.stroke();
       ctx.restore();
     };
     draw(g, 'rgba(178,140,72,0.78)');
@@ -249,6 +240,11 @@ export class Sails {
     const press = Math.min(1.2, (aws / 8) ** 1.1);
     const fill = THREE.MathUtils.clamp((rel - 92) / 16, -0.6, 1.0) * press;
     const shiver = Math.max(0, 1 - Math.abs(rel - 92) / 10) * Math.min(1, aws / 5);
+    // for the sound: how much canvas is set, and how much of it flogs
+    let total = 0, set = 0;
+    for (const s of this.sails) { total += s.area; set += s.area * s.set; }
+    this.setFrac = total ? set / total : 0;
+    this.flog = Math.min(1, shiver + (fill < 0 ? 0.6 * Math.min(1, -fill * 3) : 0));
 
     for (const s of this.sails) {
       s.set += THREE.MathUtils.clamp(s.target - s.set, -dt * 0.22, dt * 0.22);
