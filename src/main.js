@@ -65,7 +65,7 @@ falls.resize(window.innerHeight);
 window.addEventListener('resize', () => falls.resize(window.innerHeight));
 // The lantern you carry below decks (always in the scene, switched by its
 // intensity: adding or removing a light would recompile every material).
-const lamp = new THREE.PointLight(0xffc27a, 0, 8, 1.6);
+const lamp = new THREE.PointLight(0xffc27a, 0, 10, 1.6);
 scene.add(lamp);
 const nightSky = new NightSky();
 scene.add(nightSky.mesh);
@@ -102,6 +102,7 @@ document.body.appendChild(shipHud);
 const placeEl = document.createElement('div');
 placeEl.id = 'place-hint';
 placeEl.style.cssText = 'position:fixed;left:50%;bottom:64px;transform:translateX(-50%);max-width:min(92vw,640px);padding:7px 12px;border-radius:10px;background:rgba(10,16,22,.62);color:#e8eef2;font:13px/1.35 system-ui,sans-serif;text-align:center;pointer-events:none;display:none;z-index:20';
+if (IS_TOUCH) { placeEl.style.bottom = 'auto'; placeEl.style.top = 'calc(54px + env(safe-area-inset-top, 0px))'; }   // clear of the stick
 document.body.appendChild(placeEl);
 let placeT = 0, placeKey = '', hudT = 0;
 const _wind = { x: 0, z: 0 };
@@ -438,7 +439,7 @@ function tick() {
     _lampPos.set(player.pos.x, player.pos.y + 1.3, player.pos.z);
     ship.model.localToWorld(_lampPos);
     lamp.position.copy(_lampPos);
-    lamp.intensity = 1.4 * insideK;
+    lamp.intensity = 2.1 * insideK;
   } else lamp.intensity = 0;
   ship.lightLamps(player.pos, onBoard ? Math.max(insideK, 0.25) : 0);
   ocean.uniforms.uHullMask.value = onBoard ? 1 : 0;

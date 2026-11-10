@@ -125,7 +125,7 @@ export class Galleon {
       const n = near[i];
       if (!n || k <= 0) { l.intensity = 0; return; }
       l.position.copy(n[0]);
-      l.intensity = 2.6 * k * (0.93 + 0.07 * Math.sin(performance.now() * 0.011 + i * 2));
+      l.intensity = 3.4 * k * (0.93 + 0.07 * Math.sin(performance.now() * 0.011 + i * 2));
     });
   }
 

@@ -137,11 +137,13 @@ export class Player {
     const len = mv.length();
     if (len > 1e-5) this.bob += len * 6;
 
-    // Slide along walls: rays at knee, waist and head height.
+    // Slide along walls: rays just over a step's height, at the waist and at
+    // the head. Anything lower (a sill, the edge of the deck at the head of
+    // a ladder) is for the floor test below.
     for (let pass = 0; pass < 2 && mv.lengthSq() > 1e-10; pass++) {
       _dir.copy(mv).normalize();
       let hit = null;
-      for (const h of [0.35, 1.0, 1.6]) {
+      for (const h of [PLAYER.stepHeight + 0.05, 1.0, 1.6]) {
         _tmp.copy(this.pos).y += h;
         const r = this._castWall(_tmp, _dir, mv.length() + PLAYER.radius, collider);
         if (r && (!hit || r.distance < hit.distance)) hit = r;
