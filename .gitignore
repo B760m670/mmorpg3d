@@ -7,3 +7,4 @@ dist/
 blender/out/
 .terrain_cache/
 .geoenv/
+__pycache__/
