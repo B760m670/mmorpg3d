@@ -60,3 +60,15 @@ export function metricUV(geo, axis = 'x') {
 
 export const MATERIALS = META;
 export const CREDITS = DATA.credits;
+
+// One of the scans as a texture of its own, repeated `rx` x `ry` times over
+// a part's 0..1 UVs (the sails, the flags).
+export function scanTexture(name, kind, rx, ry, renderer) {
+  const t = loader.load(`${BASE}${name}_${kind}.webp`);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.colorSpace = kind === 'col' ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+  t.anisotropy = renderer ? renderer.capabilities.getMaxAnisotropy() : 8;
+  t.repeat.set(rx, ry);
+  return t;
+}
+

@@ -75,28 +75,32 @@ function hingeAt(node, point, parent) {
 // the scan's colour needs it. The model brings its own baked ambient
 // occlusion (its second UV), kept as the material's aoMap.
 const SCANS = {
-  hull_livery: ['hull_planks'],
-  hull_upper: ['red_paint', { tint: [0.3, 0.16, 0.13] }],
-  hull_bottom: ['hull_planks', { tint: [0.42, 0.36, 0.3] }],
-  stern_carved: ['joinery'],
-  paint_red: ['red_paint', { tint: [0.3, 0.16, 0.13] }],
-  paint_red_vertical: ['red_paint', { tint: [0.3, 0.16, 0.13] }],
-  oak: ['timber'], oak_across: ['timber'], oak_vertical: ['timber'], grating: ['timber'],
+  // a ship that has seen hard use: black paint gone dull and flaking,
+  // weathered dark oak, tarnished metal, no gilt left shining
+  hull_livery: ['hull_planks', { tint: [0.62, 0.56, 0.5] }],
+  hull_upper: ['black_wood'],
+  hull_bottom: ['hull_planks', { tint: [0.32, 0.33, 0.27] }],
+  stern_carved: ['timber', { tint: [0.3, 0.26, 0.23] }],
+  paint_red: ['black_wood'],
+  paint_red_vertical: ['black_wood'],
+  oak: ['timber', { tint: [0.4, 0.34, 0.29] }], oak_across: ['timber', { tint: [0.4, 0.34, 0.29] }],
+  oak_vertical: ['timber', { tint: [0.4, 0.34, 0.29] }], grating: ['timber', { tint: [0.42, 0.37, 0.32] }],
   dark_wood: ['black_wood'], dark_wood_vertical: ['black_wood'],
-  gilt: ['bronze', { tint: [1.0, 0.78, 0.36], env: 1.0 }],
-  carved_dark: ['joinery'], carved_figure: ['joinery'], deadeye: ['joinery'],
+  gilt: ['bronze', { tint: [0.42, 0.36, 0.26] }],
+  carved_dark: ['timber', { tint: [0.3, 0.26, 0.23] }], carved_figure: ['timber', { tint: [0.36, 0.31, 0.27] }],
+  deadeye: ['joinery', { tint: [0.6, 0.55, 0.5] }],
   iron: ['iron'],
-  lead_sheathing: ['lead'],
+  lead_sheathing: ['lead', { tint: [0.6, 0.6, 0.6] }],
   in_planking: ['in_planks'], in_timber: ['timber'],
-  in_red_paint: ['red_paint', { tint: [0.3, 0.16, 0.13] }],
+  in_red_paint: ['red_paint', { tint: [0.22, 0.1, 0.08] }],      // gun decks were red below: blood shows less
   in_ballast_floor: ['in_planks', { tint: [0.55, 0.55, 0.55] }],
   in_cask: ['joinery', { tint: [1.0, 0.9, 0.8] }], in_crate: ['timber'],
   in_brick: ['brick'],
-  in_bronze: ['bronze', { tint: [1.0, 0.68, 0.42], env: 1.0 }],
-  in_canvas: ['canvas', { tint: [0.42, 0.38, 0.32] }],
-  deck_planks: ['deck_planks'],
-  spar: ['timber', { tint: [0.62, 0.5, 0.38] }],
-  rope: ['rope', { tint: [0.42, 0.34, 0.26] }],
+  in_bronze: ['bronze', { tint: [0.75, 0.55, 0.38] }],
+  in_canvas: ['canvas', { tint: [0.3, 0.28, 0.25] }],
+  deck_planks: ['deck_planks', { tint: [0.72, 0.7, 0.66] }],
+  spar: ['timber', { tint: [0.24, 0.19, 0.15] }],                  // tarred pine
+  rope: ['rope', { tint: [0.36, 0.3, 0.24] }],
 };
 
 export const GALLEON = {
@@ -191,13 +195,16 @@ export class Galleon {
         if (!o.isMesh) return;
         const swap = (m) => {
           if (!m || !SCANS[m.name]) return m;
-          let n = made.get(m.name);
+          const vc = !!o.geometry.attributes.color;          // the hull's weathering
+          const key = `${m.name}${vc ? '+vc' : ''}`;
+          let n = made.get(key);
           if (!n) {
             const [scan, opts = {}] = SCANS[m.name];
             n = shipMaterial(scan, this.renderer, { ...opts, ao: false });
             if (m.aoMap) { n.aoMap = m.aoMap; n.aoMapIntensity = 1; }
             n.side = m.side;
-            made.set(m.name, n);
+            n.vertexColors = vc;
+            made.set(key, n);
           }
           return n;
         };

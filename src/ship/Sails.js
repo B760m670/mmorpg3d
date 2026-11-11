@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { scanTexture } from './Materials.js';
 
 // The galleon's canvas, built here rather than in Blender so that it can be
 // set and furled, fill with the wind, shiver when the wind comes too far
@@ -13,70 +14,137 @@ import * as THREE from 'three';
 
 const NX = 10, NY = 9;
 
-// Dark weathered canvas, sewn in vertical cloths, with our emblem on the
-// courses and topsails: an eight-pointed star.
-function canvasTexture(emblem) {
+// Old canvas that has seen hard weather: dark, stained and sun-rotted,
+// sewn in vertical cloths, patched, holed and torn, the foot gone ragged;
+// our star on the courses and topsails, faded and half worn away. The holes
+// and tears are cut out of the alpha (the sail is drawn with alphaTest).
+function rng(seed) {
+  let x = seed >>> 0;
+  return () => ((x = (x * 1664525 + 1013904223) >>> 0) / 4294967296);
+}
+function jagged(g, cx, cy, r, n, rand, spikes = 0.45) {
+  g.beginPath();
+  for (let k = 0; k < n; k++) {
+    const a = (k / n) * Math.PI * 2;
+    const rr = r * (1 - spikes + spikes * 2 * rand());
+    g.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr * (0.7 + 0.6 * rand()));
+  }
+  g.closePath();
+}
+function canvasTexture(emblem, seed = 1) {
+  const S = 1024;
   const c = document.createElement('canvas');
-  c.width = 512; c.height = 512;
+  c.width = S; c.height = S;
   const g = c.getContext('2d');
-  g.fillStyle = '#2e2822';
-  g.fillRect(0, 0, 512, 512);
-  // stains and sun-bleaching
-  for (let i = 0; i < 70; i++) {
-    const x = Math.random() * 512, y = Math.random() * 512, r = 20 + Math.random() * 90;
+  const rand = rng(seed * 7919 + (emblem ? 13 : 0));
+  g.fillStyle = '#2b261f';
+  g.fillRect(0, 0, S, S);
+  // stains, rot and salt
+  for (let i = 0; i < 160; i++) {
+    const x = rand() * S, y = rand() * S, r = 30 + rand() * 200;
     const gr = g.createRadialGradient(x, y, 0, x, y, r);
-    const light = Math.random() < 0.5;
-    gr.addColorStop(0, light ? 'rgba(90,80,64,0.18)' : 'rgba(10,8,6,0.22)');
+    const kind = rand();
+    gr.addColorStop(0, kind < 0.35 ? 'rgba(92,84,70,0.16)' : kind < 0.8 ? 'rgba(6,5,4,0.25)' : 'rgba(60,52,30,0.14)');
     gr.addColorStop(1, 'rgba(0,0,0,0)');
     g.fillStyle = gr;
     g.fillRect(x - r, y - r, 2 * r, 2 * r);
   }
-  // cloths: seams every 1/14 of the width, a little lighter tape beside
+  // water marks running down
+  for (let i = 0; i < 40; i++) {
+    const x = rand() * S, y = rand() * S * 0.6, w = 6 + rand() * 30, h = 120 + rand() * 400;
+    const gr = g.createLinearGradient(0, y, 0, y + h);
+    gr.addColorStop(0, 'rgba(0,0,0,0.0)'); gr.addColorStop(0.3, 'rgba(0,0,0,0.18)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = gr; g.fillRect(x, y, w, h);
+  }
+  // cloths: seams every 1/14 of the width
   for (let k = 1; k < 14; k++) {
-    const x = (k * 512) / 14;
-    g.fillStyle = 'rgba(0,0,0,0.35)';
-    g.fillRect(x - 1, 0, 2, 512);
-    g.fillStyle = 'rgba(120,105,85,0.12)';
-    g.fillRect(x + 1, 0, 3, 512);
+    const x = (k * S) / 14 + (rand() - 0.5) * 4;
+    g.fillStyle = 'rgba(0,0,0,0.4)'; g.fillRect(x - 1.5, 0, 3, S);
+    g.fillStyle = 'rgba(110,98,80,0.1)'; g.fillRect(x + 2, 0, 5, S);
   }
-  // reef bands and the boltrope round the edge
-  g.fillStyle = 'rgba(0,0,0,0.3)';
-  for (const y of [70, 140]) g.fillRect(0, y, 512, 4);
-  g.strokeStyle = 'rgba(20,16,12,0.9)';
-  g.lineWidth = 8;
-  g.strokeRect(4, 4, 504, 504);
-  // a few patches
-  for (let i = 0; i < 5; i++) {
-    const x = Math.random() * 440, y = 180 + Math.random() * 280, w = 30 + Math.random() * 40, h = 30 + Math.random() * 50;
-    g.fillStyle = `rgba(${60 + Math.random() * 30},${52 + Math.random() * 20},${40},0.5)`;
-    g.fillRect(x, y, w, h);
-    g.strokeStyle = 'rgba(0,0,0,0.4)'; g.lineWidth = 1.5; g.strokeRect(x, y, w, h);
+  // reef bands and the boltrope
+  g.fillStyle = 'rgba(0,0,0,0.35)';
+  for (const y of [140, 280]) g.fillRect(0, y, S, 7);
+  g.strokeStyle = 'rgba(16,13,10,0.95)'; g.lineWidth = 14; g.strokeRect(7, 7, S - 14, S - 14);
+  // patches of other canvas, sewn on crooked
+  for (let i = 0; i < 9; i++) {
+    const x = rand() * (S - 160), y = 200 + rand() * (S - 400), w = 60 + rand() * 120, h = 60 + rand() * 150;
+    g.save(); g.translate(x + w / 2, y + h / 2); g.rotate((rand() - 0.5) * 0.25);
+    const t = 30 + rand() * 40;
+    g.fillStyle = `rgba(${t + 8},${t},${t - 8},0.85)`; g.fillRect(-w / 2, -h / 2, w, h);
+    g.setLineDash([5, 6]); g.strokeStyle = 'rgba(0,0,0,0.6)'; g.lineWidth = 2; g.strokeRect(-w / 2 + 4, -h / 2 + 4, w - 8, h - 8);
+    g.restore();
   }
+  g.setLineDash([]);
   let mask = null;
   if (emblem) {
-    const draw = (ctx, col) => {
+    const draw = (ctx, col, sc = 1) => {
       ctx.save();
-      ctx.translate(256, 270);
-      ctx.strokeStyle = col; ctx.fillStyle = col;
+      ctx.translate(512 * sc, 540 * sc);
+      ctx.fillStyle = col;
       ctx.beginPath();
       for (let k = 0; k < 16; k++) {
         const a = -Math.PI / 2 + (Math.PI * 2 * k) / 16;
-        const r = k % 4 === 0 ? 150 : k % 2 === 0 ? 96 : 38;
+        const r = (k % 4 === 0 ? 300 : k % 2 === 0 ? 190 : 76) * sc;
         ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
       }
       ctx.closePath(); ctx.fill();
       ctx.restore();
     };
-    draw(g, 'rgba(178,140,72,0.78)');
+    draw(g, 'rgba(150,132,104,0.55)');                     // dull bone, faded
+    // worn away in patches
+    g.globalCompositeOperation = 'source-atop';
+    for (let i = 0; i < 70; i++) {
+      const x = 512 + (rand() - 0.5) * 620, y = 540 + (rand() - 0.5) * 620, r = 10 + rand() * 50;
+      g.fillStyle = `rgba(43,38,31,${0.4 + rand() * 0.5})`;
+      jagged(g, x, y, r, 9, rand); g.fill();
+    }
+    g.globalCompositeOperation = 'source-over';
     const m = document.createElement('canvas');
     m.width = 256; m.height = 256;
     const mg = m.getContext('2d');
     mg.fillStyle = '#000'; mg.fillRect(0, 0, 256, 256);
-    mg.scale(0.5, 0.5);
-    draw(mg, '#fff');
+    draw(mg, '#555', 0.25);
     mask = new THREE.CanvasTexture(m);
     mask.colorSpace = THREE.SRGBColorSpace;
   }
+  // now the damage, cut out of the canvas
+  g.globalCompositeOperation = 'destination-out';
+  g.fillStyle = '#000';
+  // the foot frayed and torn away in tongues
+  g.beginPath();
+  g.moveTo(0, S);
+  for (let x = 0; x <= S; x += 8) g.lineTo(x, S - 10 - rand() * 46 - (rand() < 0.08 ? 60 + rand() * 120 : 0));
+  g.lineTo(S, S); g.closePath(); g.fill();
+  // holes: shot and rot, with frayed edges
+  const holes = [];
+  const nh = 4 + Math.floor(rand() * 5);
+  for (let i = 0; i < nh; i++) {
+    const x = 60 + rand() * (S - 120), y = 120 + rand() * (S - 260), r = 10 + rand() * (rand() < 0.3 ? 70 : 28);
+    jagged(g, x, y, r, 14, rand, 0.5); g.fill();
+    holes.push([x, y, r]);
+  }
+  // tears up from the foot and along the seams
+  const nt = 1 + Math.floor(rand() * 3);
+  for (let i = 0; i < nt; i++) {
+    let x = 80 + rand() * (S - 160), y = S;
+    const len = 150 + rand() * 380;
+    g.beginPath(); g.moveTo(x - 4, y);
+    const pts = [];
+    // a rent that gapes at the foot and closes toward its end
+    for (let t = 0; t < len; t += 16) { x += (rand() - 0.5) * 26; y -= 16; pts.push([x, y, 1 - t / len]); }
+    for (const [px, py, w] of pts) g.lineTo(px - (4 + rand() * 6) - 22 * w, py);
+    for (const [px, py, w] of pts.reverse()) g.lineTo(px + (4 + rand() * 6) + 22 * w, py);
+    g.closePath(); g.fill();
+  }
+  // a darker, rotten rim round every hole
+  g.globalCompositeOperation = 'source-atop';
+  for (const [x, y, r] of holes) {
+    const gr = g.createRadialGradient(x, y, r * 0.8, x, y, r * 1.8);
+    gr.addColorStop(0, 'rgba(0,0,0,0.55)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = gr; g.fillRect(x - 2 * r, y - 2 * r, 4 * r, 4 * r);
+  }
+  g.globalCompositeOperation = 'source-over';
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 4;
@@ -114,11 +182,13 @@ export class Sails {
     this.sails = [];
     this.level = 0;           // 0 all furled, 1 courses, 2 + topsails, 3 + topgallants
     this.brace = 0;           // yard angle (rad), + turns the starboard yardarm forward
-    const plain = canvasTexture(false), emb = canvasTexture(true);
+    const weave = scanTexture('canvas', 'nrm', 26, 26, null);
     const mat = (t) => new THREE.MeshStandardMaterial({
-      map: t.tex, side: THREE.DoubleSide, roughness: 0.92, metalness: 0,
+      map: t.tex, side: THREE.DoubleSide, roughness: 0.95, metalness: 0, alphaTest: 0.5,
+      normalMap: weave, normalScale: new THREE.Vector2(0.6, 0.6),
       emissiveMap: t.mask || null, emissive: new THREE.Color(t.mask ? 0xff9a3c : 0x000000), emissiveIntensity: 0,
     });
+    const plain = canvasTexture(false, 1), emb = canvasTexture(true, 2);
     this.matPlain = mat(plain);
     this.matEmblem = mat(emb);
     this.bundleMat = new THREE.MeshStandardMaterial({ color: 0x2a241e, roughness: 0.95 });
@@ -323,24 +393,44 @@ export class Sails {
 export class Flags {
   constructor(rig) {
     this.group = new THREE.Group();
+    // a black flag: a skull over crossed bones, in bone white, the fly
+    // end frayed
     const c = document.createElement('canvas');
-    c.width = 256; c.height = 160;
+    c.width = 512; c.height = 320;
     const g = c.getContext('2d');
-    g.fillStyle = '#1c1a2a'; g.fillRect(0, 0, 256, 160);
-    g.fillStyle = '#7a1a14'; g.fillRect(0, 0, 256, 22); g.fillRect(0, 138, 256, 22);
-    g.translate(128, 80); g.fillStyle = '#c8a050'; g.strokeStyle = '#c8a050'; g.lineWidth = 6;
-    g.beginPath(); g.arc(0, 0, 44, 0, Math.PI * 2); g.stroke();
-    g.beginPath();
-    for (let k = 0; k < 16; k++) {
-      const a = -Math.PI / 2 + (Math.PI * 2 * k) / 16;
-      const r = k % 4 === 0 ? 38 : k % 2 === 0 ? 24 : 10;
-      g.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+    const rand = rng(77);
+    g.fillStyle = '#0d0c0b'; g.fillRect(0, 0, 512, 320);
+    for (let i = 0; i < 40; i++) {
+      const x = rand() * 512, y = rand() * 320, r = 20 + rand() * 80;
+      const gr = g.createRadialGradient(x, y, 0, x, y, r);
+      gr.addColorStop(0, rand() < 0.5 ? 'rgba(60,55,48,0.18)' : 'rgba(0,0,0,0.3)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = gr; g.fillRect(x - r, y - r, 2 * r, 2 * r);
     }
-    g.closePath(); g.fill();
+    g.save(); g.translate(230, 160);
+    g.fillStyle = '#cfc6b0'; g.strokeStyle = '#cfc6b0';
+    for (const a of [0.6, -0.6]) {                 // the crossed bones
+      g.save(); g.rotate(a);
+      g.fillRect(-120, -11, 240, 22);
+      for (const x of [-120, 120]) for (const y of [-14, 14]) { g.beginPath(); g.arc(x, y, 16, 0, Math.PI * 2); g.fill(); }
+      g.restore();
+    }
+    g.beginPath(); g.ellipse(0, -18, 62, 66, 0, 0, Math.PI * 2); g.fill();          // the skull
+    g.fillRect(-34, 30, 68, 34);
+    g.fillStyle = '#0d0c0b';
+    for (const x of [-24, 24]) { g.beginPath(); g.ellipse(x, -18, 17, 20, 0, 0, Math.PI * 2); g.fill(); }
+    g.beginPath(); g.moveTo(0, 2); g.lineTo(-8, 18); g.lineTo(8, 18); g.closePath(); g.fill();
+    for (let x = -26; x <= 26; x += 13) g.fillRect(x - 2, 40, 4, 22);
+    g.restore();
+    g.globalCompositeOperation = 'destination-out';
+    g.beginPath(); g.moveTo(512, 0);
+    for (let y = 0; y <= 320; y += 10) g.lineTo(512 - 6 - rand() * 40 - (rand() < 0.15 ? 40 : 0), y);
+    g.lineTo(512, 320); g.closePath(); g.fill();
+    for (let i = 0; i < 3; i++) { jagged(g, 300 + rand() * 180, 30 + rand() * 260, 6 + rand() * 14, 10, rand); g.fill(); }
+    g.globalCompositeOperation = 'source-over';
     const tex = new THREE.CanvasTexture(c);
     tex.colorSpace = THREE.SRGBColorSpace;
-    const mat = new THREE.MeshStandardMaterial({ map: tex, side: THREE.DoubleSide, roughness: 0.9 });
-    const pmat = new THREE.MeshStandardMaterial({ color: 0x6e1812, side: THREE.DoubleSide, roughness: 0.9 });
+    const mat = new THREE.MeshStandardMaterial({ map: tex, side: THREE.DoubleSide, roughness: 0.95, alphaTest: 0.5 });
+    const pmat = new THREE.MeshStandardMaterial({ color: 0x2a0b09, side: THREE.DoubleSide, roughness: 0.95 });
     this.flags = [];
     const add = (at, w, h, m, nx) => {
       const geo = new THREE.PlaneGeometry(w, h, nx, 2);

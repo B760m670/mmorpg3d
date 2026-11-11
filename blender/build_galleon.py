@@ -644,7 +644,36 @@ def build_hull():
                 co = lp.vert.co
                 sv = co.y + S_MID
                 lp[uvl].uv = (sv, co.z - sheer(sv))          # metres; the strakes run with the wales
-    # the red upper works over the top wale, oak between, the tarred bottom
+    # weathering in the vertex colours (multiplying the scanned planking):
+    # slime and weed along the waterline, a dark bottom, rust run down from
+    # every port, dirty streaks down the side, mottling
+    cl = bm.loops.layers.float_color.new("Col")
+
+    def weather(sv, z):
+        r = g = b = 1.0
+        mott = 0.5 + 0.25 * math.sin(sv * 0.9 + z * 2.1) + 0.25 * math.sin(sv * 2.3 - z * 0.7 + 1.3)
+        k = 0.78 + 0.22 * mott
+        st = max(0.0, math.sin(sv * 4.7 + 1.0) * math.sin(sv * 11.3)) ** 2 * clamp((7.5 - z) / 6.0)
+        k *= 1 - 0.3 * st
+        if z < 0.45:                                    # weed and slime about the waterline
+            t = clamp((0.45 - z) / 0.7)
+            r *= 1 - 0.5 * t; g *= 1 - 0.32 * t; b *= 1 - 0.55 * t
+        if z < -0.6:                                    # the bottom, foul and dark
+            t = clamp((-0.6 - z) / 1.5)
+            r *= 1 - 0.35 * t; g *= 1 - 0.3 * t; b *= 1 - 0.3 * t
+        for ps, pz, w, h in PORTS:                      # rust run down from the port's hinges and lid
+            d = abs(sv - ps)
+            top = pz - h / 2
+            if d < w * 0.7 and top - 2.4 < z < top:
+                f = (1 - d / (w * 0.7)) * (1 - (top - z) / 2.4)
+                r *= 1 - 0.18 * f; g *= 1 - 0.38 * f; b *= 1 - 0.5 * f
+        return (r * k, g * k, b * k, 1.0)
+    for f in bm.faces:
+        for lp in f.loops:
+            co = lp.vert.co
+            lp[cl] = weather(co.y + S_MID, co.z)
+
+    # the painted upper works over the top wale, oak between, the tarred bottom
     z_red = WALES[-1][0] + WALES[-1][1] / 2 + 0.02
     for f in bm.faces:
         c = f.calc_center_median()
@@ -653,6 +682,7 @@ def build_hull():
     ob = new_obj("hull_side", bm, M["hull"], smooth_shade=True, side=True, uv=False)
     ob.data.materials.append(M["hull_upper"])
     ob.data.materials.append(M["hull_bottom"])
+    ob.data.color_attributes.active_color = ob.data.color_attributes["Col"]
     ob.data.set_sharp_from_angle(angle=math.radians(35))
 
     def end_face(name, col_i, sfn, wfn, outward, mat, zmin=-99.0, zmax=99.0, holes=()):
@@ -2209,6 +2239,8 @@ for _o in PARTS:
             else "fittings"].append(_o)
 HULL, DECK, RIGM, LITE, FIT, INT, COLM = (merge(_groups[k], k) for k in ("hull", "decks", "rig", "lights", "fittings", "interior", "collision"))
 COLM.hide_render = True
+if HULL.data.color_attributes.get("Col"):
+    HULL.data.color_attributes.active_color = HULL.data.color_attributes["Col"]
 for o in (HULL, FIT, RIGM, DECK, LITE, INT, COLM):
     o.data.calc_loop_triangles()
 print("triangles", {o.name: len(o.data.loop_triangles) for o in (HULL, FIT, RIGM, DECK, LITE, INT, COLM)})
@@ -2503,6 +2535,7 @@ if not SHAPE:
     common = dict(filepath=glb, export_format="GLB", use_selection=True, export_yup=True, export_apply=True,
                   export_texcoords=True, export_normals=True, export_tangents=False, export_materials="EXPORT")
     try:
+        common["export_vertex_color"] = "ACTIVE"          # the hull's weathering
         bpy.ops.export_scene.gltf(export_image_format="WEBP", export_image_quality=82, **common)
     except TypeError:
         bpy.ops.export_scene.gltf(export_image_format="JPEG", export_jpeg_quality=86, **common)
