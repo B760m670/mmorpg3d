@@ -4,6 +4,7 @@ import { gunzipSync } from 'fflate';
 import RIG from '../ship/galleon_rig.json';
 import { Sails, Flags, squareDrive } from '../ship/Sails.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { shipMaterial } from '../ship/Materials.js';
 
 // The ship: a large sailing ship of the 1620s after Vasa, Blender-built
 // (blender/build_galleon.py), and her sailing.
@@ -33,6 +34,12 @@ async function loadBytes(url) {
   }
   const r = await fetch(url);
   if (!r.ok) throw new Error(`galleon model ${url}: HTTP ${r.status}`);
+  if (url.endsWith('.txt')) {            // base64 text (the page's host serves text, not binary)
+    const bin = atob((await r.text()).trim());
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
   return new Uint8Array(await r.arrayBuffer());
 }
 
@@ -62,6 +69,35 @@ function hingeAt(node, point, parent) {
   h.attach(node);
   return h;
 }
+
+// The model's materials (by their Blender names) and the real, scanned
+// material each part is made of (src/ship/Materials.js), with a tint where
+// the scan's colour needs it. The model brings its own baked ambient
+// occlusion (its second UV), kept as the material's aoMap.
+const SCANS = {
+  hull_livery: ['hull_planks'],
+  hull_upper: ['red_paint', { tint: [0.3, 0.16, 0.13] }],
+  hull_bottom: ['hull_planks', { tint: [0.42, 0.36, 0.3] }],
+  stern_carved: ['joinery'],
+  paint_red: ['red_paint', { tint: [0.3, 0.16, 0.13] }],
+  paint_red_vertical: ['red_paint', { tint: [0.3, 0.16, 0.13] }],
+  oak: ['timber'], oak_across: ['timber'], oak_vertical: ['timber'], grating: ['timber'],
+  dark_wood: ['black_wood'], dark_wood_vertical: ['black_wood'],
+  gilt: ['bronze', { tint: [1.0, 0.78, 0.36], env: 1.0 }],
+  carved_dark: ['joinery'], carved_figure: ['joinery'], deadeye: ['joinery'],
+  iron: ['iron'],
+  lead_sheathing: ['lead'],
+  in_planking: ['in_planks'], in_timber: ['timber'],
+  in_red_paint: ['red_paint', { tint: [0.3, 0.16, 0.13] }],
+  in_ballast_floor: ['in_planks', { tint: [0.55, 0.55, 0.55] }],
+  in_cask: ['joinery', { tint: [1.0, 0.9, 0.8] }], in_crate: ['timber'],
+  in_brick: ['brick'],
+  in_bronze: ['bronze', { tint: [1.0, 0.68, 0.42], env: 1.0 }],
+  in_canvas: ['canvas', { tint: [0.42, 0.38, 0.32] }],
+  deck_planks: ['deck_planks'],
+  spar: ['timber', { tint: [0.62, 0.5, 0.38] }],
+  rope: ['rope', { tint: [0.42, 0.34, 0.26] }],
+};
 
 export const GALLEON = {
   length: 47.5, beam: 15.0, draught: 4.8,     // a galleon's proportion: length/beam 3.2
@@ -149,6 +185,24 @@ export class Galleon {
         if (o.name.startsWith('rig')) o.castShadow = true;
       });
       this.glow = glow;
+      // real materials in place of the model's own
+      const made = new Map();
+      model.traverse((o) => {
+        if (!o.isMesh) return;
+        const swap = (m) => {
+          if (!m || !SCANS[m.name]) return m;
+          let n = made.get(m.name);
+          if (!n) {
+            const [scan, opts = {}] = SCANS[m.name];
+            n = shipMaterial(scan, this.renderer, { ...opts, ao: false });
+            if (m.aoMap) { n.aoMap = m.aoMap; n.aoMapIntensity = 1; }
+            n.side = m.side;
+            made.set(m.name, n);
+          }
+          return n;
+        };
+        o.material = Array.isArray(o.material) ? o.material.map(swap) : swap(o.material);
+      });
       // into her group first, so that everything below is worked out in one
       // frame (she may already be under way when the model arrives)
       this.group.add(model);

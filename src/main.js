@@ -27,7 +27,8 @@ import { Diver } from './entities/Diver.js';
 import { DiveComputer } from './ui/DiveComputer.js';
 import { Galleon, GALLEON } from './entities/Galleon.js';
 import { Aboard } from './ship/Aboard.js';
-import galleonUrl from './assets/galleon.glb.gz?url';
+// the model and the materials are files next to the page, not inlined in it
+const galleonUrl = `${import.meta.env.BASE_URL}models/galleon.glb.b64.txt`;      // gzipped glb, as base64 text
 
 const container = document.getElementById('app');
 const loading = document.getElementById('loading');
@@ -90,6 +91,7 @@ const ship = new Galleon();
 ship.water = (x, z, t) => ocean.sampleWater(x, z, t);
 ship.position.set(SHIP.spawn.x, 0, SHIP.spawn.z);
 ship.heading = THREE.MathUtils.degToRad(SHIP.spawn.heading);
+ship.renderer = renderer;            // for the materials (anisotropic filtering)
 ship.load(galleonUrl);
 scene.add(ship.object);
 ocean.uniforms.uBoatHalf.value.set(...GALLEON.halfHull);

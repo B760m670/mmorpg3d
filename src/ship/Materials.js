@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import DATA from '../../public/materials/materials.json';
+import DATA from './scans.json';
 
 // The ship's materials: real, photo-scanned textures (Poly Haven and
 // ambientCG, CC0; tools/pack_scans.py), laid in metres along the grain of

@@ -377,10 +377,70 @@ def material(name, color, rough=0.5, metal=0.0, emit=None, grime=0.0, bump=0.0, 
     return m
 
 
-def new_obj(name, bm, mat, smooth_shade=False, side=False):
+def _principal_axis(cos):
+    a = np.asarray([tuple(c) for c in cos], np.float64)
+    if len(a) < 3:
+        return Vector((1.0, 0.0, 0.0))
+    c = a - a.mean(0)
+    w, v = np.linalg.eigh(c.T @ c)
+    return Vector(tuple(v[:, 2])).normalized()
+
+
+def metric_uv_bm(bm, axis=None, cyl=None, name="UVMap"):
+    """UVs in metres for the real (scanned) materials, the grain (u) along
+    `axis` (default: the part's longest direction). Faces across the grain
+    show end grain. cyl=(centre, radius): a round part, v runs round it so
+    the texture wraps without a seam at every facet."""
+    bm.normal_update()
+    uvl = bm.loops.layers.uv.get(name) or bm.loops.layers.uv.new(name)
+    a = Vector(axis).normalized() if axis is not None else _principal_axis([v.co for v in bm.verts])
+    if cyl is not None:
+        c0, rr = Vector(cyl[0]), cyl[1]
+        e1 = a.cross(Vector((0, 0, 1)) if abs(a.z) < 0.9 else Vector((1, 0, 0))).normalized()
+        e2 = a.cross(e1).normalized()
+    for f in bm.faces:
+        n = f.normal
+        if n.length < 1e-6:
+            continue
+        if abs(n.dot(a)) > 0.75:                     # end grain
+            b1 = n.cross(Vector((0, 0, 1)) if abs(n.z) < 0.9 else Vector((1, 0, 0))).normalized()
+            b2 = n.cross(b1).normalized()
+            for lp in f.loops:
+                co = lp.vert.co
+                lp[uvl].uv = (co.dot(b1), co.dot(b2))
+        elif cyl is not None:
+            angs = []
+            for lp in f.loops:
+                d = lp.vert.co - c0
+                angs.append(math.atan2(d.dot(e2), d.dot(e1)))
+            ref = angs[0]
+            for lp, an in zip(f.loops, angs):
+                while an - ref > math.pi:
+                    an -= 2 * math.pi
+                while an - ref < -math.pi:
+                    an += 2 * math.pi
+                lp[uvl].uv = (lp.vert.co.dot(a), an * rr)
+        else:
+            b = n.cross(a).normalized()
+            for lp in f.loops:
+                co = lp.vert.co
+                lp[uvl].uv = (co.dot(a), co.dot(b))
+
+
+def metric_uv_mesh(me, axis=None, cyl=None):
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    metric_uv_bm(bm, axis, cyl)
+    bm.to_mesh(me)
+    bm.free()
+
+
+def new_obj(name, bm, mat, smooth_shade=False, side=False, uv=True, uv_axis=None, uv_cyl=None):
     if smooth_shade:
         for f in bm.faces:
             f.smooth = True
+    if uv:
+        metric_uv_bm(bm, uv_axis, uv_cyl)
     me = bpy.data.meshes.new(name)
     bm.to_mesh(me)
     bm.free()
@@ -393,12 +453,20 @@ def new_obj(name, bm, mat, smooth_shade=False, side=False):
     return ob
 
 
+CHAMFER = set()          # (filled in once the materials exist)
+
+
 def box(name, c, size, mat, side=False):
     bm = bmesh.new()
     bmesh.ops.create_cube(bm, size=1.0)
     for v in bm.verts:
         v.co = Vector((v.co.x * size[0] + c[0], v.co.y * size[1] + c[1], v.co.z * size[2] + c[2]))
-    return new_obj(name, bm, mat, side=side)
+    # timber is never sharp-edged: a chamfer on every arris catches the light
+    if mat in CHAMFER and min(size) >= 0.05:
+        bmesh.ops.bevel(bm, geom=list(bm.edges), offset=min(0.022, min(size) * 0.16), offset_type="OFFSET",
+                        segments=1, profile=0.5, affect="EDGES", clamp_overlap=True)
+    k = max(range(3), key=lambda i: size[i])
+    return new_obj(name, bm, mat, side=side, uv_axis=[(1, 0, 0), (0, 1, 0), (0, 0, 1)][k])
 
 
 def cyl(name, p0, p1, r, mat, seg=10, cap=True, r2=None, side=False):
@@ -413,7 +481,8 @@ def cyl(name, p0, p1, r, mat, seg=10, cap=True, r2=None, side=False):
     bmesh.ops.transform(bm, matrix=Matrix.Translation((p0 + p1) / 2) @ rot, verts=bm.verts)
     for f in bm.faces:
         f.smooth = len(f.verts) == 4
-    return new_obj(name, bm, mat, side=side)
+    return new_obj(name, bm, mat, side=side, uv_axis=d.normalized(),
+                   uv_cyl=((p0 + p1) / 2, (r + (r if r2 is None else r2)) / 2))
 
 
 def sphere(name, c, r, mat, seg=14, scale=(1, 1, 1), side=False, rot=None):
@@ -513,7 +582,9 @@ def baluster_row(name, a, b, h, mat, rail_mat, gap=0.32, side=False):
 
 # ------------------------------------------------------------------ materials
 M = {
-    "hull": material("hull_livery", (1, 1, 1), rough=0.8),
+    "hull": material("hull_livery", (0.15, 0.1, 0.065), rough=0.8),
+    "hull_upper": material("hull_upper", (0.2, 0.05, 0.03), rough=0.7),
+    "hull_bottom": material("hull_bottom", (0.05, 0.04, 0.03), rough=0.6),
     "stern": material("stern_carved", (0.14, 0.095, 0.06), rough=0.72, grime=0.5, carve=0.16, bump=0.03),
     "red": material("paint_red", (0.2, 0.052, 0.034), rough=0.74, grime=0.45, grain="y", bump=0.003),
     "red_z": material("paint_red_vertical", (0.2, 0.052, 0.034), rough=0.74, grime=0.45, grain="z", bump=0.003),
@@ -548,6 +619,8 @@ M = {
     "lantern": material("light_lantern", (0.16, 0.13, 0.09), rough=0.4, metal=0.1, emit=(0.14, 0.08, 0.035)),
 }
 PLAIN = {M["spar"], M["rope"], M["deadeye"], M["iron"]}       # the rig: no bake
+CHAMFER = {M[k] for k in ("oak", "oak_x", "oak_z", "dark", "dark_z", "red", "red_z", "grating", "in_beam",
+                          "in_red", "crate", "carved", "stern")}
 LIGHTS = {M["window"], M["lantern"]}
 INTERIOR = {M[k] for k in ("in_plank", "in_beam", "in_red", "ballast", "cask", "crate", "brick", "bronze", "canvas")}
 
@@ -569,8 +642,17 @@ def build_hull():
             f = bm.faces.new([grid[i][j], grid[i + 1][j], grid[i + 1][j + 1], grid[i][j + 1]])
             for lp in f.loops:
                 co = lp.vert.co
-                lp[uvl].uv = ((co.y + S_MID - S_MIN) / (S_MAX - S_MIN), (co.z - Z_RAB) / (Z_TOP_STERN - Z_RAB))
-    ob = new_obj("hull_side", bm, M["hull"], smooth_shade=True, side=True)
+                sv = co.y + S_MID
+                lp[uvl].uv = (sv, co.z - sheer(sv))          # metres; the strakes run with the wales
+    # the red upper works over the top wale, oak between, the tarred bottom
+    z_red = WALES[-1][0] + WALES[-1][1] / 2 + 0.02
+    for f in bm.faces:
+        c = f.calc_center_median()
+        zr = c.z - sheer(c.y + S_MID)
+        f.material_index = 1 if zr > z_red else 2 if c.z < -0.3 else 0
+    ob = new_obj("hull_side", bm, M["hull"], smooth_shade=True, side=True, uv=False)
+    ob.data.materials.append(M["hull_upper"])
+    ob.data.materials.append(M["hull_bottom"])
     ob.data.set_sharp_from_angle(angle=math.radians(35))
 
     def end_face(name, col_i, sfn, wfn, outward, mat, zmin=-99.0, zmax=99.0, holes=()):
@@ -599,7 +681,7 @@ def build_hull():
                     else:
                         bm.faces.new([prev[k], cur[k], cur[k + 1], prev[k + 1]])
             prev = cur
-        return new_obj(name, bm, mat)
+        return new_obj(name, bm, mat, uv_axis=(1, 0, 0))
 
     j_wt = min(range(NV + 1), key=lambda j: abs(Z_RAB + (ZTOP[0] - Z_RAB) * j / NV - Z_WT))
     z_wt = Z_RAB + (ZTOP[0] - Z_RAB) * j_wt / NV
@@ -1089,6 +1171,7 @@ def build_interior():
     bmesh.ops.translate(bm, vec=Vector((0, 0, 0.75)), verts=bm.verts)
     knob = bmesh.ops.create_uvsphere(bm, u_segments=8, v_segments=6, radius=0.08)
     bmesh.ops.translate(bm, vec=Vector((0, 0, 1.95)), verts=knob["verts"])
+    metric_uv_bm(bm, (0, 0, 1), ((0, 0, 0), 0.055))
     me = bpy.data.meshes.new("whipstaff")
     bm.to_mesh(me)
     bm.free()
@@ -1682,6 +1765,7 @@ def make_yard(name, center, length, r, rot=None):
     for sgn in (-1, 1):
         res = bmesh.ops.create_cone(bm, cap_ends=True, segments=8, radius1=r * 1.25, radius2=r * 1.25, depth=0.25)
         bmesh.ops.transform(bm, matrix=Matrix.Translation((sgn * r * 1.6, 0, 0)) @ Matrix.Rotation(math.pi / 2, 4, "Y"), verts=res["verts"])
+    metric_uv_bm(bm, (1, 0, 0), ((0, 0, 0), r * 0.7))
     if rot is not None:
         bmesh.ops.transform(bm, matrix=rot, verts=bm.verts)
     for f in bm.faces:
@@ -1988,6 +2072,7 @@ def build_rudder():
         res = bmesh.ops.create_cube(bm, size=1.0)
         for v in res["verts"]:
             v.co = Vector((v.co.x * 0.5, v.co.y * 0.9 - 0.4, v.co.z * 0.1 + zz))
+    metric_uv_bm(bm, (0, 0, 1))
     me = bpy.data.meshes.new("rudder")
     bm.to_mesh(me)
     bm.free()
@@ -2086,10 +2171,10 @@ def merge(parts, name):
     mats = []
     bm = bmesh.new()
     for ob in parts:
-        mat = ob.data.materials[0]
-        if mat not in mats:
-            mats.append(mat)
-        idx = mats.index(mat)
+        pm = list(ob.data.materials)
+        for mat in pm:
+            if mat not in mats:
+                mats.append(mat)
         ev = ob.evaluated_get(dg)
         me = ev.to_mesh()
         me.transform(ob.matrix_world)
@@ -2098,7 +2183,8 @@ def merge(parts, name):
         ev.to_mesh_clear()
         bm.faces.ensure_lookup_table()
         for k in range(n0, len(bm.faces)):
-            bm.faces[k].material_index = idx
+            f = bm.faces[k]
+            f.material_index = mats.index(pm[f.material_index] if f.material_index < len(pm) else pm[0])
     me = bpy.data.meshes.new(name)
     bm.to_mesh(me)
     bm.free()
@@ -2142,9 +2228,6 @@ def box_uv(ob, scale=0.5):
             uv.data[li].uv = (u * scale, v * scale)
 
 
-box_uv(INT)
-for _n in NODES:
-    box_uv(_n)
 
 
 # ------------------------------------------------------------------ textures
@@ -2274,57 +2357,6 @@ def paint_deck():
     return np.clip(col.astype(np.float32), 0, 1), height.astype(np.float32)
 
 
-hull_col, hull_h, hull_r = paint_hull()
-HULL_NORMAL = make_image("hull_normal", height_to_normal(hull_h, 0.35, 0.35).astype(np.float32), non_color=True)
-HULL_ROUGH = make_image("hull_rough", np.repeat(hull_r[..., None], 3, 2).astype(np.float32), non_color=True)
-deck_col, deck_h = paint_deck()
-DECK_COL = make_image("deck_color", deck_col)
-DECK_NRM = make_image("deck_normal", height_to_normal(deck_h, 0.5, 0.5).astype(np.float32), non_color=True)
-
-
-def paint_interior():
-    """Tiling textures for below decks, 2 m to a tile: planking, timber,
-    red paint over wood, ballast floor, cask staves, crate boards, brick."""
-    N = 512
-    x = (np.arange(N) + 0.5) / N
-    X, Yv = np.meshgrid(x, x)
-    grain = fnoise(N, N, N // 3, 12, 31) * 0.6 + fnoise(N, N, N, 48, 32) * 0.4
-    big = fnoise(N, N, 5, 5, 33)
-
-    def planks(base, width, seam=0.035, along_v=True):
-        a, b = (X, Yv) if along_v else (Yv, X)
-        idx = np.floor(a / width)
-        fa = a / width - idx
-        off = (idx * 0.37) % 1.0
-        segp = (b + off) / 1.0
-        h1 = np.sin(idx * 12.99 + np.floor(segp) * 78.23) * 43758.5
-        tone = 0.75 + 0.45 * (h1 - np.floor(h1))
-        g_ = grain if along_v else grain.T
-        col = np.array(base, np.float32) * (tone * (0.75 + 0.5 * g_) * (0.85 + 0.3 * big))[..., None]
-        sm = (fa < seam) | ((segp - np.floor(segp)) < 0.004)
-        return np.where(sm[..., None], col * 0.3, col), sm
-    out = {}
-    out["in_plank"], sm = planks((0.2, 0.135, 0.085), 0.125)
-    out["crate"], _ = planks((0.3, 0.22, 0.14), 0.16, seam=0.05)
-    out["cask"], _ = planks((0.22, 0.15, 0.09), 0.1, seam=0.06, along_v=False)
-    tim = np.array((0.15, 0.1, 0.065), np.float32) * (0.7 + 0.6 * grain)[..., None] * (0.85 + 0.3 * big)[..., None]
-    out["in_beam"] = tim
-    red = np.array((0.26, 0.06, 0.04), np.float32) * (0.8 + 0.35 * grain)[..., None] * (0.85 + 0.3 * big)[..., None]
-    out["in_red"] = red
-    stones = fnoise(N, N, 40, 40, 34)
-    out["ballast"] = np.array((0.11, 0.1, 0.09), np.float32) * (0.5 + 0.9 * stones)[..., None]
-    row = np.floor(Yv * 16)
-    bx = (X * 8 + 0.5 * (row % 2)) % 1.0
-    mortar = ((Yv * 16) % 1.0 < 0.1) | (bx < 0.06)
-    brick = np.array((0.36, 0.14, 0.08), np.float32) * (0.7 + 0.5 * fnoise(N, N, 16, 8, 35))[..., None]
-    out["brick"] = np.where(mortar[..., None], np.array((0.3, 0.28, 0.24), np.float32), brick)
-    nrm = make_image("in_plank_normal", height_to_normal(grain * 0.4 - sm * 1.0, 0.4, 0.4).astype(np.float32), non_color=True)
-    return {k: make_image("tex_" + k, np.clip(v, 0, 1).astype(np.float32)) for k, v in out.items()}, nrm
-
-
-IN_TEX, IN_NRM = paint_interior()
-
-
 # ------------------------------------------------------------------ bake
 def bake_setup():
     sc = bpy.context.scene
@@ -2404,52 +2436,61 @@ def use_maps(mat, uv_name, color=None, normal=None, rough=None):
         nt.links.new(nm.outputs["Normal"], p.inputs["Normal"])
 
 
-use_maps(M["deck"], "UVMap", color=DECK_COL, normal=DECK_NRM)
-for _k, _im in IN_TEX.items():
-    use_maps(M[_k], "UVMap", color=_im, normal=IN_NRM if _k in ("in_plank", "crate", "cask") else None)
 bake_setup()
 if SHAPE:
-    use_maps(M["hull"], "UVMap", color=make_image("hull_texture", to_srgb(hull_col)), normal=HULL_NORMAL, rough=HULL_ROUGH)
     QUICK = True
 for o in (RIGM, LITE):
     o.hide_render = False
 
 if not SHAPE:
-    HULL.data.uv_layers.active = HULL.data.uv_layers["UVMap"]
-    if QUICK:
-        hull_img = make_image("hull_texture", to_srgb(hull_col))
-    else:
-        hull_ao = bake(HULL, "AO", TEX_W, TEX_H, 40, non_color=True)
-        hull_img = make_image("hull_texture", to_srgb(shade_from_ao(hull_col, hull_ao[..., :1])))
-    use_maps(M["hull"], "UVMap", color=hull_img, normal=HULL_NORMAL, rough=HULL_ROUGH)
+    def bake_uv(ob, margin=0.004):
+        me = ob.data
+        uv = me.uv_layers.get("bake") or me.uv_layers.new(name="bake")
+        me.uv_layers.active = uv
+        for o in bpy.context.scene.objects:
+            o.select_set(o == ob)
+        bpy.context.view_layer.objects.active = ob
+        bpy.ops.object.mode_set(mode="EDIT")
+        bpy.ops.mesh.select_all(action="SELECT")
+        bpy.ops.uv.smart_project(angle_limit=math.radians(60), island_margin=margin, area_weight=0.0,
+                                 correct_aspect=True, scale_to_bounds=False)
+        bpy.ops.object.mode_set(mode="OBJECT")
+        me.uv_layers.active = me.uv_layers["UVMap"]          # the metric UVs stay first
 
-    me = FIT.data
-    uv = me.uv_layers.new(name="bake")
-    me.uv_layers.active = uv
-    uv.active_render = True
-    for o in bpy.context.scene.objects:
-        o.select_set(o == FIT)
-    bpy.context.view_layer.objects.active = FIT
-    bpy.ops.object.mode_set(mode="EDIT")
-    bpy.ops.mesh.select_all(action="SELECT")
-    bpy.ops.uv.smart_project(angle_limit=math.radians(60), island_margin=0.004, area_weight=0.0,
-                             correct_aspect=True, scale_to_bounds=False)
-    bpy.ops.object.mode_set(mode="OBJECT")
-    A = 1024 if QUICK else ATLAS
-    fit_col = bake(FIT, "DIFFUSE", A, A, 4, pass_filter={"COLOR"})
-    fit_ao = bake(FIT, "AO", A, A, 8 if QUICK else 40, non_color=True)
-    fit_nrm = bake(FIT, "NORMAL", A, A, 4, non_color=True)
-    fit_rgh = bake(FIT, "ROUGHNESS", A, A, 4, non_color=True)
-    atlas = make_image("fittings_atlas", shade_from_ao(fit_col[..., :3], fit_ao[..., :1]))
-    atlas_n = make_image("fittings_normal", fit_nrm[..., :3], non_color=True)
-    atlas_r = make_image("fittings_rough", fit_rgh[..., :3], non_color=True)
-    for m in me.materials:
-        use_maps(m, "bake", color=atlas, normal=atlas_n, rough=atlas_r)
-    for nm in [n.name for n in me.uv_layers if n.name != "bake"]:
-        me.uv_layers.remove(me.uv_layers[nm])
+    def gltf_output():
+        ng = bpy.data.node_groups.get("glTF Material Output")
+        if ng is None:
+            ng = bpy.data.node_groups.new("glTF Material Output", "ShaderNodeTree")
+            ng.interface.new_socket("Occlusion", in_out="INPUT", socket_type="NodeSocketFloat")
+            ng.nodes.new("NodeGroupInput")
+        return ng
 
-    for im, fname in ((hull_img, "hull_texture.png"), (atlas, "fittings_atlas.png")):
-        im.filepath_raw = os.path.join(OUT, fname)
+    def link_ao(mat, img):
+        nt = mat.node_tree
+        uvn = nt.nodes.new("ShaderNodeUVMap")
+        uvn.uv_map = "bake"
+        t = nt.nodes.new("ShaderNodeTexImage")
+        t.image = img
+        nt.links.new(uvn.outputs["UV"], t.inputs["Vector"])
+        sep = nt.nodes.new("ShaderNodeSeparateColor")
+        nt.links.new(t.outputs["Color"], sep.inputs["Color"])
+        gnode = nt.nodes.new("ShaderNodeGroup")
+        gnode.node_tree = gltf_output()
+        nt.links.new(sep.outputs["Red"], gnode.inputs["Occlusion"])
+
+    ao_imgs = []
+    for ob, size in ((HULL, 2048), (FIT, 1024 if QUICK else ATLAS), (INT, 2048), (DECK, 2048)):
+        bake_uv(ob)
+        ob.data.uv_layers.active = ob.data.uv_layers["bake"]
+        ao = bake(ob, "AO", size, size, 8 if QUICK else 40, non_color=True)
+        ob.data.uv_layers.active = ob.data.uv_layers["UVMap"]
+        g_ = np.clip(ao[..., 0] * 0.85 + 0.15, 0, 1)            # occlusion, never quite black
+        img = make_image(f"{ob.name}_ao", np.repeat(g_[..., None], 3, 2).astype(np.float32), non_color=True)
+        for m in ob.data.materials:
+            link_ao(m, img)
+        ao_imgs.append(img)
+    for im in ao_imgs:
+        im.filepath_raw = os.path.join(OUT, im.name + ".png")
         im.file_format = "PNG"
         im.save()
 

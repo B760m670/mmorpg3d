@@ -8,7 +8,7 @@ files, not inlined into the page):
     <name>_nrm.webp   normal map, OpenGL (green up)
     <name>_orm.webp   R ambient occlusion, G roughness, B metalness (glTF)
 
-and public/materials/materials.json gives each one's real size in metres
+and src/ship/scans.json gives each one's real size in metres
 (the game lays the UVs in metres) and its source. All are turned so that
 the grain (or the run of the planks) lies along u.
 
@@ -34,9 +34,9 @@ for f in ("scans_ph.json", "scans.json"):
 
 # our name: (scan, size in metres along u and v, turn the grain to u, pixels, what it is for)
 TABLE = {
-    "hull_planks": ("weathered_brown_planks", 1.8, False, 2048, "the ship's side: weathered oak planking"),
-    "deck_planks": ("old_planks_02", 2.0, True, 2048, "decks: worn, scrubbed planking"),
-    "in_planks": ("weathered_planks", 2.0, True, 2048, "below decks: ceiling, deckheads, bulkheads"),
+    "hull_planks": ("weathered_brown_planks", 3.4, False, 2048, "the ship's side: weathered oak planking"),
+    "deck_planks": ("old_planks_02", 2.6, True, 2048, "decks: worn, scrubbed planking"),
+    "in_planks": ("weathered_planks", 2.4, True, 2048, "below decks: ceiling, deckheads, bulkheads"),
     "timber": ("rough_wood", 0.5, True, 2048, "beams, knees, carriages, bitts, frames"),
     "joinery": ("fine_grained_wood", 0.6, True, 1024, "cabin joinery, rails, furniture"),
     "black_wood": ("black_painted_planks", 1.6, True, 1024, "wales and black-painted work"),
@@ -97,6 +97,8 @@ for name, (scan, size, turn, px, what) in TABLE.items():
     credits[name] = f"{m.get('name', scan)} ({'Poly Haven' if m['src'] == 'polyhaven' else 'ambientCG'}, CC0)"
     print(f"{name:12s} <- {scan:24s} {tw}x{th}  {size} x {sv:.2f} m")
 
-json.dump({"materials": index, "credits": credits}, open(os.path.join(OUT, "materials.json"), "w"), indent=1, ensure_ascii=False)
+# the index goes with the code (the game imports it); the images stay files
+INDEX = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src", "ship", "scans.json")
+json.dump({"materials": index, "credits": credits}, open(INDEX, "w"), indent=1, ensure_ascii=False)
 total = sum(os.path.getsize(os.path.join(OUT, f)) for f in os.listdir(OUT))
 print(f"total {total / 1e6:.1f} MB")
