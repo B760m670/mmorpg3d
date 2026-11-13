@@ -1,0 +1,175 @@
+{
+ "materials": {
+  "hull_planks": {
+   "size": [
+    1.8,
+    1.8
+   ],
+   "px": [
+    2048,
+    2048
+   ],
+   "for": "the ship's side: weathered oak planking",
+   "scan": "weathered_brown_planks"
+  },
+  "deck_planks": {
+   "size": [
+    2.0,
+    2.0
+   ],
+   "px": [
+    2048,
+    2048
+   ],
+   "for": "decks: worn, scrubbed planking",
+   "scan": "old_planks_02"
+  },
+  "in_planks": {
+   "size": [
+    2.0,
+    2.0
+   ],
+   "px": [
+    2048,
+    2048
+   ],
+   "for": "below decks: ceiling, deckheads, bulkheads",
+   "scan": "weathered_planks"
+  },
+  "timber": {
+   "size": [
+    0.5,
+    0.5
+   ],
+   "px": [
+    2048,
+    2048
+   ],
+   "for": "beams, knees, carriages, bitts, frames",
+   "scan": "rough_wood"
+  },
+  "joinery": {
+   "size": [
+    0.6,
+    0.6
+   ],
+   "px": [
+    1024,
+    1024
+   ],
+   "for": "cabin joinery, rails, furniture",
+   "scan": "fine_grained_wood"
+  },
+  "black_wood": {
+   "size": [
+    1.6,
+    1.6
+   ],
+   "px": [
+    1024,
+    1024
+   ],
+   "for": "wales and black-painted work",
+   "scan": "black_painted_planks"
+  },
+  "red_paint": {
+   "size": [
+    1.5,
+    1.5
+   ],
+   "px": [
+    1024,
+    1024
+   ],
+   "for": "red-painted upper works and port lids",
+   "scan": "PaintedWood003"
+  },
+  "iron": {
+   "size": [
+    1.0,
+    1.0
+   ],
+   "px": [
+    1024,
+    1024
+   ],
+   "for": "wrought and cast iron",
+   "scan": "rusty_metal_04"
+  },
+  "lead": {
+   "size": [
+    2.0,
+    2.0
+   ],
+   "px": [
+    1024,
+    1024
+   ],
+   "for": "lead sheathing",
+   "scan": "metal_plate_02"
+  },
+  "brick": {
+   "size": [
+    1.5,
+    1.5
+   ],
+   "px": [
+    1024,
+    1024
+   ],
+   "for": "the galley hearth",
+   "scan": "castle_brick_02_red"
+  },
+  "bronze": {
+   "size": [
+    1.0,
+    1.0
+   ],
+   "px": [
+    1024,
+    1024
+   ],
+   "for": "bronze guns and fittings",
+   "scan": "Metal013"
+  },
+  "rope": {
+   "size": [
+    0.5,
+    0.25
+   ],
+   "px": [
+    1024,
+    512
+   ],
+   "for": "rope: u along it, v round it",
+   "scan": "Rope001"
+  },
+  "canvas": {
+   "size": [
+    0.5,
+    0.5
+   ],
+   "px": [
+    1024,
+    1024
+   ],
+   "for": "sailcloth, bundles",
+   "scan": "Fabric045"
+  }
+ },
+ "credits": {
+  "hull_planks": "Weathered Brown Planks (Poly Haven, CC0)",
+  "deck_planks": "Old Planks 02 (Poly Haven, CC0)",
+  "in_planks": "Weathered Planks (Poly Haven, CC0)",
+  "timber": "Rough Wood (Poly Haven, CC0)",
+  "joinery": "Fine Grained Wood (Poly Haven, CC0)",
+  "black_wood": "Black Painted Planks (Poly Haven, CC0)",
+  "red_paint": "Painted Wood 003 (ambientCG, CC0)",
+  "iron": "Rusty Metal 04 (Poly Haven, CC0)",
+  "lead": "Metal Plate 02 (Poly Haven, CC0)",
+  "brick": "Castle Brick 02 Red (Poly Haven, CC0)",
+  "bronze": "Metal 013 (ambientCG, CC0)",
+  "rope": "Rope 001 (ambientCG, CC0)",
+  "canvas": "Fabric 045 (ambientCG, CC0)"
+ }
+}

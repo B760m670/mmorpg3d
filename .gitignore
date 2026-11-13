@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.DS_Store
+*.log
+.vite/
+.blenv/
+blender/out/
+.terrain_cache/
+.geoenv/
+__pycache__/
