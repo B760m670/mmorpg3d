@@ -1478,7 +1478,7 @@ def build_interior():
 LAMPS = []
 NODES = []        # extra nodes the game moves (the wheel, capstan, anchor, sweep)
 WHEEL_PARTS = []
-CAPSTAN_PARTS, BAR_PARTS, ANCHOR_PARTS, SWEEP_PARTS = [], [], [], []
+CAPSTAN_PARTS, BAR_PARTS, ANCHOR_PARTS, SWEEP_PARTS, FIGURE_PARTS = [], [], [], [], []
 CAPSTAN_S = 26.2           # the capstan, in the waist abaft the mainmast
 HAWSE_S = 48.3             # the hawse holes, either side of the stem
 
@@ -1944,112 +1944,242 @@ def _spline(ctrl, n):
 
 
 def build_serpent():
-    """The figurehead: a sea serpent, our own, carved in oak and tarred. Its
-    body lies along the knee of the head with the tail curled down its side;
-    the neck rises forward in a curve, ringed with carved scales and crested
-    with spines, and the head, open-jawed, looks out ahead under the
-    spritsail."""
+    """The figurehead: a sea serpent, our own design (worked up from concept
+    sheets generated for it, then built here part by part). Its body lies
+    along the knee of the head, the tail curled down its side; the neck
+    rises forward in a curve. Carved in oak and tarred, worn back to the
+    bare oak on every high point:
+      * the body and neck: overlapping scales cut into it like roof tiles
+        (the scale nearer the head lies over the one behind it), and broad
+        plates across the throat and belly;
+      * a crest of spines down the back, each a triangle with ribbed faces,
+        leaning back;
+      * the head: a long snout with round nostrils at its blunt tip, open
+        jaws with fangs, a round bulging eye under a heavy brow with carved
+        curls, two horns ringed with grooves swept back, a ribbed fan over
+        each cheek, a long lobe back from the crown, barbels."""
     zh = Z_STEMHEAD
-    mat, teeth_mat, eye_mat = M["carved"], M["oak"], M["iron"]
-    # the spine of it, (s, z) on the centreline: tail, body on the knee, neck
+    mat, teeth_mat, eye_mat = M["figure"], M["oak"], M["iron"]
+    n0 = len(PARTS)
     ctrl = [(53.7, zh - 1.35), (54.2, zh - 0.75), (54.9, zh - 0.38), (55.6, zh - 0.27), (56.3, zh - 0.16),
-            (56.95, zh + 0.12), (57.45, zh + 0.65), (57.8, zh + 1.15), (58.15, zh + 1.42)]
-    pts = _spline([(0.0, Y(sv), zv) for sv, zv in ctrl], 12)
+            (56.95, zh + 0.12), (57.45, zh + 0.68), (57.8, zh + 1.2), (58.12, zh + 1.48)]
+    pts = _spline([(0.0, Y(sv), zv) for sv, zv in ctrl], 24)
     L = [0.0]
     for a_, b_ in zip(pts[:-1], pts[1:]):
         L.append(L[-1] + (b_ - a_).length)
     tot = L[-1]
-    def rad(d):                       # thin at the tail, thickest on the knee, the neck thinning to the head
+
+    def rad(d):
         u = d / tot
-        return 0.06 + 0.27 * min(1.0, u / 0.3) ** 0.8 - 0.1 * max(0.0, (u - 0.45) / 0.55)
-    radii = [rad(d) for d in L]
-    def scales(k, a_):                # carved rings of scales, and a flatter belly
-        band = max(0.0, math.cos(2 * math.pi * L[k] / 0.13)) ** 6
-        belly = 1.0 - 0.12 * max(0.0, -math.sin(a_)) ** 2
-        return (1.0 + 0.06 * band) * belly
-    sweep_tube("figure_body", pts, radii, mat, seg=18, ring=scales)
-    # the crest of spines along its back, from the knee to the head
+        return 0.05 + 0.27 * min(1.0, u / 0.3) ** 0.8 - 0.06 * max(0.0, (u - 0.45) / 0.55)
+    # scales: sixteen round the body, their length growing with its girth
+    NA = 16
+    U = [0.0]
+    for k in range(1, len(pts)):
+        U.append(U[-1] + (L[k] - L[k - 1]) / (0.36 * rad(L[k]) + 0.02))
+
+    def scale_h(u, v):
+        best, hb = -1e9, 0.0
+        i0 = math.floor(u)
+        for i in (i0 - 1, i0, i0 + 1, i0 + 2):
+            off = 0.5 * (i % 2)
+            j0 = math.floor(v - off)
+            for j in (j0 - 1, j0, j0 + 1):
+                du = (u - (i + 0.5)) / 1.25
+                dv = (v - (j + off + 0.5)) / 0.62
+                if du > 0.55:
+                    continue
+                d = math.hypot(du, dv)
+                if d < 1.0 and i > best:            # the head-ward scale lies on top
+                    best = i
+                    hb = 0.55 * (1 - d * d) ** 0.5 + 0.45 * (0.55 - du) / 1.55
+        return hb
+
+    def plates_h(u):                                # broad plates across the throat
+        f = (u * 0.8) % 1.0
+        return 0.25 + 0.75 * min(1.0, f / 0.8) - (1.0 if f > 0.92 else 0.0) * 0.6
+
+    SEG = 64
     bm = bmesh.new()
-    prev = None
+    rings = []
+    prev_n = None
     for k, p in enumerate(pts):
-        if L[k] < tot * 0.3:
-            continue
+        t = (pts[min(k + 1, len(pts) - 1)] - pts[max(k - 1, 0)]).normalized()
+        down = Vector((0, 0, -1))
+        belly = (down - t * down.dot(t))
+        belly = belly.normalized() if belly.length > 1e-4 else Vector((0, -1, 0))
+        side = t.cross(belly).normalized()
+        r0 = rad(L[k])
+        ring = []
+        for j in range(SEG):
+            a_ = 2 * math.pi * j / SEG              # 0 = the belly
+            dirv = belly * math.cos(a_) + side * math.sin(a_)
+            under = max(0.0, math.cos(a_)) ** 2      # the plates under the throat
+            hs = scale_h(U[k], (a_ / (2 * math.pi)) * NA)
+            hp = plates_h(U[k])
+            h = hs * (1 - under) + hp * under
+            flat = 1.0 - 0.14 * max(0.0, math.cos(a_)) ** 3      # a flatter belly
+            ring.append(bm.verts.new(p + dirv * (r0 * flat * (1.0 + 0.14 * h))))
+        rings.append(ring)
+    for ra, rb in zip(rings[:-1], rings[1:]):
+        for j in range(SEG):
+            bm.faces.new([ra[j], ra[(j + 1) % SEG], rb[(j + 1) % SEG], rb[j]])
+    bm.faces.new(list(reversed(rings[0])))
+    bm.faces.new(rings[-1])
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    new_obj("figure_body", bm, mat, smooth_shade=True, uv_axis=(0, 1, 0))
+
+    # the crest: triangular spines with ribbed faces, leaning back
+    bm = bmesh.new()
+    d = tot * 0.3
+    while d < tot - 0.35:
+        k = min(range(len(L)), key=lambda q: abs(L[q] - d))
+        p = pts[k]
         t = (pts[min(k + 1, len(pts) - 1)] - pts[max(k - 1, 0)]).normalized()
         up = Vector((0, -t.z, t.y)).normalized()
         if up.z < 0:
             up = -up
-        h = 0.05 + 0.2 * ((L[k] / 0.24) % 1.0) * (1.0 - 0.5 * max(0.0, (L[k] / tot - 0.85) / 0.15))
-        base = p + up * (radii[k] * 0.92)
-        tip = base + up * h - t * h * 0.5             # the spines lean back
-        cur = [bm.verts.new(base + Vector((sx * 0.018, 0, 0))) for sx in (-1, 1)] + [bm.verts.new(tip + Vector((sx * 0.006, 0, 0))) for sx in (1, -1)]
-        if prev:
-            for q in range(4):
-                bm.faces.new([prev[q], prev[(q + 1) % 4], cur[(q + 1) % 4], cur[q]])
-        prev = cur
+        size = 0.16 + 0.13 * math.sin(math.pi * min(1.0, (d / tot - 0.3) / 0.55))
+        base0 = p + up * (rad(d) * 0.95) + t * (size * 0.55)
+        base1 = p + up * (rad(d) * 0.95) - t * (size * 0.55)
+        tip = p + up * (rad(d) + size) - t * (size * 0.75)
+        nr = 6
+        bv = [bm.verts.new(base0.lerp(base1, q / nr) + Vector((0.012 if q % 2 else -0.012, 0, 0))) for q in range(nr + 1)]
+        tv = bm.verts.new(tip)
+        for q in range(nr):
+            bm.faces.new([bv[q], bv[q + 1], tv])
+        d += size * 1.15
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
     new_obj("figure_crest", bm, mat)
 
-    # the head: a loft of rounded sections, the lower jaw hinged open
-    H0 = pts[-1] + Vector((0, 0.02, 0.02))
-    F = Vector((0, 1, -0.14)).normalized()
+    # the head
+    H0 = pts[-1] + Vector((0, 0.04, 0.03))
+    F = Vector((0, 1, -0.06)).normalized()
     R = Vector((1, 0, 0))
-    U = R.cross(F)
-    Lh = 1.4
-    K = 1.35                          # the head's size against the 1 m sketch below
+    Uv = R.cross(F)
+    Lh = 1.15
 
-    def section(c, Fv, Uv, w, ht, hb, n=22, ex=2.6):
+    def section(c, Fv, Up, w, ht, hb, n=26, ex=2.4):
         out = []
         for j in range(n):
             ph = 2 * math.pi * j / n
             cy, sz = math.cos(ph), math.sin(ph)
-            yy = K * w * math.copysign(abs(cy) ** (2 / ex), cy)
-            zz = K * (ht if sz > 0 else hb) * math.copysign(abs(sz) ** (2 / ex), sz)
-            out.append(c + R * yy + Uv * zz)
+            yy = w * math.copysign(abs(cy) ** (2 / ex), cy)
+            zz = (ht if sz > 0 else hb) * math.copysign(abs(sz) ** (2 / ex), sz)
+            out.append(c + R * yy + Up * zz)
         return out
-    prof = [(0.0, 0.27, 0.26, 0.2), (0.14, 0.28, 0.3, 0.14), (0.3, 0.25, 0.24, 0.07), (0.48, 0.2, 0.18, 0.05),
-            (0.66, 0.16, 0.14, 0.04), (0.82, 0.12, 0.11, 0.03), (0.94, 0.085, 0.08, 0.025), (1.0, 0.05, 0.05, 0.02)]
-    loft("figure_head", [section(H0 + F * (t * Lh), F, U, w, ht, hb) for t, w, ht, hb in prof], mat)
-    # brow ridges and eyes
-    for sx in (-1, 1):
-        ce = H0 + F * (0.3 * Lh) + U * (0.12 * K) + R * (sx * 0.19 * K)
-        sphere("figure_eye", ce, 0.075, eye_mat, seg=12)
-        brow = [H0 + F * ((0.2 + 0.08 * k) * Lh) + U * K * (0.2 - 0.012 * (k - 1.5) ** 2) + R * (sx * K * (0.2 - 0.01 * k)) for k in range(4)]
-        sweep_tube("figure_brow", brow, [0.065, 0.075, 0.065, 0.045], mat, seg=8)
-        # horns, swept back and up from behind the brows
-        hc = [H0 + F * 0.16 + U * 0.3 + R * (sx * 0.21), H0 - F * 0.14 + U * 0.5 + R * (sx * 0.29),
-              H0 - F * 0.55 + U * 0.64 + R * (sx * 0.31), H0 - F * 0.88 + U * 0.62 + R * (sx * 0.26)]
-        hp = _spline(hc, 5)
-        sweep_tube("figure_horn", hp, [0.1 * (1 - k / len(hp)) + 0.01 for k in range(len(hp))], mat, seg=8,
-                   ring=lambda k, a_: 1.0 + 0.08 * max(0.0, math.cos(k * 1.7)) ** 4)
-        # barbels hanging from the corners of the snout, as carvers gave them
-        bc = [H0 + F * (0.86 * Lh) + R * (sx * 0.09) - U * 0.02, H0 + F * (0.98 * Lh) + R * (sx * 0.2) - U * 0.18,
-              H0 + F * (0.9 * Lh) + R * (sx * 0.26) - U * 0.42, H0 + F * (0.78 * Lh) + R * (sx * 0.22) - U * 0.6]
-        bp = _spline(bc, 5)
-        sweep_tube("figure_barbel", bp, [0.03 * (1 - 0.8 * k / len(bp)) for k in range(len(bp))], mat, seg=6)
-        # nostrils
-        sphere("figure_nostril", H0 + F * (0.95 * Lh) + U * 0.07 + R * (sx * 0.05), 0.03, eye_mat, seg=6)
+    # skull to snout: a long head, a heavy brow, the snout squared at its tip
+    prof = [(0.0, 0.3, 0.3, 0.26), (0.12, 0.33, 0.37, 0.2), (0.24, 0.31, 0.36, 0.12), (0.36, 0.26, 0.27, 0.09),
+            (0.5, 0.23, 0.23, 0.08), (0.66, 0.21, 0.2, 0.07), (0.8, 0.2, 0.19, 0.07), (0.92, 0.2, 0.19, 0.07), (1.0, 0.15, 0.14, 0.05)]
+    loft("figure_head", [section(H0 + F * (t * Lh), F, Uv, w, ht, hb) for t, w, ht, hb in prof], mat)
     # the lower jaw, open
-    J = H0 + F * (0.16 * Lh) - U * 0.11
-    a_open = math.radians(24)
-    Fj = (F * math.cos(a_open) - U * math.sin(a_open)).normalized()
+    J = H0 + F * (0.14 * Lh) - Uv * 0.12
+    a_open = math.radians(21)
+    Fj = (F * math.cos(a_open) - Uv * math.sin(a_open)).normalized()
     Uj = R.cross(Fj)
-    Lj = 1.16
-    jprof = [(0.0, 0.2, 0.05, 0.12), (0.25, 0.18, 0.04, 0.1), (0.5, 0.14, 0.035, 0.08), (0.75, 0.1, 0.03, 0.06), (1.0, 0.055, 0.025, 0.035)]
+    Lj = 0.98
+    jprof = [(0.0, 0.27, 0.06, 0.17), (0.25, 0.24, 0.055, 0.14), (0.5, 0.2, 0.05, 0.11), (0.75, 0.17, 0.045, 0.09), (0.95, 0.14, 0.04, 0.08), (1.0, 0.1, 0.035, 0.05)]
     loft("figure_jaw", [section(J + Fj * (t * Lj), Fj, Uj, w, ht, hb) for t, w, ht, hb in jprof], mat)
-    # teeth: down from the upper jaw, up from the lower, fangs forward
+    cyl("figure_tongue", J + Fj * 0.2 + Uj * 0.06, J + Fj * 0.8 + Uj * 0.1, 0.075, M["red"], seg=8, r2=0.035)
     for sx in (-1, 1):
-        for k in range(7):
-            t = 0.4 + 0.085 * k
-            w = K * (0.25 - 0.19 * (t - 0.3) / 0.7)
-            base = H0 + F * (t * Lh) + R * (sx * w * 0.82) - U * 0.03
-            ln = 0.18 if k == 4 else 0.1
-            cyl("figure_tooth", base, base - U * ln + F * 0.015, 0.03 if k == 4 else 0.021, teeth_mat, seg=6, r2=0.003)
+        # teeth: a row down from the upper jaw, fangs at the front; a row up from the lower
         for k in range(6):
-            t = 0.3 + 0.12 * k
-            w = K * (0.19 - 0.13 * t)
-            base = J + Fj * (t * Lj) + R * (sx * w * 0.8) + Uj * 0.04
-            cyl("figure_tooth", base, base + Uj * (0.15 if k == 4 else 0.08), 0.021, teeth_mat, seg=6, r2=0.003)
-    cyl("figure_tongue", J + Fj * 0.2 + Uj * 0.04, J + Fj * 0.95 + Uj * 0.08, 0.065, M["red"], seg=8, r2=0.025)
+            t = 0.44 + 0.095 * k
+            w = 0.25 - 0.06 * (t - 0.4) / 0.6
+            base = H0 + F * (t * Lh) + R * (sx * w * 0.82) - Uv * 0.06
+            fang = k == 4
+            cyl("figure_tooth", base, base - Uv * (0.19 if fang else 0.11) + F * 0.015, 0.042 if fang else 0.03, teeth_mat, seg=7, r2=0.004)
+        for k in range(5):
+            t = 0.34 + 0.14 * k
+            w = 0.23 - 0.08 * t
+            base = J + Fj * (t * Lj) + R * (sx * w * 0.8) + Uj * 0.06
+            fang = k == 3
+            cyl("figure_tooth", base, base + Uj * (0.15 if fang else 0.09), 0.036 if fang else 0.028, teeth_mat, seg=7, r2=0.004)
+        # the nostril: a round hole in a raised rim at the snout's tip
+        nz = H0 + F * (0.985 * Lh) + Uv * 0.06 + R * (sx * 0.075)
+        cyl("figure_nostril_rim", nz - F * 0.03, nz + F * 0.04, 0.062, mat, seg=12, cap=False)
+        cyl("figure_nostril", nz - F * 0.02, nz + F * 0.045, 0.042, eye_mat, seg=10)
+        # the eye: a round ball under a heavy lid and brow
+        ce = H0 + F * (0.3 * Lh) + Uv * 0.2 + R * (sx * 0.27)
+        sphere("figure_eye", ce, 0.085, mat, seg=14)
+        sphere("figure_pupil", ce + R * (sx * 0.06) + F * 0.03, 0.04, eye_mat, seg=10)
+        lid = [ce + (Uv * math.cos(a_) * 0.1 + F * math.sin(a_) * 0.1) + R * (sx * 0.025) for a_ in [math.radians(x) for x in range(-100, 101, 25)]]
+        sweep_tube("figure_lid", lid, [0.025] * len(lid), mat, seg=8)
+        brow = [H0 + F * ((0.16 + 0.07 * k) * Lh) + Uv * (0.33 - 0.02 * (k - 1.5) ** 2) + R * (sx * (0.28 - 0.015 * k)) for k in range(5)]
+        sweep_tube("figure_brow", brow, [0.06, 0.075, 0.08, 0.07, 0.05], mat, seg=10)
+        # carved curls over the brow, a mane running back from it
+        for k in range(5):
+            c0 = H0 + F * ((0.08 + 0.07 * k) * Lh) + Uv * (0.4 - 0.01 * k) + R * (sx * (0.2 - 0.012 * k))
+            curl = [c0 + (F * math.cos(a_) - Uv * math.sin(a_)) * (0.055 * (1 - a_ / 9.0)) for a_ in [q * 0.6 for q in range(12)]]
+            sweep_tube("figure_curl", curl, [0.022 * (1 - q / 14) for q in range(12)], mat, seg=6)
+        # horns, ringed with grooves, swept back and up from behind the brows
+        hc = [H0 + F * 0.2 + Uv * 0.36 + R * (sx * 0.17), H0 - F * 0.1 + Uv * 0.56 + R * (sx * 0.24),
+              H0 - F * 0.55 + Uv * 0.72 + R * (sx * 0.27), H0 - F * 0.95 + Uv * 0.74 + R * (sx * 0.24)]
+        hp = _spline(hc, 6)
+        sweep_tube("figure_horn", hp, [0.11 * (1 - k / len(hp)) + 0.012 for k in range(len(hp))], mat, seg=10,
+                   ring=lambda k, a_: 1.0 + 0.1 * max(0.0, math.cos(k * 2.1)) ** 4)
+        # a ribbed fan over the cheek, from the hinge of the jaw backward
+        bm = bmesh.new()
+        hinge = H0 + F * 0.05 + R * (sx * 0.29) - Uv * 0.02
+        na, nr_ = 13, 4
+        grid = []
+        for ia in range(na):
+            ang = math.radians(-70 + 130 * ia / (na - 1))
+            dirv = (-F * math.cos(ang) + Uv * math.sin(ang)).normalized()
+            rib = 0.02 if ia % 2 == 0 else -0.01
+            row = []
+            for ir in range(nr_ + 1):
+                rr = 0.05 + 0.5 * (ir / nr_) * (0.92 + 0.08 * (ia % 2 == 0))
+                row.append(bm.verts.new(hinge + dirv * rr + R * (sx * (0.03 + rib + 0.06 * (ir / nr_)))))
+            grid.append(row)
+        for ia in range(na - 1):
+            for ir in range(nr_):
+                bm.faces.new([grid[ia][ir], grid[ia][ir + 1], grid[ia + 1][ir + 1], grid[ia + 1][ir]])
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+        new_obj("figure_fan", bm, mat)
+        # barbels from the corners of the snout
+        bc = [H0 + F * (0.9 * Lh) + R * (sx * 0.18) - Uv * 0.05, H0 + F * (0.98 * Lh) + R * (sx * 0.28) - Uv * 0.18,
+              H0 + F * (0.93 * Lh) + R * (sx * 0.32) - Uv * 0.33, H0 + F * (0.85 * Lh) + R * (sx * 0.3) - Uv * 0.42]
+        bp = _spline(bc, 6)
+        sweep_tube("figure_barbel", bp, [0.035 * (1 - 0.8 * k / len(bp)) for k in range(len(bp))], mat, seg=6)
+    # a long lobe back from the crown, flattened like a fin
+    lc = [H0 + F * 0.05 + Uv * 0.28, H0 - F * 0.4 + Uv * 0.36, H0 - F * 0.85 + Uv * 0.38, H0 - F * 1.15 + Uv * 0.32]
+    lp = _spline(lc, 6)
+    sweep_tube("figure_lobe", lp, [0.16 * (1 - 0.55 * k / len(lp)) for k in range(len(lp))], mat, seg=12,
+               ring=lambda k, a_: 1.0 / math.sqrt((math.cos(a_) / 0.3) ** 2 + math.sin(a_) ** 2))
+    FIGURE_PARTS.extend(PARTS[n0:])
+    del PARTS[n0:]
+
+
+def wear_colours(ob):
+    """Tar worn back to the bare oak on every high point, tar and grime
+    thick in the hollows: vertex colours from how convex the surface is."""
+    me = ob.data
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    bm.normal_update()
+    cv = {}
+    for v in bm.verts:
+        if not v.link_edges:
+            cv[v.index] = 0.0
+            continue
+        nb = [e.other_vert(v).co for e in v.link_edges]
+        mean = sum(nb, Vector()) / len(nb)
+        el = sum((c - v.co).length for c in nb) / len(nb) + 1e-6
+        cv[v.index] = v.normal.dot(v.co - mean) / el
+    vals = sorted(cv.values())
+    med = vals[len(vals) // 2]
+    col = bm.loops.layers.float_color.new("Col")
+    for f in bm.faces:
+        for lp in f.loops:
+            c = cv[lp.vert.index] - med             # against the surface's own general curve
+            p = lp.vert.co
+            mott = 0.92 + 0.08 * math.sin(p.x * 23.0 + p.y * 17.0) * math.sin(p.z * 19.0 - p.y * 7.0)
+            k = clamp(0.86 + 1.45 * c, 0.42, 1.4) * mott
+            lp[col] = (k, k * 0.96, k * 0.92, 1.0)
+    bm.to_mesh(me)
+    bm.free()
+    me.color_attributes.active_color = me.color_attributes["Col"]
 
 
 def build_lion(base):
@@ -2614,6 +2744,10 @@ NODES.append(WHEEL)
 for _parts, _name in ((CAPSTAN_PARTS, "capstan"), (BAR_PARTS, "capstan_bars"), (ANCHOR_PARTS, "anchor"), (SWEEP_PARTS, "sweep")):
     if _parts:
         NODES.append(merge(_parts, _name))
+if FIGURE_PARTS:                 # the figurehead: its own node, for its worn colours
+    FIGURE = merge(FIGURE_PARTS, "figurehead")
+    wear_colours(FIGURE)
+    NODES.append(FIGURE)
 
 
 def _mat(o):

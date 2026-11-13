@@ -30,9 +30,16 @@ the Spanish rule "as, dos, tres": beam 1, keel 2, length 3).
   posts, the upper gallery as an arcade, our own arms, the crest, three
   lanterns; two-tier quarter galleries with lead domes;
 * beakhead with head rails and grating; the figurehead is our own, a sea
-  serpent carved in oak and tarred: its body along the knee of the head, the
-  tail curled down its side, the neck ringed with carved scales and crested
-  with spines, the head open-jawed under the spritsail;
+  serpent carved in oak and tarred, designed from concept sheets generated
+  for it (Higgsfield) and then built part by part in Blender: its body along
+  the knee of the head with the tail curled down its side, overlapping
+  scales cut into body and neck (the scale nearer the head over the one
+  behind) and broad plates across the throat, a crest of ribbed spines, and
+  a head with round nostrils at a blunt snout, open fanged jaws, a bulging
+  eye under a heavy brow with carved curls, grooved horns swept back, a
+  ribbed fan over each cheek, a long lobe back from the crown and barbels;
+  the tar is worn back to the oak on its high points (vertex colours from
+  the surface's convexity);
 * bowsprit with sprit topmast; fore and main masts with topmast and
   topgallant, mizzen with topmast; round tops with rails; shrouds on
   deadeyes and channels with ratlines, stays, backstays; eleven yards.
