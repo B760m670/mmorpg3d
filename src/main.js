@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 import { PRESETS, SEA, SHIP } from './config.js';
+import { Wetness } from './ship/Wetness.js';
 import { Weather, resolve } from './world/Weather.js';
 import { CloudLayer } from './world/CloudLayer.js';
 import { NightSky } from './world/NightSky.js';
@@ -92,9 +93,12 @@ ship.water = (x, z, t) => ocean.sampleWater(x, z, t);
 ship.position.set(SHIP.spawn.x, 0, SHIP.spawn.z);
 ship.heading = THREE.MathUtils.degToRad(SHIP.spawn.heading);
 ship.renderer = renderer;            // for the materials (anisotropic filtering)
+const wet = new Wetness(renderer, ship.rig);
+if (!/[?&]nowet/.test(location.search)) ship.wet = wet;     // her materials get wet (rain, sea, bilge)
 ship.load(galleonUrl);
 scene.add(ship.object);
 ocean.uniforms.uBoatHalf.value.set(...GALLEON.halfHull);
+if (ship.rig.hull) ocean.setHull(ship.rig.hull);      // the sea is kept out of her by her own form
 const access = ship.rig.access;
 const aboard = new Aboard(access);
 
@@ -133,7 +137,7 @@ if (IS_TOUCH) document.body.classList.add('touch');
 // ---------------------------------------------------------------- modes
 //   3p    the view from outside; you have the conn
 //   walk  first person, anywhere aboard: decks, cabins, hold, the tops
-//   helm  at the whipstaff, first person; you have the conn
+//   helm  at the wheel, first person; you have the conn
 //   swim  in the water: a diver with a cylinder, over the side
 let mode = '3p';
 let lastAction = null;
@@ -142,13 +146,13 @@ let tideCheck = -1;
 
 const HINTS = IS_TOUCH ? {
   '3p': 'джойстик: ←→ руль, ↑↓ поставить / убрать паруса · палец по экрану — облёт, щипок — ближе/дальше · «на борт» — пройтись по кораблю',
-  helm: 'джойстик: ←→ колдершток (руль), ↑↓ паруса · палец — осмотреться · «отойти» — пройтись по кораблю',
-  walk: 'джойстик — идти, по трапам между палубами — тоже · палец — осмотреться · у колдерштока и у вант — кнопка вверху',
+  helm: 'джойстик: ←→ штурвал (руль), ↑↓ паруса · палец — осмотреться · «отойти» — пройтись по кораблю',
+  walk: 'джойстик — идти, по трапам между палубами — тоже · палец — осмотреться · у штурвала и у вант — кнопка вверху',
   swim: 'джойстик — плыть туда, куда смотрите · ▲ ▼ — вверх / вниз · палец — осмотреться · «фонарь» · у борта — «на борт»',
 } : {
   '3p': '<b>A/D</b> руль · <b>W/S</b> поставить / убрать паруса · мышь — облёт, колесо — ближе/дальше · <b>F</b> на борт · <b>N</b> день/ночь · <b>B</b> погода · <b>M</b> звук · <b>J</b> за борт · <b>C</b> свободная камера',
-  helm: '<b>A/D</b> колдершток (руль) · <b>W/S</b> паруса · <b>E</b> отойти · <b>F</b> вид со стороны · клик — осмотреться',
-  walk: '<b>WASD</b> идти (по трапам между палубами — тоже) · <b>Shift</b> бегом · <b>E</b> у колдерштока — взять руль, у вант — лезть на марс · <b>J</b> за борт · <b>F</b> вид со стороны · клик — осмотреться',
+  helm: '<b>A/D</b> штурвал (руль) · <b>W/S</b> паруса · <b>E</b> отойти · <b>F</b> вид со стороны · клик — осмотреться',
+  walk: '<b>WASD</b> идти (по трапам между палубами — тоже) · <b>Shift</b> бегом · <b>E</b> у штурвала — взять руль, у вант — лезть на марс · <b>J</b> за борт · <b>F</b> вид со стороны · клик — осмотреться',
   swim: '<b>WASD</b> плыть туда, куда смотрите · <b>Space</b> вверх · <b>C</b> вниз · <b>Shift</b> быстрее · <b>L</b> фонарь · <b>E</b> на борт (у борта) · клик — осмотреться',
 };
 const WEATHER_RU = { clear: 'ясно', fair: 'переменная облачность', 'overcast, showers': 'пасмурно, ливни', storm: 'шторм' };
@@ -311,7 +315,7 @@ function actionHere() {
   if (mode === 'swim') return diver.nearShip(ship.model, 27, 10.5) ? 'на борт' : false;
   if (mode === 'helm') return 'отойти';
   if (mode !== 'walk' || player.climb) return false;
-  if (player.nearHelm) return 'к колдерштоку';
+  if (player.nearHelm) return 'к штурвалу';
   const l = aboard.nearLadder(player.pos);
   if (l) return l.fromTop ? 'вниз по вантам' : 'на марс';
   return false;
@@ -362,7 +366,7 @@ function tick() {
     if (orbit.enabled) orbit.target.copy(ship.position);
   }
 
-  // The conn: from outside or at the whipstaff. A/D (held) put the helm
+  // The conn: from outside or at the wheel. A/D (held) put the helm
   // over, it comes back amidships when let go; the stick puts it over in
   // proportion; W/S or the stick held up/down set or take in sail.
   if (mode === '3p' || mode === 'helm') {
@@ -522,6 +526,9 @@ function tick() {
   if (mode === 'swim') diveHud.update(diver, { torch, nearShip: action === 'на борт', touch: IS_TOUCH });
   terrain.leaf = mode === 'swim' ? 80 : 320;      // finer ground when you are down there
   ocean.setBoat(ship);
+  ocean.setHullFrame((ship.model || ship.group).matrixWorld);
+  wet.update(dt, time, weather.v.rain, weather.v.wind, ship, (x, z, t) => ocean.sampleWater(x, z, t).height);
+  ship.sails.setWet(wet.rainWet);
   ocean.update(time, dt, camera, sky.sunDirection);
   clouds.update(time, camera, flash);
   nightSky.update(time, camera);
@@ -559,6 +566,7 @@ function tick() {
 }
 tick();
 
+if (import.meta.env.DEV || /[?&]test/.test(location.search)) window.__THREE = THREE;      // for the test scripts
 window.__scene = {
   engine, sky, ocean, ship, player, weather, clouds, rain, spray, sound, falls, environment, terrain, village, follow, orbit,
   heightAt, applyPreset, setMode, input, diver, underwater, seaLife, aboard, access,

@@ -43,8 +43,8 @@ ballast:
 | --- | --- |
 | tops | the fore, main and mizzen tops, reached up the shrouds |
 | poop and royal deck | the upper cabin, the upper gallery (arcade) |
-| half deck | the great cabin (table, benches, chest) and its stern gallery; the steering hatch over the whipstaff |
-| upper gundeck | the steerage with the whipstaff and binnacle, the open waist with the main hatch grating and capstan, the space under the forecastle, the door onto the beak |
+| half deck | the wheel with its barrel and binnacle, the steering grating; the great cabin (table, benches, chest) and its stern gallery |
+| upper gundeck | the steerage with the tiller ropes coming down from the wheel, the open waist with the main hatch grating and capstan, the space under the forecastle, the door onto the beak |
 | lower gundeck | 24 heavy guns behind their ports |
 | orlop | the cable tiers, spare sails, the bread room's casks |
 | hold | ballast under planking, water and beer casks, cargo, the galley's brick hearth, the pumps |
@@ -53,17 +53,55 @@ Steep ladders go down through the hatches from deck to deck, stairs go up
 each break of the decks, and doors lead through every bulkhead at the
 breaks, through the stern onto the galleries and through the bow bulkhead
 onto the beak. Beams, knees and pillars under every deck; hanging lanterns
-below. An invisible low-poly collision mesh comes with the model (6500
-triangles): the decks, ladders as ramps, the sides, bulkheads with their door
-openings, guns, casks, masts, the galleries and the tops.
+below. An invisible low-poly collision mesh comes with the model (8400
+triangles): the decks, ladders as ramps with their side rails, the sides,
+bulkheads with their door openings, guns, each cask and crate, masts and
+mastheads, the wheel, the galleries, the tops and the beak; you are kept a
+body's width from every wall, so the view never cuts into one.
+
+She is checked for leaks by ray casting (Blender BVH, from 2400 points on
+every covered deck, 400 directions each): no ray gets out through her side,
+bottom or ends, only through the doors, the hatches and over the rail. The
+sea is kept out of her by her own form: the game gets a table of her
+half-breadths and the water is left out wherever it would lie inside her
+(heeled and pitching as she is).
 
 The sails are made in the game (`src/ship/Sails.js`): ten, as on Vasa, dark
 canvas with our star on the courses and topsails, set or furled by steps,
 filling with the wind, shivering when it comes too far forward and taken
-aback when it comes ahead; the yards brace round by themselves.
+aback when it comes ahead; the yards brace round by themselves, as far as
+the shrouds and backstays let them. Canvas never passes through a rope
+(`src/ship/SailShape.js`): a full sail presses against the stays before it
+and is creased by them, a sail aback lies against its mast, a braced sail
+wraps round the foremost shroud; the stays are set up over the yards and
+under the topsails' feet, which are cut with a roach to clear the tops.
+
+**How she moves and turns.** A ship of her day had no engine: the wind
+drives her and the rudder and the sails turn her.
 `src/entities/Galleon.js` sails her: apparent wind, a square-rig drive curve
 (nothing closer than about 60° to the wind), leeway, heel, 1200 t that carry
-their way, a rudder that answers only with way on. She starts off
+their way. Her hull's resistance is a ship's: skin friction of a weed-grown
+oak bottom (634 m² wetted) and wave making that rises steeply toward her
+hull speed, so she makes 6-7 knots on a reach in a moderate breeze, 8 in a
+fresh one and no more than about 11 in a gale. She is steered by a **wheel**
+on the half deck: its barrel winds the tiller ropes, which go down through
+the decks by sheaves to blocks at the sides and in to the tiller, a turn
+and a half of the wheel for 23° of rudder. The rudder turns her only with
+way on (a turning circle of about four and a half lengths); the sails help
+her round as a crew would work them: the mizzen sheeted home to come up
+into the wind, the spritsail kept full to bear away, the headsails backed
+when the wind is ahead, so she can be turned with little way on.
+
+**Wet.** Her timbers get wet as wood really does (`src/ship/Wetness.js`):
+rain wets what is open to the sky (a height map of the ship from above
+tells what lies under a deck), water stands in the seams and in a few
+hollows of the decks, the lee side first, ringed by the drops; the band of
+her side the sea runs up and down is wet and stays dark for minutes after;
+green water runs over the bow when she buries it; below the waterline it is
+damp inside, and bilge water stands on the floor of the hold. Porous wood,
+rope and canvas darken as their pores fill, a film of water makes anything
+glossy, standing water is a mirror; iron does not darken. It all dries in
+the wind when the rain stops. She starts off
 **Vindstad** in Reinefjorden, the largest stretch of level land beside deep
 water in the area, where a harbour could be built.
 
@@ -81,15 +119,15 @@ build: `npm run build` then `npm run preview`.
 
 ### Controls
 
-You can sail her from outside, take the whipstaff, or walk about her.
+You can sail her from outside, take the wheel, or walk about her.
 
-| Key | Outside view / at the whipstaff | Walking aboard |
+| Key | Outside view / at the wheel | Walking aboard |
 | --- | --- | --- |
 | `A` / `D` | helm to port / starboard (amidships when let go) | step left / right |
 | `W` / `S` | set / take in sail, a step at a time | walk forward / back; on the shrouds, climb up / down |
 | `Shift` | | run |
 | `F` | outside → aboard; aboard → outside | back to the outside view |
-| `E` | at the whipstaff: let go of it | take the whipstaff (standing at it); go up / down the shrouds (at their foot or in the top) |
+| `E` | at the wheel: let go of it | take the wheel (standing at it); go up / down the shrouds (at their foot or in the top) |
 | `J` | over the side | over the side |
 | `N` / `B` / `M` | day ↔ night / weather / sound on-off | |
 | `C` | free orbit camera (outside view) | |
@@ -103,13 +141,13 @@ sternway. The top-left panel shows her speed, the canvas set, the wind on her
 On a phone:
 
 - **Bottom left**: a joystick, always there. With the conn (outside or at the
-  whipstaff) left and right put the helm over in proportion, back amidships
+  wheel) left and right put the helm over in proportion, back amidships
   when you let go; held up or down it sets or takes in sail. Aboard it walks,
   and on the shrouds it climbs.
 - **Anywhere else**: drag to look (aboard) or to fly round the ship; pinch to
   zoom.
 - **Top right**: the one thing you can do where you stand (take the
-  whipstaff, climb, come aboard), over the side, the view, and ☰ with
+  wheel, climb, come aboard), over the side, the view, and ☰ with
   day/night, weather and sound.
 
 ### Getting about the ship
@@ -178,7 +216,7 @@ planking, rain drums on the deck overhead, and her timbers work as she rolls.
   live in the ship's own frame, so her heave, roll and heel carry you; rays
   against the collision mesh find the deck under you and stop you at walls;
   the shrouds are climbed as ladders. The access data (ladders, named
-  spaces, the whipstaff, where you come aboard) is written by the Blender
+  spaces, the wheel, where you come aboard) is written by the Blender
   script into `src/ship/galleon_rig.json`.
 - **Bow spray** (`src/world/Spray.js`), **waterfalls** (`Waterfalls.js`),
   **night sky** with moon and Milky Way (`NightSky.js`), a physically based
@@ -188,13 +226,14 @@ planking, rain drums on the deck overhead, and her timbers work as she rolls.
 
 ```bash
 python3 -m venv .blenv && .blenv/bin/pip install bpy scipy   # Blender as a Python module
-.blenv/bin/python blender/build_galleon.py -- out --atlas 4096
-tools/pack_glb.sh out/galleon.glb src/assets/galleon.glb.gz
+.blenv/bin/python blender/build_galleon.py -- out --atlas 2048
+tools/pack_glb.sh out/galleon.glb public/models/galleon.glb.b64.txt
 ```
 
 The script writes the model, the rig and access data
-(`src/ship/galleon_rig.json`) and preview renders; `--shape` makes only
-quick previews (no bake, no export). `tools/pack_glb.sh` quantizes the
+(`src/ship/galleon_rig.json`: yards, sails, the standing rigging, the hull's
+half-breadths, the way about her) and preview renders; `--shape` makes only
+quick previews (no bake, no export), `--rig` writes only the rig. `tools/pack_glb.sh` quantizes the
 geometry and gzips it; the game unzips it with fflate (no WebAssembly
 decoder).
 
@@ -269,7 +308,7 @@ src/
   core/Engine.js       # renderer, camera, post-processing
   entities/
     Galleon.js         # the ship: model, collider, sailing, seakeeping
-    Player.js          # you aboard: walking, ladders, the whipstaff
+    Player.js          # you aboard: walking, ladders, the wheel
     Diver.js           # the scuba diver: swimming, air
   ship/
     Sails.js           # sails, yards, flags

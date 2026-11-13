@@ -5,6 +5,7 @@ import RIG from '../ship/galleon_rig.json';
 import { Sails, Flags, squareDrive } from '../ship/Sails.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { shipMaterial } from '../ship/Materials.js';
+import { POROSITY } from '../ship/Wetness.js';
 
 // The ship: a large sailing ship of the 1620s after Vasa, Blender-built
 // (blender/build_galleon.py), and her sailing.
@@ -22,6 +23,21 @@ import { shipMaterial } from '../ship/Materials.js';
 // 1 unit = 1 m; the glTF origin is amidships on the waterline, bow toward -Z.
 
 const DEG = Math.PI / 180;
+
+// residuary (wave-making) resistance coefficient over the Froude number
+const CR = [[0, 0], [0.10, 0.0006], [0.15, 0.0010], [0.20, 0.0030], [0.25, 0.0090], [0.30, 0.0220], [0.35, 0.040], [0.5, 0.08]];
+function residuary(fr) {
+  for (let i = 1; i < CR.length; i++) {
+    if (fr <= CR[i][0]) return CR[i - 1][1] + ((CR[i][1] - CR[i - 1][1]) * (fr - CR[i - 1][0])) / (CR[i][0] - CR[i - 1][0]);
+  }
+  return 0.08;
+}
+// the water's resistance to her way (N), signed against it
+export function hullResistance(v) {
+  const a = Math.abs(v);
+  const fr = a / Math.sqrt(9.81 * GALLEON.lwl);
+  return Math.sign(v) * 0.5 * 1025 * GALLEON.wetted * a * a * (GALLEON.cf + residuary(fr));
+}
 
 // The model comes gzipped (tools/pack_glb.sh). In the single-file page it is
 // a data: URL, decoded by hand (the page may not fetch() data: URLs).
@@ -107,10 +123,14 @@ export const GALLEON = {
   length: 47.5, beam: 15.0, draught: 4.8,     // a galleon's proportion: length/beam 3.2
   halfHull: [24.5, 7.45],           // waterline half length and half beam (hull foam, wake)
   mass: 6.5e5,                      // kg: displacement with added mass, eased for play
-  drag: 3600,                       // N per (m/s)^2 of way through the water
+  // resistance of her hull: skin friction of a weed-grown oak bottom
+  // (wetted area 634 m2, Cf with form and fouling 0.0045) and the wave
+  // making that rises steeply toward her hull speed (Froude number, after
+  // the residuary resistance of full-bodied ships)
+  wetted: 634, cf: 0.0045, lwl: 47.5,
   rudderMax: 23,                    // deg, as on Vasa
-  rudderRate: 9,                    // deg/s: a whipstaff is quick
-  yawGain: 0.06,                    // rad/s of turn per rad of rudder at 4 m/s
+  rudderRate: 6,                    // deg/s: a turn and a half of the wheel to put her hard over
+  yawGain: 0.09,                    // rad/s of turn per rad of rudder at 4 m/s: a turning circle of ~4.5 lengths
   yawTime: 12,                      // s
   // roll ~12 s, pitch ~7 s, heave ~7 s for a ship of 1200 t
   seakeeping: { rollW: 0.52, rollZeta: 0.1, pitchW: 0.9, pitchZeta: 0.5, heaveW: 0.9, heaveZeta: 0.55 },
@@ -144,7 +164,7 @@ export class Galleon {
     this.hullShape = { halfLen: 24.5, halfBeam: 7.5, keel: -4.8, top: 14 };
     this.collider = null;
     this.interior = null;
-    this.whip = null;
+    this.wheel = null;
     this.bowSpray = 0;
     this.slam = 0;
     // where spray is thrown from: the bow's shoulders to the stem
@@ -204,6 +224,7 @@ export class Galleon {
             if (m.aoMap) { n.aoMap = m.aoMap; n.aoMapIntensity = 1; }
             n.side = m.side;
             n.vertexColors = vc;
+            if (this.wet) this.wet.patch(n, POROSITY[scan] ?? 0.5);   // rain, sea and bilge on it
             made.set(key, n);
           }
           return n;
@@ -221,14 +242,18 @@ export class Galleon {
       if (rudder && rudder.parent && rudder.parent !== model) {
         this.rudderNode = hingeAt(rudder, new THREE.Vector3(), rudder.parent);
       }
-      // the whipstaff leans athwartships about the rowle in the deck, 0.45 m
-      // above its foot
-      const whip = model.getObjectByName('whipstaff');
-      if (whip && whip.geometry) {
-        whip.geometry.computeBoundingBox();
-        const bb = whip.geometry.boundingBox.clone().applyMatrix4(toModel(whip));
+      // the wheel turns about its spindle (fore and aft through its nave):
+      // the middle of its rim
+      const wheel = model.getObjectByName('wheel');       // a mesh, or a group of one per material
+      if (wheel) {
+        const bb = new THREE.Box3();
+        wheel.traverse((o) => {
+          if (!o.isMesh) return;
+          o.geometry.computeBoundingBox();
+          bb.union(o.geometry.boundingBox.clone().applyMatrix4(toModel(o)));
+        });
         const c = bb.getCenter(new THREE.Vector3());
-        this.whip = hingeAt(whip, new THREE.Vector3(c.x, bb.min.y + 0.45, c.z), model);
+        this.wheel = hingeAt(wheel, new THREE.Vector3(c.x, c.y, bb.max.z - 0.17), model);
       }
       // the collision mesh: never drawn, raycast in model space
       const col = model.getObjectByName('collision');
@@ -253,6 +278,7 @@ export class Galleon {
         }
       }
       this.model = model;
+      if (this.wet) this.wet.bake(model);       // what the rain can reach
       this.setNight(this.night);
       if (onReady) onReady(this);
     };
@@ -303,22 +329,34 @@ export class Galleon {
     const force = q * spread * c * 0.85;
     this.drive = c;
     const turnLoss = 0.25 * Math.abs(this.yawRate) * this.speed * GALLEON.mass;
-    this.speed += ((force - GALLEON.drag * this.speed * Math.abs(this.speed) - turnLoss) / GALLEON.mass) * dt;
+    this.speed += ((force - hullResistance(this.speed) - turnLoss) / GALLEON.mass) * dt;
     // leeway: pushed sideways by the wind on her sails and her high sides
     const side = q * (spread * 0.35 + 260) * Math.sin(this.awa) * Math.abs(Math.cos(this.awa * 0.5));
     const wantLee = -Math.sign(side) * Math.min(0.9, Math.sqrt(Math.abs(side) / 60000) * (0.4 + 0.6 / (1 + Math.abs(this.speed))));
     this.leeway += (wantLee - this.leeway) * Math.min(1, dt * 0.15);
 
-    // rudder follows the whipstaff; the ship answers it with way on
+    // the rudder follows the wheel; the ship answers it with way on
     const dr = THREE.MathUtils.clamp(this.helm - this.rudder, -GALLEON.rudderRate * dt, GALLEON.rudderRate * dt);
     this.rudder += dr;
     const flow = this.speed;
-    const target = GALLEON.yawGain * (flow / 4) * this.rudder * DEG;
+    let target = GALLEON.yawGain * (flow / 4) * this.rudder * DEG;
+    // the sails help her round, as a crew would work them: to come up into
+    // the wind they sheet home the mizzen (aft) and let the spritsail (far
+    // forward) shake; to bear away the other way about. Her long ends make
+    // these small sails strong levers, and they turn her even with little
+    // way on, which the rudder cannot. Wind ahead: the headsails are backed.
+    const order = this.helm / GALLEON.rudderMax;          // -1..1, + to port
+    if (Math.abs(order) > 0.05) {
+      const press = Math.min(1, (this.aws / 8) ** 2);
+      const side = 0.35 + 0.65 * Math.abs(Math.sin(this.awa));
+      target += 0.016 * order * press * side * (0.4 + 0.6 * (this.sails.setFrac || 0));
+    }
     this.yawRate += (target - this.yawRate) * (dt / GALLEON.yawTime);
     this.heading += this.yawRate * dt;
     if (this.rudderNode) this.rudderNode.rotation.y = -this.rudder * DEG;
-    // the whipstaff's head goes over the way she is to turn
-    if (this.whip) this.whip.rotation.z = this.rudder * DEG * 0.9;
+    // the wheel: a turn and a half each way, its top going the way her head
+    // is to go
+    if (this.wheel) this.wheel.rotation.z = (this.rudder / GALLEON.rudderMax) * 1.5 * 2 * Math.PI;
 
     // heel to leeward with the press of sail
     const heelT = THREE.MathUtils.clamp(Math.sin(this.awa) * Math.min(1, q * spread / 9.0e4) * 0.14, -0.16, 0.16);

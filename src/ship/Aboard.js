@@ -4,7 +4,7 @@ import * as THREE from 'three';
 // writes into galleon_rig.json (model coordinates, metres):
 //   ladders  climbs that are not walked: up the shrouds to the tops
 //   places   named spaces, for the hint at the bottom of the screen
-//   helm     the whipstaff; spawn: where you come aboard; bounds
+//   helm     the wheel; spawn: where you come aboard; bounds
 // Ladders between decks are ordinary stairs in the collision mesh and need
 // nothing here.
 

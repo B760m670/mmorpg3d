@@ -239,15 +239,28 @@ def _columns():
         pts.add(round(s, 3))
         e = min(s - SA6, SF6 - s)
         s += 0.16 if e < 2.5 else 0.3 if e < 8 else 0.42
-    for a in (BRK_ROYAL, BRK_POOP, BRK_QD, BRK_FC):
+    us = [(p - SA6) / (SF6 - SA6) for p in pts | {SF6} if SA6 <= p <= SF6]
+    # fine columns about each break of the decks, at the height of the step
+    # in the side there (the columns lean with the raked ends, so a station
+    # at mid-height is not the same station at the rail)
+    for a, d_hi in ((BRK_ROYAL, D_ROYAL), (BRK_POOP, D_POOP), (BRK_QD, D_QD), (BRK_FC, D_FC)):
+        zb = d_hi + sheer(a) + 0.5
         for d in (-0.21, -0.15, -0.05, 0.05, 0.15, 0.21):
-            pts.add(round(a + d, 3))
-    pts.add(SF6)
-    return sorted((p - SA6) / (SF6 - SA6) for p in pts if SA6 <= p <= SF6)
+            us.append(((a + d) - s_aft(zb)) / (s_fwd(zb) - s_aft(zb)))
+    return sorted({round(u, 6) for u in us if 0.0 <= u <= 1.0})
+
+
+def _ztop(u):
+    """Top of the side on column u: the rail height at the station where
+    the column itself reaches the rail."""
+    z = rail_top(col_s(u, 6.0))
+    for _ in range(4):
+        z = rail_top(col_s(u, z))
+    return z
 
 
 U = _columns()
-ZTOP = [rail_top(col_s(u, 6.0)) for u in U]
+ZTOP = [_ztop(u) for u in U]
 LANTERNS = [(-1.7, ZTOP[0] + 0.85, 0.31), (0.0, ZTOP[0] + 1.7, 0.41), (1.7, ZTOP[0] + 0.85, 0.31)]
 NV = 72
 Z_HOLD = -3.3          # the hold's floor (planking over the ballast)
@@ -696,8 +709,17 @@ def build_hull():
             z = Z_RAB + (ZTOP[col_i] - Z_RAB) * j / NV
             w = wfn(z)
             if w < 0.01:
-                prev = None
-                continue
+                # the end comes to a point here (the tuck's foot, the stem
+                # head): a row of coincident vertices, so that the first real
+                # row is joined down to it and no slit is left open
+                nxt = Z_RAB + (ZTOP[col_i] - Z_RAB) * (j + 1) / NV
+                if wfn(nxt) < 0.01:
+                    prev = None
+                    continue
+                w = 0.005
+            # into the side's planking: no seam to see through (more at the
+            # foot of the tuck and the stem head, where the side turns sharply)
+            w = w + 0.015 + 0.05 * clamp(1.0 - abs(z - (0.6 if outward < 0 else Z_STEMHEAD)) / 0.8) if w > 0 else 0.0
             xs = sorted([lerp(-w, w, k / 8) for k in range(9)] + [clamp(e, -w, w) for e in edges])
             cur = [bm.verts.new((x, Y(sfn(z)), z)) for x in xs]
             if prev:
@@ -841,7 +863,10 @@ for _n, _x0, _x1, _st, _sb, _up, _lo in STAIRS:
     HOLES[_up].append((_x0 - 0.05, _x1 + 0.05, min(_st, _sb) - 0.1, max(_st, _sb) + 0.1))
 for _lv, _gs in GRATINGS.items():
     HOLES.setdefault(_lv, []).extend(_gs)
-WHIPSTAFF_S = 13.9         # the whipstaff, under the half deck's steering hatch
+WHIPSTAFF_S = 13.9         # the tiller's end, under the half deck's steering hatch
+WHEEL_S = 15.25            # the wheel on the half deck (its plane), the helmsman abaft it
+WHEEL_R = 0.6              # radius of the rim; the handles reach 0.28 m beyond it (1.75 m over all)
+WHEEL_AXLE = 0.98          # height of its spindle over the deck: the helmsman looks over the rim
 DECKS = {}                 # level -> (s0, s1) of the walkable surface
 STAIR_FEET = []            # the break stairs (starboard; mirrored): x0, x1, s0, s1, foot level
 EDGE = 1.0e3               # x standing for "out to the ship's side" in strips and walls
@@ -941,6 +966,9 @@ def stair(name, x0, x1, s_top, z_top, s_bot, z_bot, rails=True):
             cyl(name + "_rail", (x, Y(s_bot), z_bot + 0.9), (x, Y(s_top), z_top + 0.9), 0.03, M["dark"], seg=5)
             cyl(name + "_post", (x, Y(s_bot), z_bot), (x, Y(s_bot), z_bot + 0.9), 0.03, M["dark"], seg=5)
     coll_quad([(x0, Y(s_bot), z_bot + 0.02), (x1, Y(s_bot), z_bot + 0.02), (x1, Y(s_top), z_top + 0.01), (x0, Y(s_top), z_top + 0.01)])
+    if rails:      # its side rails: walked up, not through
+        for x in (x0 - 0.05, x1 + 0.05):
+            coll_quad([(x, Y(s_bot), z_bot + 0.3), (x, Y(s_top), z_top + 0.3), (x, Y(s_top), z_top + 0.95), (x, Y(s_bot), z_bot + 0.95)])
 
 
 def build_decks():
@@ -984,7 +1012,7 @@ def build_decks():
     bm = bmesh.new()
     cols = []
     for i, u in enumerate(U):
-        sref = col_s(u, 6.0)
+        sref = col_s(u, deck_level(col_s(u, 6.0)))      # the column's station at deck height
         zd, zt = deck_level(sref) - 0.03, ZTOP[i]
         col = []
         for k in range(7):
@@ -1065,7 +1093,10 @@ def build_decks():
         new_obj(name, bm, mat)
 
     inner_end("transom_in", s_aft, W_aft, D_LGD + sheer(0.0), ZTOP[0], 0.22, M["in_plank"], +1, STERN_DOORS)
-    inner_end("bulkhead_in", s_fwd, W_fwd, Z_STEMHEAD + 0.05, ZTOP[-1], -0.22, M["red_z"], -1, [BEAK_DOOR])
+    # and below it, the ceiling of the stern down to the foot of the tuck
+    # (the orlop's and the hold's after end)
+    inner_end("transom_in", s_aft, W_aft, 0.62, D_LGD + sheer(0.0) + 0.02, 0.3, M["in_plank"], +1)
+    inner_end("bulkhead_in", s_fwd, W_fwd, Z_STEMHEAD - 0.12, ZTOP[-1], -0.22, M["red_z"], -1, [BEAK_DOOR])
     for d in STERN_DOORS:
         for x in (d[0] - 0.06, d[1] + 0.06):
             box("stern_door_jamb", (x, Y(s_aft((d[2] + d[3]) / 2) + 0.1), (d[2] + d[3]) / 2), (0.12, 0.34, d[3] - d[2]), M["dark_z"])
@@ -1087,7 +1118,7 @@ def build_decks():
         w0 = half_breadth(s, z0) - 0.2
         dh = min(1.85, z1 - z0 - 0.42)
         doors = [(-0.38 * w0 - 0.45, -0.38 * w0 + 0.45, dh), (0.38 * w0 - 0.45, 0.38 * w0 + 0.45, dh)]
-        holed_wall("break_wall", s, z0, z1, lambda z: half_breadth(s, z), doors, M["red_z"], t=0.14)
+        holed_wall("break_wall", s, z0, z1, lambda z: half_breadth(s, z), doors, M["red_z"], t=0.14, inset=-0.01)
         fy = Y(s) + face * 0.09
         w1 = half_breadth(s, z1) - 0.2
         for x in frange(-w1 + 0.4, w1 - 0.4, (2 * w1 - 0.8) / 6):   # pilasters
@@ -1188,31 +1219,93 @@ def build_interior():
                 continue
             gun(s, base, sc, bore)
 
-    # the steering: tiller from the rudder head forward under the upper
-    # gundeck to the whipstaff, which stands up through it into the steerage
-    zu = zlev("ugd")
+    # the steering: the tiller runs from the rudder head forward under the
+    # upper gundeck; a wheel on the half deck works it by the tiller ropes
+    # (wheel ropes): round the barrel of the wheel, down through the decks
+    # by sheaves, out to blocks at either side and in to the tiller's end.
+    # A turn and a half of the wheel puts the helm hard over. (The wheel
+    # took the whipstaff's place in the years about 1710: the helmsman
+    # stands on deck and sees his sails.)
+    zu, zq = zlev("ugd"), zlev("qd")
     tz0 = Z_WT + 0.35
     ws = WHIPSTAFF_S
     tz1 = zu(ws) - 0.35
     cyl("tiller", (0, Y(s_aft(tz0) + 0.3), tz0), (0, Y(ws), tz1), 0.13, M["in_beam"], seg=8, r2=0.09)
-    box("rowle", (0, Y(ws), zu(ws) + 0.08), (0.9, 0.5, 0.16), M["in_beam"])
-    bm = bmesh.new()
-    bmesh.ops.create_cone(bm, cap_ends=True, segments=8, radius1=0.065, radius2=0.045, depth=2.4)
-    bmesh.ops.translate(bm, vec=Vector((0, 0, 0.75)), verts=bm.verts)
-    knob = bmesh.ops.create_uvsphere(bm, u_segments=8, v_segments=6, radius=0.08)
-    bmesh.ops.translate(bm, vec=Vector((0, 0, 1.95)), verts=knob["verts"])
-    metric_uv_bm(bm, (0, 0, 1), ((0, 0, 0), 0.055))
-    me = bpy.data.meshes.new("whipstaff")
-    bm.to_mesh(me)
-    bm.free()
-    me.materials.append(M["in_beam"])
-    WHIP = bpy.data.objects.new("whipstaff", me)
-    WHIP.location = (0, Y(ws), zu(ws) + 0.08)
-    bpy.context.scene.collection.objects.link(WHIP)
-    NODES.append(WHIP)
-    box("binnacle", (0, Y(ws + 1.1), zu(ws) + 0.55), (0.7, 0.45, 1.1), M["in_beam"])
-    cyl("binnacle_compass", (0, Y(ws + 1.1), zu(ws) + 1.1), (0, Y(ws + 1.1), zu(ws) + 1.16), 0.16, M["bronze"], seg=14)
-    coll_box((0, Y(ws + 1.1), zu(ws) + 0.55), (0.75, 0.5, 1.1))
+    zd = zq(WHEEL_S)
+    ax = zd + WHEEL_AXLE
+    s_b0, s_b1 = WHEEL_S + 0.2, WHEEL_S + 1.25           # the barrel, forward of the wheel
+    # pedestals (two stanchions on a sole) carrying the barrel's spindle
+    for sp in (s_b0 + 0.08, s_b1 - 0.08):
+        box("wheel_stanchion", (0, Y(sp), zd + (WHEEL_AXLE + 0.12) / 2), (0.2, 0.16, WHEEL_AXLE + 0.12), M["dark"])
+        cyl("wheel_bearing", (0, Y(sp) - 0.09, ax), (0, Y(sp) + 0.09, ax), 0.09, M["iron"], seg=12)
+    box("wheel_sole", (0, Y((s_b0 + s_b1) / 2), zd + 0.04), (0.5, s_b1 - s_b0 + 0.2, 0.08), M["dark"])
+    cyl("wheel_barrel", (0, Y(s_b0 + 0.17), ax), (0, Y(s_b1 - 0.17), ax), 0.19, M["oak"], seg=16)
+    for k in range(9):                                   # turns of the tiller rope round the barrel
+        sk = lerp(s_b0 + 0.22, s_b1 - 0.22, k / 8)
+        cyl("wheel_rope_turn", (0, Y(sk) - 0.025, ax), (0, Y(sk) + 0.025, ax), 0.215, M["rope"], seg=16, cap=False)
+    # the ropes go down from the barrel through the deck either side...
+    sm = (s_b0 + s_b1) / 2
+    for sx in (-1, 1):
+        cyl("tiller_rope", (sx * 0.2, Y(sm), ax), (sx * 0.3, Y(sm), zd - 0.1), 0.022, M["rope"], seg=5)
+        box("tiller_rope_sheave", (sx * 0.3, Y(sm), zd + 0.03), (0.16, 0.22, 0.06), M["iron"])
+        # ...through the steerage to blocks on the upper gundeck...
+        cyl("tiller_rope", (sx * 0.3, Y(sm), zd - 0.1), (sx * 0.3, Y(sm), zu(sm) + 0.25), 0.022, M["rope"], seg=5)
+        box("tiller_block", (sx * 0.3, Y(sm), zu(sm) + 0.17), (0.14, 0.2, 0.28), M["dark"])
+        # ...and under it out to the side blocks and in to the tiller's end
+        pb = (sx * 2.4, Y(ws + 0.8), tz1)
+        cyl("tiller_rope", (sx * 0.3, Y(sm), zu(sm) - 0.05), pb, 0.022, M["rope"], seg=5)
+        box("tiller_side_block", pb, (0.16, 0.16, 0.26), M["dark"])
+        cyl("tiller_rope", pb, (0, Y(ws + 0.1), tz1), 0.022, M["rope"], seg=5)
+    # the wheel itself: its own node, turned by the game about its spindle
+    n0 = len(PARTS)
+    R = WHEEL_R
+    hub = Vector((0, Y(WHEEL_S), ax))
+    fwd = Vector((0, 1, 0))
+    cyl("wheel_nave", hub - fwd * 0.13, hub + fwd * 0.17, 0.15, M["oak"], seg=16)
+    cyl("wheel_nave_ring", hub - fwd * 0.135, hub - fwd * 0.095, 0.158, M["bronze"], seg=16, cap=False)
+    cyl("wheel_nave_ring", hub + fwd * 0.13, hub + fwd * 0.17, 0.158, M["bronze"], seg=16, cap=False)
+    cyl("wheel_boss", hub - fwd * 0.17, hub - fwd * 0.13, 0.09, M["bronze"], seg=14)
+    cyl("wheel_spindle", hub + fwd * 0.17, Vector((0, Y(s_b0 + 0.1), ax)), 0.045, M["iron"], seg=10)
+    # the rim: two rings of felloes with the spokes between
+    for dr, rw in ((0.0, 0.07),):
+        bm = bmesh.new()
+        segs = 40
+        rings = []
+        for k in range(segs):
+            a = 2 * math.pi * k / segs
+            c, s_ = math.cos(a), math.sin(a)
+            pts = []
+            for (rr, yy) in ((R - rw, -0.045), (R + rw, -0.045), (R + rw, 0.045), (R - rw, 0.045)):
+                pts.append(bm.verts.new((rr * c, Y(WHEEL_S) + yy, ax + rr * s_)))
+            rings.append(pts)
+        for k in range(segs):
+            a_, b_ = rings[k], rings[(k + 1) % segs]
+            for q in range(4):
+                bm.faces.new([a_[q], b_[q], b_[(q + 1) % 4], a_[(q + 1) % 4]])
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+        new_obj("wheel_rim", bm, M["oak"], smooth_shade=True, uv_axis=None, uv_cyl=((0, Y(WHEEL_S), ax), R))
+    for k in range(10):                                  # turned spokes, running out into handles
+        a = 2 * math.pi * k / 10 + math.pi / 2
+        d = Vector((math.cos(a), 0, math.sin(a)))
+        cyl("wheel_spoke", hub + d * 0.14, hub + d * (R - 0.06), 0.032, M["oak"], seg=8, r2=0.024)
+        cyl("wheel_handle", hub + d * (R + 0.06), hub + d * (R + 0.16), 0.024, M["oak"], seg=8, r2=0.034)
+        cyl("wheel_handle", hub + d * (R + 0.16), hub + d * (R + 0.27), 0.034, M["oak"], seg=8, r2=0.02)
+        sphere("wheel_handle_knob", hub + d * (R + 0.28), 0.03, M["oak"], seg=8)
+        if k == 0:                                       # the king spoke, marked: helm amidships when it is upright
+            cyl("wheel_king_mark", hub + d * (R + 0.1), hub + d * (R + 0.135), 0.04, M["bronze"], seg=8, cap=False)
+    parts = PARTS[n0:]
+    del PARTS[n0:]
+    for o in parts:
+        SIDE.discard(o)
+    WHEEL_PARTS.extend(parts)                            # joined into one node once merge() exists
+    # the binnacle before the barrel: the compass in the helmsman's eye
+    sb = s_b1 + 0.55
+    box("binnacle", (0, Y(sb), zd + 0.5), (0.62, 0.42, 1.0), M["in_beam"])
+    box("binnacle_hood", (0, Y(sb), zd + 1.08), (0.66, 0.46, 0.16), M["dark"])
+    cyl("binnacle_compass", (0, Y(sb - 0.02), zd + 1.0), (0, Y(sb - 0.02), zd + 1.06), 0.15, M["bronze"], seg=14)
+    coll_box((0, Y(WHEEL_S), ax), (2 * (R + 0.3), 0.3, 2 * (R + 0.3)))
+    coll_box((0, Y((s_b0 + s_b1) / 2), zd + 0.7), (0.6, s_b1 - s_b0, 1.4))
+    coll_box((0, Y(sb), zd + 0.55), (0.7, 0.5, 1.1))
 
     # the great cabin (under the poop) and the upper cabin (under the royal)
     zq, zp = zlev("qd"), zlev("poop")
@@ -1239,17 +1332,21 @@ def build_interior():
         w = half_breadth(s, zh + 0.5) - 0.9
         for x in frange(-w + 0.3, -1.0, 0.85):
             barrel("cask", (x, Y(s), zh + 0.02), (x, Y(s), zh + 1.0), 0.33, 0.4, M["cask"])
+            top = zh + 1.0
             if (k + int(x * 3)) % 3 == 0:
                 barrel("cask", (x, Y(s), zh + 1.02), (x, Y(s), zh + 1.9), 0.3, 0.36, M["cask"])
+                top = zh + 1.9
+            coll_box((x, Y(s), (zh + top) / 2), (0.84, 0.84, top - zh))
             k += 1
-        coll_box((-(w + 0.7) / 2, Y(s), zh + 0.95), (w - 0.5, 1.0, 1.9))
         if s < 17.0 or s > 33.0:
             for x in frange(1.3, w - 0.3, 1.0):
                 box("crate", (x, Y(s), zh + 0.42), (0.8, 0.85, 0.84), M["crate"])
+                top = zh + 0.84
                 if (k % 2) == 0:
                     box("crate", (x + 0.05, Y(s + 0.05), zh + 1.2), (0.7, 0.75, 0.7), M["crate"])
+                    top = zh + 1.55
+                coll_box((x, Y(s), (zh + top) / 2), (0.84, 0.9, top - zh))
                 k += 1
-            coll_box(((w + 1.0) / 2, Y(s), zh + 0.8), (w - 0.8, 0.95, 1.6))
     sgal = 27.5
     box("galley_hearth", (-1.6, Y(sgal), zh + 0.55), (1.8, 1.8, 1.1), M["brick"])
     box("galley_hood", (-1.6, Y(sgal), zh + 1.55), (1.4, 1.4, 0.12), M["iron"])
@@ -1294,7 +1391,8 @@ def build_interior():
 
 
 LAMPS = []
-NODES = []        # extra nodes the game moves (the whipstaff)
+NODES = []        # extra nodes the game moves (the wheel)
+WHEEL_PARTS = []
 
 
 def build_collision():
@@ -1348,6 +1446,20 @@ def build_collision():
         for ds in (-0.9, 0.9):
             zd = deck_level(m["s"])
             coll_box((0, Y(m["s"] + ds), zd + 0.5), (1.9, 0.18, 1.0))
+    # above the tops: the lower mastheads and the heels of the topmasts
+    # (a man on the top cannot walk through them)
+    for name, m in MASTS.items():
+        if name.startswith("_"):
+            continue
+        rh = m["r0"] * 0.8
+        coll_box((0, Y(m["s"]), (m["top"] + m["head"]) / 2 + 0.2), (2 * rh + 0.1, 2 * rh + 0.1, m["head"] - m["top"] + 0.4))
+        rt = m["r0"] * 0.55
+        coll_box((0, Y(m["st"]), m["top"] + 1.6), (2 * rt + 0.08, 2 * rt + 0.08, 3.2))
+    sb, zb = BRK_FC + 0.6, D_FC + sheer(BRK_FC)
+    coll_box((0, Y(sb), zb + 0.75), (1.1, 0.3, 1.5))                     # the belfry
+    for x in (-0.6, 0.6):
+        coll_box((x, Y(50.3), D_FC + sheer(50.3) + 1.2), (0.32, 0.37, 2.5))   # knightheads
+    coll_box((0, Y(52.9), 5.5), (0.2, 0.7, 2.0))                         # the bobstay across the beak
     bs = MASTS["_bowsprit"]
     a, b = bs["heel"], bs["heel"] + bs["d"] * 9.0
     for k in range(6):
@@ -1357,12 +1469,13 @@ def build_collision():
     coll_box((0, Y(39.4), D_FC + sheer(39.4) + 0.5), (1.7, 0.4, 1.0))
 
     # the stern galleries: floors and their fronts
-    for (z_floor, depth) in ((_ZQ - 0.05, 1.1), (_ZP + 0.05, 0.75)):
+    for (z_floor, depth, front) in ((_ZQ - 0.05, 1.1, 0.66), (_ZP + 0.05, 0.75, 0.58)):
         w = W_aft(z_floor) - 0.05
         sg = s_aft(z_floor)
         coll_quad([(-w, Y(sg - depth), z_floor + 0.02), (w, Y(sg - depth), z_floor + 0.02),
                    (w, Y(sg + 0.3), z_floor + 0.02), (-w, Y(sg + 0.3), z_floor + 0.02)])
-        coll_box((0, Y(sg - depth + 0.05), z_floor + 0.6), (2 * w + 0.2, 0.1, 1.2))
+        # the front: just inside the carved columns and the balustrade
+        coll_box((0, Y(sg - front), z_floor + 0.9), (2 * w + 0.2, 0.1, 1.8))
         for sd in (-1, 1):
             coll_box((sd * (w + 0.05), Y(sg - depth / 2), z_floor + 0.6), (0.1, depth + 0.3, 1.2))
     # the tops, with their rims
@@ -1382,10 +1495,11 @@ def build_collision():
     # the beak: its grating and the head rails as a fence
     zg = Z_STEMHEAD + 0.08
     s0 = s_fwd(zg) - 0.05
-    coll_quad([(-2.1, Y(s0), zg), (2.1, Y(s0), zg), (0.35, Y(55.4), zg), (-0.35, Y(55.4), zg)])
+    coll_quad([(-2.1, Y(s0), zg), (2.1, Y(s0), zg), (0.45, Y(55.0), zg), (-0.45, Y(55.0), zg)])
     for sd in (-1, 1):
-        coll_quad([(sd * 2.1, Y(s0), zg), (sd * 0.35, Y(55.4), zg), (sd * 0.35, Y(55.4), zg + 1.1), (sd * 2.1, Y(s0), zg + 1.1)])
-    coll_quad([(-0.4, Y(55.5), zg), (0.4, Y(55.5), zg), (0.4, Y(55.5), zg + 1.1), (-0.4, Y(55.5), zg + 1.1)])
+        coll_quad([(sd * 2.1, Y(s0), zg), (sd * 0.45, Y(55.0), zg), (sd * 0.45, Y(55.0), zg + 1.1), (sd * 2.1, Y(s0), zg + 1.1)])
+    # the fence at the fore end, short of the figurehead
+    coll_quad([(-0.5, Y(54.85), zg), (0.5, Y(54.85), zg), (0.5, Y(54.85), zg + 1.8), (-0.5, Y(54.85), zg + 1.8)])
 
 
 # ------------------------------------------------------------------ carvings
@@ -1687,7 +1801,7 @@ def build_head():
     bm = bmesh.new()
     zg = zh + 0.08
     prev = None
-    for s in frange(s_fwd(zg) - 0.05, 55.4, 0.35):
+    for s in frange(s_fwd(zg) - 0.05, 55.0, 0.35):
         w = lerp(2.1, 0.35, (s - 51.0) / 4.4)
         cur = [bm.verts.new((lerp(-w, w, k / 4), Y(s), zg)) for k in range(5)]
         if prev:
@@ -1708,7 +1822,7 @@ def build_lion(base):
     body, mane and limbs run into one another like carving."""
     bx, bs, bz = base
     mb = bpy.data.metaballs.new("lion")
-    mb.resolution = 0.07
+    mb.resolution = 0.045
     mb.threshold = 0.6
 
     def el(s, z, r, kind="BALL", size=(1, 1, 1), rot=None, x=0.0):
@@ -1745,7 +1859,7 @@ def build_lion(base):
     bm = bmesh.new()
     bm.from_mesh(me)
     print("lion", len(bm.faces), "faces")
-    new_obj("lion", bm, M["gold"], smooth_shade=True)
+    new_obj("lion", bm, M["carved"], smooth_shade=True)        # carved and tarred, the gilt long gone
 
 
 # ------------------------------------------------------------------ deck fittings
@@ -1811,7 +1925,7 @@ def make_yard(name, center, length, r, rot=None):
     return ob
 
 
-RIG = {"masts": {}, "sails": [], "sprit": {}, "stays": []}
+RIG = {"masts": {}, "sails": [], "sprit": {}, "stays": [], "ropes": []}
 
 
 def g(v):
@@ -1859,8 +1973,9 @@ def build_spars():
             box("tm_cap", (0, Y((st + sg) / 2), m["tm"] - 0.1), (rg * 2.6, sg - st + 0.6, 0.3), M["dark"])
             cyl(f"topgallant_{name}", (0, Y(sg), ct - 0.1), (0, Y(sg), m["tg"]), rg, M["spar"], seg=10, r2=0.07)
             sphere("truck", (0, Y(sg), m["tg"] + 0.05), 0.12, M["dark"], seg=8)
-            mast["tg"] = {"s": sg, "head": m["tg"]}
-        mast["tm"] = {"s": st, "head": m["tm"]}
+            mast["tg"] = {"s": sg, "head": m["tg"], "heel": round(ct - 0.1, 3), "r": round(rg, 3)}
+        mast["tm"] = {"s": st, "head": m["tm"], "heel": round(tz - 0.2, 3), "r": round(rt, 3)}
+        mast.update({"head": m["head"], "top": m["top"], "r0": m["r0"]})
         RIG["masts"][name] = mast
         m["st"] = st
         m["sg"] = st + rt * 0.6 + rt * 0.5 + 0.08 if m["ct"] else None
@@ -1962,7 +2077,9 @@ def build_spars():
 def build_rigging():
     rope, dead, iron = M["rope"], M["deadeye"], M["iron"]
     zch = {"fore": 5.3, "main": 5.3, "mizzen": 7.9}
-    chan = {"fore": (35.6, 42.0, 8), "main": (18.4, 25.4, 9), "mizzen": (5.2, 9.0, 5)}
+    # the foremost shroud a little before its mast, so that the courses hang
+    # clear of the rigging until they are braced round
+    chan = {"fore": (35.2, 41.6, 8), "main": (17.9, 24.9, 9), "mizzen": (5.2, 9.0, 5)}
     for name, m in MASTS.items():
         if name.startswith("_"):
             continue
@@ -2000,6 +2117,7 @@ def build_rigging():
             top = Vector((mast_r(m, head.z) + 0.06, Y(m["s"] + lerp(0.35, -0.45, k / (n - 1))), head.z))
             cyl("shroud", hi + dd * 0.15, top, 0.065, rope, seg=5, side=True)
             shrouds.append((hi + dd * 0.15, top))
+            RIG["ropes"].append({"kind": "shroud", "mast": name, "a": g(hi + dd * 0.15), "b": g(top), "r": 0.065})
         ratlines(shrouds, zch[name] + 2.4, m["top"] - 1.1)
         # futtock shrouds, topmast shrouds with their ratlines, topgallant shrouds
         r_top = m["rtop"]
@@ -2007,36 +2125,44 @@ def build_rigging():
         tshrouds = []
         nt = 4 if name != "mizzen" else 3
         for k in range(nt):
-            sa = m["s"] + 0.25 + lerp(0.6, -1.0, k / (nt - 1)) * r_top / 1.95
+            # from the rim of the top abreast of the topmast and aft of it (the
+            # topsail's foot passes before them)
+            sa = m["s"] + 0.25 + lerp(0.05, -1.4, k / (nt - 1)) * r_top / 1.95
             xa = math.sqrt(max(0.05, r_top ** 2 - ((sa - m["s"] - 0.25)) ** 2)) - 0.05
             base = Vector((xa, Y(sa), m["top"] + 0.35))
             cyl("deadeye", base - Vector((0.05, 0, 0)), base + Vector((0.05, 0, 0)), 0.12, dead, seg=8, side=True)
             cyl("futtock", base, Vector((mast_r(m, m["top"] - 2.4) + 0.05, Y(m["s"]), m["top"] - 2.4)), 0.035, iron, seg=4, side=True)
             top = Vector((0.24, Y(m["st"] + lerp(0.2, -0.2, k / (nt - 1))), tm_head.z))
             cyl("tm_shroud", base + Vector((0, 0, 0.15)), top, 0.05, rope, seg=5, side=True)
+            RIG["ropes"].append({"kind": "tm_shroud", "mast": name, "a": g(base + Vector((0, 0, 0.15))), "b": g(top), "r": 0.05})
             tshrouds.append((base + Vector((0, 0, 0.15)), top))
         ratlines(tshrouds, m["top"] + 1.0, tm_head.z - 1.0)
         if m["ct"]:
             for k, ds in enumerate((0.25, -0.25)):
                 base = Vector((1.15, Y(m["st"] + ds - 0.0), m["ct"] + 0.1))
                 cyl("tg_shroud", base, Vector((0.12, Y(m["sg"]), m["tg"] - 4.6)), 0.025, rope, seg=4, side=True)
+                RIG["ropes"].append({"kind": "tg_shroud", "mast": name, "a": g(base), "b": g(Vector((0.12, Y(m["sg"]), m["tg"] - 4.6))), "r": 0.025})
 
     # stays, on the centreline, and backstays
     def stay(a, b, r):
         cyl("stay", a, b, r, rope, seg=6)
         RIG["stays"].append([g(a), g(b)])
+        RIG["ropes"].append({"kind": "stay", "mast": "", "a": g(a), "b": g(b), "r": r})
     mf, mm, mz, bs = MASTS["fore"], MASTS["main"], MASTS["mizzen"], MASTS["_bowsprit"]
 
     def on_bs(t):
         return bs["heel"] + bs["d"] * (bs["L"] * t)
 
-    stay(Vector((0, Y(mm["s"] + 0.4), mm["top"] - 0.5)), Vector((0, Y(mf["s"] - 0.7), D_FC + sheer(mf["s"]) + 1.0)), 0.09)
-    stay(Vector((0, Y(mm["st"] + 0.25), mm["ct"] - 0.35)), Vector((0, Y(mf["s"] - 0.3), mf["top"] + 0.4)), 0.065)
+    # each stay is set up round its masthead just above the top (or the
+    # crosstrees), over the yard and under the foot of the sail above, and
+    # leads forward and down clear of both however the yards are braced
+    stay(Vector((0, Y(mm["s"] + 0.4), mm["top"] + 0.6)), Vector((0, Y(mf["s"] - 0.7), D_FC + sheer(mf["s"]) + 1.0)), 0.09)
+    stay(Vector((0, Y(mm["st"] + 0.35), mm["ct"] + 0.1)), Vector((0, Y(mf["s"] - 0.3), mf["top"] + 0.4)), 0.065)
     stay(Vector((0, Y(mm["sg"] + 0.12), mm["tg"] - 4.4)), Vector((0, Y(mf["st"] - 0.1), mf["ct"] + 0.2)), 0.035)
-    stay(Vector((0, Y(mf["s"] + 0.4), mf["top"] - 0.5)), on_bs(0.36), 0.085)
-    stay(Vector((0, Y(mf["st"] + 0.25), mf["ct"] - 0.35)), on_bs(0.86), 0.06)
+    stay(Vector((0, Y(mf["s"] + 0.4), mf["top"] + 0.6)), on_bs(0.36), 0.085)
+    stay(Vector((0, Y(mf["st"] + 0.35), mf["ct"] + 0.1)), on_bs(0.86), 0.06)
     stay(Vector((0, Y(mf["sg"] + 0.12), mf["tg"] - 3.9)), bs["top"] - Vector((0, 0, 0.3)), 0.035)
-    stay(Vector((0, Y(mz["s"] + 0.3), mz["top"] - 0.4)), Vector((0, Y(mm["s"] - 0.6), 9.4)), 0.06)
+    stay(Vector((0, Y(mz["s"] + 0.3), mz["top"] + 0.3)), Vector((0, Y(mm["s"] - 0.6), 9.4)), 0.06)
     stay(Vector((0, Y(mz["st"] + 0.2), mz["tm"] - 1.6)), Vector((0, Y(mm["s"]), mm["top"] + 0.4)), 0.04)
     for name, aft in (("fore", (34.0, 34.8)), ("main", (16.8, 17.6)), ("mizzen", (4.2,))):
         m = MASTS[name]
@@ -2046,6 +2172,7 @@ def build_rigging():
             lo = Vector((half_breadth(s, z) + 0.6, Y(s), z + 0.45))
             cyl("deadeye", lo - Vector((0.06, 0, 0)), lo + Vector((0.06, 0, 0)), 0.15, dead, seg=10, side=True)
             cyl("backstay", lo, Vector((0.2, Y(m["st"]), tz)), 0.04, rope, seg=5, side=True)
+            RIG["ropes"].append({"kind": "backstay", "mast": name, "a": g(lo), "b": g(Vector((0.2, Y(m["st"]), tz))), "r": 0.04})
             box("backstay_stool", (half_breadth(s, z) + 0.3, Y(s), z), (0.75, 0.5, 0.12), M["dark"], side=True)
     # bobstay and the sprit topmast's backstays
     cyl("bobstay", on_bs(0.45), Vector((0, Y(53.6), 2.4)), 0.06, rope, seg=6)
@@ -2141,7 +2268,8 @@ def access():
         P("Верхняя каюта", "под полуютом; дверь на верхнюю галерею-аркаду", 0, 0.6, zp(0.6), 2.2),
         P("Кормовая галерея", "открытый балкон за большой каютой", 0, -2.6, _ZQ, 2.2),
         P("Верхняя галерея", "аркада над кормовой галереей", 0, -2.6, _ZP, 2.0),
-        P("Колдершток", "рычаг руля: через румпель под палубой поворачивает перо руля, 23° на борт", 0, WHIPSTAFF_S, zu(WHIPSTAFF_S), 1.6),
+        P("Штурвал", "штуртросы с барабана идут через блоки к румпелю под палубой; полтора оборота — руль 23° на борт", 0, WHEEL_S, zq(WHEEL_S), 1.8),
+        P("Румпель", "рычаг на голове руля; его тянут штуртросы от штурвала", 0, WHIPSTAFF_S - 2.0, zu(WHIPSTAFF_S), 2.0),
         P("Шкафут", "открытая середина верхней батарейной палубы: шпиль, люки", 0, 30.0, zu(30.0), 4.0),
         P("Бак", "под полубаком: битенги бушприта, фок-мачта", 0, 44.0, zu(44.0), 3.5),
         P("Гальюн", "решётка на носу, за ней — лев", 0, 52.5, Z_STEMHEAD + 0.1, 2.5),
@@ -2155,7 +2283,7 @@ def access():
         places.append(P({"main": "Грот-марс", "fore": "Фор-марс", "mizzen": "Крюйс-марс"}[name], "площадка на мачте", 0, m["s"] + 0.25, m["top"] + 0.14, m["rtop"]))
     return {
         "ladders": ladders, "places": places,
-        "helm": {"at": g((0, Y(WHIPSTAFF_S - 0.55), zu(WHIPSTAFF_S))), "r": 1.3},
+        "helm": {"at": g((0, Y(WHEEL_S - 0.55), zq(WHEEL_S - 0.55))), "r": 1.3},
         "spawn": g((1.5, Y(16.5), zq(16.5))),
         "bounds": {"yMin": round(Z_HOLD - 1.5, 2), "xMax": 9.0, "zMin": round(-(58.0 - S_MID), 2), "zMax": round(S_MID + 4.5, 2)},
         "below": [[lv, round(LEVELS[lv] if lv in LEVELS else Z_HOLD, 2)] for lv in ("ugd", "lgd", "orlop", "hold")],
@@ -2225,6 +2353,10 @@ def merge(parts, name):
     ob = bpy.data.objects.new(name, me)
     bpy.context.scene.collection.objects.link(ob)
     return ob
+
+
+WHEEL = merge(WHEEL_PARTS, "wheel")
+NODES.append(WHEEL)
 
 
 def _mat(o):
@@ -2468,6 +2600,41 @@ def use_maps(mat, uv_name, color=None, normal=None, rough=None):
         nt.links.new(nm.outputs["Normal"], p.inputs["Normal"])
 
 
+def hull_table():
+    """The hull's half-breadth over stations and heights, for the game's sea
+    to leave the inside of the hull dry (bytes of 3.5 cm, base64)."""
+    import base64
+    s0, ds, ns = -4.0, 0.25, 249
+    z0, dz, nz = -5.0, 0.25, 49
+    out = bytearray()
+    for j in range(nz):
+        z = z0 + dz * j
+        for i in range(ns):
+            sv = s0 + ds * i
+            w = half_breadth(sv, z) if (s_aft(z) <= sv <= s_fwd(z) and z >= Z_RAB) else 0.0
+            out.append(min(255, int(round(w / 0.035))))
+    return {"s0": s0, "ds": ds, "ns": ns, "z0": z0, "dz": dz, "nz": nz, "unit": 0.035, "sMid": S_MID,
+            "data": base64.b64encode(bytes(out)).decode()}
+
+
+def write_rig():
+    RIG.update({
+        "length": round(S_MAX - S_MIN, 2), "lpp": LPP, "beam": 2 * HB, "draught": -Z_KEEL,
+        "lanterns": [g((x, Y(s_aft(ZTOP[0]) - 0.75), z + r * 1.2)) for x, z, r in LANTERNS],
+        "access": access(), "lamps": LAMPS, "wheel": "wheel", "hull": hull_table(),
+        "sternWindows": g((0, Y(s_aft(7.1) - 1.5), 7.1)),
+        "stern": g((0, Y(s_aft(6.0)), 6.0)), "bow": g((0, Y(57.9), 5.8)),
+        "decks": {"waist": round(D_UGD + sheer(30), 3), "quarter": round(D_QD + sheer(15), 3), "poop": round(D_POOP + sheer(6), 3),
+              "royal": round(D_ROYAL + sheer(0), 3), "fore": round(D_FC + sheer(44), 3)},
+    })
+    with open(RIG_JSON, "w") as f:
+        json.dump(RIG, f, indent=1)
+    print("wrote", RIG_JSON)
+
+
+if "--rig" in ARGS:          # the rig (and the way about her) only, for the game
+    write_rig()
+    sys.exit(0)
 bake_setup()
 if SHAPE:
     QUICK = True
@@ -2541,18 +2708,7 @@ if not SHAPE:
         bpy.ops.export_scene.gltf(export_image_format="JPEG", export_jpeg_quality=86, **common)
     print("wrote", glb, os.path.getsize(glb) // 1024, "KB")
 
-    RIG.update({
-        "length": round(S_MAX - S_MIN, 2), "lpp": LPP, "beam": 2 * HB, "draught": -Z_KEEL,
-        "lanterns": [g((x, Y(s_aft(ZTOP[0]) - 0.75), z + r * 1.2)) for x, z, r in LANTERNS],
-        "access": access(), "lamps": LAMPS, "whipstaff": "whipstaff",
-        "sternWindows": g((0, Y(s_aft(7.1) - 1.5), 7.1)),
-        "stern": g((0, Y(s_aft(6.0)), 6.0)), "bow": g((0, Y(57.9), 5.8)),
-        "decks": {"waist": round(D_UGD + sheer(30), 3), "quarter": round(D_QD + sheer(15), 3), "poop": round(D_POOP + sheer(6), 3),
-              "royal": round(D_ROYAL + sheer(0), 3), "fore": round(D_FC + sheer(44), 3)},
-    })
-    with open(RIG_JSON, "w") as f:
-        json.dump(RIG, f, indent=1)
-    print("wrote", RIG_JSON)
+    write_rig()
 
 
 # ------------------------------------------------------------------ preview renders

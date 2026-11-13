@@ -101,6 +101,14 @@ const FRAG = /* glsl */ `
   uniform float uFoamBias;      // Jacobian below which crests break
   uniform float uRain;          // 0..1, rings from raindrops
   uniform float uHullMask;      // 1 while the camera is below decks
+  // The hull's own form (half-breadth over station and height) and the
+  // world-to-ship transform: the sea is left out wherever it would be
+  // inside her, heeled and pitching as she is.
+  uniform sampler2D uHullTex;
+  uniform mat4  uHullInv;
+  uniform vec4  uHullS;         // s0, ds, ns, station of the origin
+  uniform vec4  uHullZ;         // z0, dz, nz, metres per unit of the table
+  uniform float uHullOn;
   uniform float uUnder;         // 1 while the camera is under water
   uniform vec3  uWaterCol;      // the water around the camera (under water)
   uniform float uWaterFog;      // its attenuation per metre, for the view up
@@ -176,14 +184,17 @@ const FRAG = /* glsl */ `
   }
 
   void main() {
-    // Below decks the sea must not show inside the hull.
-    if (uHullMask > 0.5) {
-      vec2 rel = vWorldPos.xz - uBoatPos;
-      float a = dot(rel, uBoatFwd);
-      float c = dot(rel, vec2(-uBoatFwd.y, uBoatFwd.x));
-      float t = clamp((a - 0.15 * uBoatHalf.x) / (0.85 * uBoatHalf.x), 0.0, 1.0);
-      float w = uBoatHalf.y * 1.02 * sqrt(max(0.0, 1.0 - t * t));
-      if (a > -uBoatHalf.x * 1.03 && a < uBoatHalf.x * 1.02 && abs(c) < w) discard;
+    // The sea never shows inside the hull: wherever this bit of water is
+    // within her sides (at its own height, in her own heeled frame), it is
+    // left out. The cut lies between her lining and her outer planking.
+    if (uHullOn > 0.5) {
+      vec3 L = (uHullInv * vec4(vWorldPos, 1.0)).xyz;
+      float st = uHullS.w - L.z;
+      vec2 tc = vec2(((st - uHullS.x) / uHullS.y + 0.5) / uHullS.z, ((L.y - uHullZ.x) / uHullZ.y + 0.5) / uHullZ.z);
+      if (tc.x > 0.0 && tc.x < 1.0 && tc.y > 0.0 && tc.y < 1.0) {
+        float hb = texture2D(uHullTex, tc).r * 255.0 * uHullZ.w;
+        if (abs(L.x) < hb - 0.1) discard;
+      }
     }
     vec2 p = vFlat;
     vec2 uv0 = p / uL.x + 0.5 / uN.x;
@@ -471,6 +482,11 @@ export class Ocean {
       uFoamBias: { value: 0.5 },
       uRain: { value: 0 },
       uHullMask: { value: 0 },
+      uHullTex: { value: null },
+      uHullInv: { value: new THREE.Matrix4() },
+      uHullS: { value: new THREE.Vector4() },
+      uHullZ: { value: new THREE.Vector4() },
+      uHullOn: { value: 0 },
       uUnder: { value: 0 },
       uWaterCol: { value: new THREE.Color(0.02, 0.07, 0.07) },
       uWaterFog: { value: 0.08 },
@@ -649,6 +665,26 @@ Ocean.prototype.setBoat = function setBoat(boat) {
   u.uBoatPos.value.set(boat.position.x, boat.position.z);
   u.uBoatFwd.value.set(-Math.sin(boat.heading), -Math.cos(boat.heading));
   u.uBoatSpeed.value = boat.speed;
+};
+
+// The hull's form for leaving the sea out of her (the rig's "hull" table:
+// half-breadths in bytes over stations and heights).
+Ocean.prototype.setHull = function setHull(t) {
+  const bin = atob(t.data);
+  const data = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) data[i] = bin.charCodeAt(i);
+  const tex = new THREE.DataTexture(data, t.ns, t.nz, THREE.RedFormat, THREE.UnsignedByteType);
+  tex.magFilter = tex.minFilter = THREE.LinearFilter;
+  tex.needsUpdate = true;
+  const u = this.uniforms;
+  u.uHullTex.value = tex;
+  u.uHullS.value.set(t.s0, t.ds, t.ns, t.sMid);
+  u.uHullZ.value.set(t.z0, t.dz, t.nz, t.unit);
+  u.uHullOn.value = 1;
+};
+// Where she is: her model's world matrix (heel, pitch and all).
+Ocean.prototype.setHullFrame = function setHullFrame(matrixWorld) {
+  this.uniforms.uHullInv.value.copy(matrixWorld).invert();
 };
 
 // Light pools from the ship's lamps: [[x, z, radius, strength, [r,g,b]], ...]

@@ -1,6 +1,6 @@
 // Phone controls, kept out of the way of the view:
 //   - bottom-left: a joystick, always visible. At the conn (outside view or
-//     at the whipstaff) left/right puts the helm over in proportion and it
+//     at the wheel) left/right puts the helm over in proportion and it
 //     comes back amidships when you let go; holding it up or down sets or
 //     takes in sail, a step at a time. Aboard, the same stick walks, and on
 //     the shrouds it climbs;
@@ -92,7 +92,7 @@ export class TouchControls {
 
     // top-right: the action here, over the side, the view, the menu
     const top = this.el('div', 'tc', 'tc-top');
-    this.btnHelm = this.button(top, 'к колдерштоку', 'e');
+    this.btnHelm = this.button(top, 'к штурвалу', 'e');
     this.btnHelm.hidden = true;
     this.btnDive = this.button(top, 'за борт', 'j');
     this.btnTorch = this.button(top, 'фонарь', 'l');

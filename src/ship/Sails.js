@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { scanTexture } from './Materials.js';
+import { shapeSquare, Clearance } from './SailShape.js';
 
 // The galleon's canvas, built here rather than in Blender so that it can be
 // set and furled, fill with the wind, shiver when the wind comes too far
@@ -12,7 +13,8 @@ import { scanTexture } from './Materials.js';
 // live in one group per mast, turned with the yards. Coordinates are the
 // model's own: bow toward -Z, x to starboard.
 
-const NX = 10, NY = 9;
+const NX = 24, NY = 18;          // square sails: fine enough to wrap round a rope
+const SPRIT = [16, 12], LATEEN = 16;
 
 // Old canvas that has seen hard weather: dark, stained and sun-rotted,
 // sewn in vertical cloths, patched, holed and torn, the foot gone ragged;
@@ -171,6 +173,7 @@ class Sail {
     this.set = 0;          // 0 furled .. 1 set
     this.target = 0;
     this.pos = mesh.geometry.attributes.position;
+    this.flat = new Float32Array(this.pos.count);     // the canvas's flat z (no belly)
   }
 }
 
@@ -207,6 +210,7 @@ export class Sails {
       else if (s.type === 'sprit') this._sprit(s, s.name === 'sprit_topsail' ? 2 : 1);
     }
     this.totalArea = this.sails.reduce((a, s) => a + s.area, 0);
+    this.clear = new Clearance(rig);          // the canvas kept clear of the rigging
   }
 
   _grid(n, emblem) {
@@ -248,6 +252,7 @@ export class Sails {
     const corners = {
       head: new THREE.Vector3(0, h.y, -h.fwd), hw: h.w,
       foot: new THREE.Vector3(0, f.y, -f.fwd), fw: f.w,
+      roach: /topsail|topgallant/.test(s.name) ? 0.085 : 0.03,     // a topsail's foot curves up over the top
     };
     const area = ((h.w + f.w) / 2) * (h.y - f.y);
     const bundle = this._bundle(h.w * 0.92, pivot, new THREE.Vector3(0, h.y - 0.2, -h.fwd - 0.12));
@@ -256,7 +261,7 @@ export class Sails {
 
   _lateen(s) {
     const pivot = this.pivots[s.mast];
-    const mesh = this._grid({ nx: 8, ny: 8 }, false);
+    const mesh = this._grid({ nx: LATEEN, ny: LATEEN }, false);
     pivot.add(mesh);
     const off = new THREE.Vector3(0, 0, -pivot.position.z);
     const v = (a) => new THREE.Vector3(a[0], a[1], a[2]).add(off);
@@ -271,7 +276,7 @@ export class Sails {
   }
 
   _sprit(s, level) {
-    const mesh = this._grid({ nx: 8, ny: 7 }, false);
+    const mesh = this._grid({ nx: SPRIT[0], ny: SPRIT[1] }, false);
     this.group.add(mesh);
     const corners = {
       head: new THREE.Vector3(...s.head), hw: s.w,
@@ -302,7 +307,11 @@ export class Sails {
     const a = Math.abs(awa);
     const want = Math.sign(awa) * Math.min(THREE.MathUtils.degToRad(38), Math.max(0, Math.PI - a) * 0.5);
     this.brace += (want - this.brace) * Math.min(1, dt * 0.35);
-    for (const [name, p] of Object.entries(this.pivots)) p.rotation.y = this.brace * (name === 'mizzen' ? 0.6 : 1);
+    // each mast's yards only as far as its shrouds and backstays let them
+    for (const [name, p] of Object.entries(this.pivots)) {
+      const lim = this.clear.masts[name] ? this.clear.masts[name].limit : 0.66;
+      p.rotation.y = Math.sign(this.brace) * Math.min(Math.abs(this.brace), lim) * (name === 'mizzen' ? 0.6 : 1);
+    }
 
     // the wind on the sails themselves: 180 deg is square behind them (full),
     // 90 deg along them (shivering), less is on their fore side (aback)
@@ -332,29 +341,11 @@ export class Sails {
   }
 
   _shapeSquare(s, fill, shiver, time) {
-    const { head, hw, foot, fw } = s.corners;
-    const P = s.pos.array;
-    const nx = s.kind === 'sprit' ? 8 : NX, ny = s.kind === 'sprit' ? 7 : NY;
-    const drop = head.y - foot.y;
-    const depth = (s.kind === 'sprit' ? 0.13 : 0.16) * Math.abs(drop) * fill;
-    const set = s.set;
-    for (let j = 0; j < ny; j++) {
-      const v = (j / (ny - 1)) * set;            // the canvas comes down from the yard as it is set
-      for (let i = 0; i < nx; i++) {
-        const u = i / (nx - 1);
-        const k = 3 * (j * nx + i);
-        const xh = (u - 0.5) * hw, xf = (u - 0.5) * fw;
-        let x = xh + (xf - xh) * v;
-        let y = head.y + (foot.y - head.y) * v;
-        let z = head.z + (foot.z - head.z) * v;
-        const belly = Math.sin(Math.PI * u) * Math.sin(Math.PI * (0.12 + 0.8 * (j / (ny - 1))));
-        z -= depth * belly * set;                // forward (-z) when full
-        y += Math.abs(depth) * 0.25 * belly * (j / (ny - 1)) * set;   // the foot lifts as it fills
-        if (shiver > 0.01) z += Math.sin(time * 9 + u * 7 + j * 1.3) * 0.18 * shiver * belly;
-        x *= 1 - 0.04 * belly * Math.abs(fill);
-        P[k] = x; P[k + 1] = y; P[k + 2] = z;
-      }
-    }
+    const sprit = s.kind === 'sprit';
+    const [nx, ny] = sprit ? SPRIT : [NX, NY];
+    shapeSquare(s.pos.array, s.flat, nx, ny, s.corners, s.set, fill, shiver, time, sprit);
+    const mast = sprit ? null : s.mesh.parent.name.replace('pivot_', '');
+    this.clear.square(s.pos.array, s.flat, nx, ny, mast, sprit ? 0 : s.mesh.parent.rotation.y);
     s.pos.needsUpdate = true;
     s.mesh.geometry.computeVertexNormals();
   }
@@ -362,7 +353,7 @@ export class Sails {
   _shapeLateen(s, fill, shiver, time, awa) {
     const { tack, peak, clew } = s.corners;
     const P = s.pos.array;
-    const n = 8;
+    const n = LATEEN;
     const e1 = peak.clone().sub(tack), e2 = clew.clone().sub(tack);
     const nrm = e1.clone().cross(e2).normalize();          // to starboard
     const side = -Math.sign(awa || 1);                     // bellies to leeward
@@ -372,15 +363,25 @@ export class Sails {
       for (let i = 0; i < n; i++) {
         const a = i / (n - 1), b = (j / (n - 1)) * (1 - a) * s.set;   // collapse onto the yard when furled
         p.copy(tack).addScaledVector(e1, a).addScaledVector(e2, b);
-        const belly = Math.sin(Math.PI * a) * Math.sin(Math.PI * Math.min(1, b / Math.max(0.05, 1 - a)));
+        // laced to the yard along its head: no belly there
+        const belly = Math.sin(Math.PI * a) * Math.sin(Math.PI * Math.min(1, 0.9 * b / Math.max(0.05, 1 - a)));
         p.addScaledVector(nrm, depth * belly);
         if (shiver > 0.01) p.addScaledVector(nrm, Math.sin(time * 8 + a * 6 + j) * 0.15 * shiver * belly);
         const k = 3 * (j * n + i);
         P[k] = p.x; P[k + 1] = p.y; P[k + 2] = p.z;
       }
     }
+    this.clear.lateen(P, n * n, 'mizzen', s.mesh.parent.rotation.y);
     s.pos.needsUpdate = true;
     s.mesh.geometry.computeVertexNormals();
+  }
+
+  // Canvas soaked by rain is darker and heavier (k 0..1).
+  setWet(k) {
+    const c = 1 - 0.45 * k;
+    this.matPlain.color.setScalar(c);
+    this.matEmblem.color.setScalar(c);
+    this.bundleMat.color.setRGB(0.165 * c, 0.141 * c, 0.118 * c);
   }
 
   // The emblems glow faintly at night, lit from the lanterns and the deck.

@@ -10,7 +10,7 @@ import { PLAYER } from '../config.js';
 // break), rays across stop you at the sides, bulkheads, guns and casks.
 //
 // set({ helm, bounds }) from the model's access data:
-//   helm    where the helmsman stands at the whipstaff
+//   helm    where the helmsman stands at the wheel
 //   bounds  { yMin, xMax, zMin, zMax }: outside them you are put back where
 //           you last stood
 
@@ -63,7 +63,7 @@ export class Player {
     this.pos.copy(this.helmPoint);
     this.vy = 0;
     this.yaw = 0;
-    this.pitch = -0.12;      // the whipstaff and the binnacle in front of you
+    this.pitch = 0.02;       // over the wheel, along the deck to the bow and the sails
     this.climb = null;
   }
 
@@ -173,6 +173,22 @@ export class Player {
     if (!blocked) {
       this.pos.x = nx;
       this.pos.z = nz;
+    }
+    // Keep a body's width from every wall all round (the wall rays above
+    // only look the way you walk): the eye never comes so close to a wall,
+    // or round a corner, that the view cuts into it and sees through.
+    for (let k = 0; k < 8; k++) {
+      const a = (k * Math.PI) / 4;
+      _dir.set(Math.sin(a), 0, Math.cos(a));
+      for (const h of [1.0, PLAYER.eyeHeight]) {
+        _tmp.copy(this.pos).y += h;
+        const r = this._castWall(_tmp, _dir, PLAYER.radius, collider);
+        if (r) {
+          const push = PLAYER.radius - r.distance;
+          this.pos.x -= _dir.x * push;
+          this.pos.z -= _dir.z * push;
+        }
+      }
     }
 
     // Gravity and stepping.
