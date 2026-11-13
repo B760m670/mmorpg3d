@@ -97,6 +97,8 @@ const wet = new Wetness(renderer, ship.rig);
 if (!/[?&]nowet/.test(location.search)) ship.wet = wet;     // her materials get wet (rain, sea, bilge)
 ship.load(galleonUrl);
 scene.add(ship.object);
+scene.add(ship.worldGroup);           // the anchor on the bottom and its cable
+ship.seabed = (x, z) => heightAt(x, z);
 ocean.uniforms.uBoatHalf.value.set(...GALLEON.halfHull);
 if (ship.rig.hull) ocean.setHull(ship.rig.hull);      // the sea is kept out of her by her own form
 const access = ship.rig.access;
@@ -111,6 +113,7 @@ placeEl.style.cssText = 'position:fixed;left:50%;bottom:64px;transform:translate
 if (IS_TOUCH) { placeEl.style.bottom = 'auto'; placeEl.style.top = 'calc(54px + env(safe-area-inset-top, 0px))'; }   // clear of the stick
 document.body.appendChild(placeEl);
 let placeT = 0, placeKey = '', hudT = 0;
+let orderText = '', orderT = 0;      // the last order given (sweeps, anchor), shown a moment
 const _wind = { x: 0, z: 0 };
 
 const input = new Input();
@@ -145,13 +148,13 @@ let stickStepT = 0;
 let tideCheck = -1;
 
 const HINTS = IS_TOUCH ? {
-  '3p': 'джойстик: ←→ руль, ↑↓ поставить / убрать паруса · палец по экрану — облёт, щипок — ближе/дальше · «на борт» — пройтись по кораблю',
-  helm: 'джойстик: ←→ штурвал (руль), ↑↓ паруса · палец — осмотреться · «отойти» — пройтись по кораблю',
+  '3p': 'джойстик: ←→ руль, ↑↓ поставить / убрать паруса · палец по экрану — облёт, щипок — ближе/дальше · «на борт» — пройтись по кораблю · ☰ — вёсла, якорь',
+  helm: 'джойстик: ←→ штурвал (руль; на вёслах — табанить бортом), ↑↓ паруса · палец — осмотреться · ☰ — вёсла, якорь',
   walk: 'джойстик — идти, по трапам между палубами — тоже · палец — осмотреться · у штурвала и у вант — кнопка вверху',
   swim: 'джойстик — плыть туда, куда смотрите · ▲ ▼ — вверх / вниз · палец — осмотреться · «фонарь» · у борта — «на борт»',
 } : {
-  '3p': '<b>A/D</b> руль · <b>W/S</b> поставить / убрать паруса · мышь — облёт, колесо — ближе/дальше · <b>F</b> на борт · <b>N</b> день/ночь · <b>B</b> погода · <b>M</b> звук · <b>J</b> за борт · <b>C</b> свободная камера',
-  helm: '<b>A/D</b> штурвал (руль) · <b>W/S</b> паруса · <b>E</b> отойти · <b>F</b> вид со стороны · клик — осмотреться',
+  '3p': '<b>A/D</b> руль · <b>W/S</b> поставить / убрать паруса · <b>R</b> вёсла · <b>G</b> якорь · мышь — облёт, колесо — ближе/дальше · <b>F</b> на борт · <b>N</b> день/ночь · <b>B</b> погода · <b>M</b> звук · <b>J</b> за борт · <b>C</b> свободная камера',
+  helm: '<b>A/D</b> штурвал (руль; на вёслах — табанить бортом) · <b>W/S</b> паруса · <b>R</b> вёсла · <b>G</b> отдать / выбрать якорь · <b>E</b> отойти · <b>F</b> вид со стороны · клик — осмотреться',
   walk: '<b>WASD</b> идти (по трапам между палубами — тоже) · <b>Shift</b> бегом · <b>E</b> у штурвала — взять руль, у вант — лезть на марс · <b>J</b> за борт · <b>F</b> вид со стороны · клик — осмотреться',
   swim: '<b>WASD</b> плыть туда, куда смотрите · <b>Space</b> вверх · <b>C</b> вниз · <b>Shift</b> быстрее · <b>L</b> фонарь · <b>E</b> на борт (у борта) · клик — осмотреться',
 };
@@ -356,6 +359,13 @@ function tick() {
     } else if (mode === 'swim') climbAboard();
   }
   if (input.pressed('j') && (mode === '3p' || mode === 'walk') && ship.model) overTheSide();
+  // the sweeps and the anchor: orders from anywhere aboard or from outside
+  if (mode !== 'swim' && ship.model) {
+    let said = '';
+    if (input.pressed('r')) said = ship.toggleSweeps();
+    if (input.pressed('g')) said = ship.anchorOrder(ocean.tide);
+    if (said) { orderText = said; orderT = 4; if (touch) touch.toast(said, 3); }
+  }
   if (input.pressed('l') && mode === 'swim') {
     torchUser = !underwater.torchOn;
     if (touch) touch.toast(torchUser ? 'Фонарь включён' : 'Фонарь выключен', 1.5);
@@ -481,12 +491,14 @@ function tick() {
   }
   if (touch) touch.update(ship);
   hudT -= dt;
+  orderT = Math.max(0, orderT - dt);
   const conn = mode === '3p' || mode === 'helm';
   if (hudT <= 0 && conn) {
     hudT = 0.25;
     const d = ship.describe();
     const r = Math.round(ship.rudder);
-    shipHud.innerHTML = `<b>${ship.knots.toFixed(1)} уз</b> · ${d.lvl}<br>ветер ${d.course}, ${ship.aws.toFixed(0)} м/с<br>руль ${r === 0 ? 'прямо' : `${Math.abs(r)}° ${r > 0 ? 'лево' : 'право'}`}`;
+    shipHud.innerHTML = `<b>${ship.knots.toFixed(1)} уз</b> · ${d.lvl}<br>ветер ${d.course}, ${ship.aws.toFixed(0)} м/с<br>руль ${r === 0 ? 'прямо' : `${Math.abs(r)}° ${r > 0 ? 'лево' : 'право'}`}`
+      + (d.extra ? `<br>${d.extra}` : '') + (orderT > 0 ? `<br><i>${orderText}</i>` : '');
   }
   shipHud.style.display = conn ? 'block' : 'none';
 

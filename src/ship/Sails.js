@@ -381,7 +381,7 @@ export class Sails {
     const c = 1 - 0.45 * k;
     this.matPlain.color.setScalar(c);
     this.matEmblem.color.setScalar(c);
-    this.bundleMat.color.setRGB(0.165 * c, 0.141 * c, 0.118 * c);
+    this.bundleMat.color.setHex(0x2a241e).multiplyScalar(c);
   }
 
   // The emblems glow faintly at night, lit from the lanterns and the deck.

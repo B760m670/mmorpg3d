@@ -103,6 +103,8 @@ export class TouchControls {
     menuBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); menu.classList.toggle('open'); });
     this.button(menu, 'день / ночь', 'n');
     this.button(menu, 'погода', 'b');
+    this.button(menu, 'вёсла', 'r');
+    this.button(menu, 'якорь', 'g');
     this.btnSound = this.button(menu, 'звук: вкл', 'm');
     this.menu = menu;
 

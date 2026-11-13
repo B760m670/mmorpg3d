@@ -29,7 +29,10 @@ the Spanish rule "as, dos, tres": beam 1, keel 2, length 3).
   cornice on carved brackets, the great cabin's gallery between carved
   posts, the upper gallery as an arcade, our own arms, the crest, three
   lanterns; two-tier quarter galleries with lead domes;
-* beakhead with head rails, grating and a leaping lion figurehead;
+* beakhead with head rails and grating; the figurehead is our own, a sea
+  serpent carved in oak and tarred: its body along the knee of the head, the
+  tail curled down its side, the neck ringed with carved scales and crested
+  with spines, the head open-jawed under the spritsail;
 * bowsprit with sprit topmast; fore and main masts with topmast and
   topgallant, mizzen with topmast; round tops with rails; shrouds on
   deadeyes and channels with ratlines, stays, backstays; eleven yards.
@@ -92,6 +95,24 @@ her round as a crew would work them: the mizzen sheeted home to come up
 into the wind, the spritsail kept full to bear away, the headsails backed
 when the wind is ahead, so she can be turned with little way on.
 
+**Sweeps.** In a calm she can be rowed: twenty sweeps, ten a side, 12.7 m
+long, through small ports on the lower gundeck between the gun ports (low
+enough over the water for the sweep to lie at a working angle with its
+handle at a man's chest). The stroke is rowed as it was: catch, drive,
+finish, recovery, about eighteen to the minute; with five men to a sweep
+she makes a little over two knots and takes minutes to gather way. Put the
+helm over and the sweeps on that side back water while the other side
+pulls: she turns on the spot.
+
+**Anchor.** The best bower hangs catted at the starboard cathead. Let go,
+it drops to the bottom and the cable runs out through the hawse to four or
+five times the depth; riding to it, the cable hangs in a curve (lying on the
+bottom where slack), holds her and swings her head to it, to wind and sea.
+To weigh, the bars are shipped in the capstan, which turns as the cable
+comes in at about 15 m a minute and heaves her up to her anchor; when it is
+up and down the anchor breaks out, comes up to the hawse and is catted
+again. Over 90 m of water the cable will not reach the bottom.
+
 **Wet.** Her timbers get wet as wood really does (`src/ship/Wetness.js`):
 rain wets what is open to the sky (a height map of the ship from above
 tells what lies under a deck), water stands in the seams and in a few
@@ -128,6 +149,8 @@ You can sail her from outside, take the wheel, or walk about her.
 | `Shift` | | run |
 | `F` | outside → aboard; aboard → outside | back to the outside view |
 | `E` | at the wheel: let go of it | take the wheel (standing at it); go up / down the shrouds (at their foot or in the top) |
+| `R` | out sweeps / in sweeps | the same |
+| `G` | let go the anchor / weigh it / stop the capstan | the same |
 | `J` | over the side | over the side |
 | `N` / `B` / `M` | day ↔ night / weather / sound on-off | |
 | `C` | free orbit camera (outside view) | |

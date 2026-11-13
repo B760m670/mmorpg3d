@@ -6,6 +6,8 @@ import { Sails, Flags, squareDrive } from '../ship/Sails.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { shipMaterial } from '../ship/Materials.js';
 import { POROSITY } from '../ship/Wetness.js';
+import { Sweeps } from '../ship/Sweeps.js';
+import { Anchor } from '../ship/Anchor.js';
 
 // The ship: a large sailing ship of the 1620s after Vasa, Blender-built
 // (blender/build_galleon.py), and her sailing.
@@ -153,6 +155,10 @@ export class Galleon {
     this.model = null;
     this.sails = new Sails(RIG);
     this.flags = new Flags(RIG);
+    this.sweeps = new Sweeps(RIG);          // oars for a calm
+    this.anchor = new Anchor(RIG);          // the best bower and the capstan
+    this.worldGroup = new THREE.Group();    // what stays put in the world (the anchor on the bottom, its cable)
+    this.seabed = () => -100;
     this.group.add(this.sails.group, this.flags.group);
     this.lantern = new THREE.PointLight(0xffb060, 0, 46, 1.6);
     this.lantern.position.set(...RIG.lanterns[1]);
@@ -278,6 +284,8 @@ export class Galleon {
         }
       }
       this.model = model;
+      this.sweeps.attach(model);
+      this.anchor.attach(model, this.worldGroup, hingeAt);
       if (this.wet) this.wet.bake(model);       // what the rain can reach
       this.setNight(this.night);
       if (onReady) onReady(this);
@@ -297,6 +305,12 @@ export class Galleon {
   }
 
   sail(dir) { this.sails.setLevel(this.sails.level + dir); }
+
+  // Out sweeps, or in.
+  toggleSweeps() { this.sweeps.set(!this.sweeps.rowing); return this.sweeps.rowing ? 'на вёсла! — вёсла на воду' : 'суши вёсла — убрать'; }
+
+  // Let go the anchor, or weigh it (or stop the capstan).
+  anchorOrder(waterY) { return this.anchor.order(waterY, this.seabed); }
 
   setNight(k) {
     this.night = k;
@@ -329,7 +343,13 @@ export class Galleon {
     const force = q * spread * c * 0.85;
     this.drive = c;
     const turnLoss = 0.25 * Math.abs(this.yawRate) * this.speed * GALLEON.mass;
-    this.speed += ((force - hullResistance(this.speed) - turnLoss) / GALLEON.mass) * dt;
+    // the wind on her hull, castles and bare rigging (about 380 m2 of drag
+    // area): with no sail set she still drifts before it, astern if it is
+    // ahead, until (at anchor) the cable takes her
+    const windage = q * 380 * (-(Math.cos(this.awa)));     // + ahead when the wind is from astern
+    // the sweeps, pulling (or backing water on the side she is to turn to)
+    this.sweeps.update(dt, this.helm / GALLEON.rudderMax);
+    this.speed += ((force + windage + this.sweeps.thrust - hullResistance(this.speed) - turnLoss) / GALLEON.mass) * dt;
     // leeway: pushed sideways by the wind on her sails and her high sides
     const side = q * (spread * 0.35 + 260) * Math.sin(this.awa) * Math.abs(Math.cos(this.awa * 0.5));
     const wantLee = -Math.sign(side) * Math.min(0.9, Math.sqrt(Math.abs(side) / 60000) * (0.4 + 0.6 / (1 + Math.abs(this.speed))));
@@ -351,6 +371,9 @@ export class Galleon {
       const side = 0.35 + 0.65 * Math.abs(Math.sin(this.awa));
       target += 0.016 * order * press * side * (0.4 + 0.6 * (this.sails.setFrac || 0));
     }
+    // and the sweeps' turning moment (one side pulling, the other backing),
+    // and the anchor cable swinging her head to it
+    target += this.sweeps.moment * 7.6e-7 + this.anchor.yawPull;
     this.yawRate += (target - this.yawRate) * (dt / GALLEON.yawTime);
     this.heading += this.yawRate * dt;
     if (this.rudderNode) this.rudderNode.rotation.y = -this.rudder * DEG;
@@ -407,6 +430,9 @@ export class Galleon {
     if (bowDip > 1.1 && this.pitchV < -0.12 && way > 0.3 && !this._buried) { this.slam = Math.min(1, (bowDip - 1.1) * 0.8 + 0.3) * way; this._buried = true; }
     if (bowDip < 0.6) this._buried = false;
 
+    // riding to her anchor: the cable holds her and swings her head to it
+    this.anchor.update(dt, this, hC, this.seabed);
+
     this._euler.set(this.pitch, this.heading, this.roll + this.heel, 'YXZ');
     this.group.position.copy(this.position);
     this.group.quaternion.setFromEuler(this._euler);
@@ -424,6 +450,8 @@ export class Galleon {
     const side = this.awa >= 0 ? 'справа' : 'слева';
     const course = a < 50 ? 'в лоб — паруса на мачту!' : a < 70 ? `круто к ветру ${side}` : a < 110 ? `в галфвинд ${side}` : a < 160 ? `бакштаг ${side}` : 'фордевинд';
     const lvl = ['паруса убраны', 'нижние паруса', 'нижние и марсели', 'все паруса'][this.sails.level];
-    return { course, lvl };
+    const extra = [this.sweeps.rowing ? (this.sweeps.out < 1 ? 'вёсла выдвигают' : 'на вёслах') : this.sweeps.out > 0 ? 'вёсла убирают' : '',
+      this.anchor.describe()].filter(Boolean).join(' · ');
+    return { course, lvl, extra };
   }
 }

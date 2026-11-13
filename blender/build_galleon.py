@@ -578,6 +578,49 @@ def rod(name, pts, r, mat, seg=8, side=False):
         cyl(name, a, b, r, mat, seg=seg, side=side)
 
 
+def sweep_tube(name, pts, radii, mat, seg=14, ring=None, side=False):
+    """A tube swept along a polyline, radius per point; ring(k, angle) may
+    scale the radius (carved rings, scales)."""
+    pts = [Vector(p) for p in pts]
+    bm = bmesh.new()
+    rings = []
+    prev_n = None
+    for k, p in enumerate(pts):
+        t = (pts[min(k + 1, len(pts) - 1)] - pts[max(k - 1, 0)]).normalized()
+        ref = Vector((1, 0, 0)) if abs(t.x) < 0.9 else Vector((0, 0, 1))
+        nrm = (ref - t * ref.dot(t)).normalized() if prev_n is None else (prev_n - t * prev_n.dot(t)).normalized()
+        prev_n = nrm
+        bi = t.cross(nrm)
+        rr = []
+        for j in range(seg):
+            a_ = 2 * math.pi * j / seg
+            r = radii[k] * (ring(k, a_) if ring else 1.0)
+            rr.append(bm.verts.new(p + (nrm * math.cos(a_) + bi * math.sin(a_)) * r))
+        rings.append(rr)
+    for ra, rb in zip(rings[:-1], rings[1:]):
+        for j in range(seg):
+            bm.faces.new([ra[j], ra[(j + 1) % seg], rb[(j + 1) % seg], rb[j]])
+    bm.faces.new(list(reversed(rings[0])))
+    bm.faces.new(rings[-1])
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    return new_obj(name, bm, mat, smooth_shade=True, side=side, uv_axis=(pts[-1] - pts[0]).normalized())
+
+
+def loft(name, sections, mat, side=False, cap=True):
+    """A surface through rings of points (equal counts), capped at the ends."""
+    bm = bmesh.new()
+    rings = [[bm.verts.new(Vector(p)) for p in sec] for sec in sections]
+    n = len(rings[0])
+    for ra, rb in zip(rings[:-1], rings[1:]):
+        for j in range(n):
+            bm.faces.new([ra[j], ra[(j + 1) % n], rb[(j + 1) % n], rb[j]])
+    if cap:
+        bm.faces.new(list(reversed(rings[0])))
+        bm.faces.new(rings[-1])
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    return new_obj(name, bm, mat, smooth_shade=True, side=side)
+
+
 def baluster_row(name, a, b, h, mat, rail_mat, gap=0.32, side=False):
     a, b = Vector(a), Vector(b)
     n = max(1, int(round((a - b).length / gap)))
@@ -813,6 +856,48 @@ def build_ports():
         for f in (0.25, 0.75):      # hinge straps down the lid from its top
             panel("port_hinge", c + ln * 0.075 + up * (h * 0.06) + ts * (w * (f - 0.5)), ts, up, 0.055, h * 0.8, M["iron"], 0.02, side=True)
         panel("port_ring", c + ln * 0.075 - up * (h * 0.3), ts, up, 0.05, 0.05, M["iron"], 0.04, side=True)
+
+
+# sweeps: long oars worked from the lower gundeck through small ports
+# between the gun ports (low over the water, so that the sweep lies at a
+# working angle and its handle comes at a man's chest), for a calm or for
+# working in and out of harbour, as many a ship of the pirates' day carried
+SWEEP_S = [9.075 + 2.95 * _k for _k in range(10)]
+SWEEP_LEN = (3.6, 8.6)      # inboard (loom) and outboard of the port, m
+
+
+def build_sweeps():
+    for s in SWEEP_S:
+        zc = D_LGD + 0.55 + sheer(s)
+        p, n, ts, tz = hull_frame(s, zc)
+        panel("sweep_port_dark", p - n * 0.015, ts, tz, 0.3, 0.26, M["hold"], 0.02, side=True)
+        # (no lid outside: a shutter slides across inside; a plain frame
+        # round the opening, painted with the side)
+        for dz in (-0.15, 0.15):
+            panel("sweep_port_frame", p + tz * dz + n * 0.02, ts, tz, 0.4, 0.05, M["dark"], 0.05, side=True)
+        for dx in (-0.175, 0.175):
+            panel("sweep_port_frame", p + ts * dx + n * 0.02, ts, tz, 0.05, 0.3, M["dark"], 0.05, side=True)
+        q = p - n * 0.25                           # and inside, through the ceiling
+        panel("sweep_port_in", q, ts, tz, 0.34, 0.3, M["hold"], 0.03, side=True)
+        for dz in (-0.18, 0.18):
+            panel("sweep_port_sill", q + tz * dz - n * 0.02, ts, tz, 0.5, 0.08, M["in_beam"], 0.08, side=True)
+        RIG.setdefault("sweeps", []).append({"s": s, "at": g(p + n * 0.06), "n": [round(n.x, 4), round(n.z, 4), round(-n.y, 4)]})
+    # the oar itself, its own node (laid along +x from its pivot in the port),
+    # copied by the game for each port
+    n0 = len(PARTS)
+    lin, lout = SWEEP_LEN
+    o = Vector((0, 0, 0))
+    X = Vector((1, 0, 0))
+    cyl("sweep_handle", o - X * (lin + 0.45), o - X * lin, 0.038, M["spar"], seg=8)
+    sphere("sweep_knob", o - X * (lin + 0.47), 0.05, M["spar"], seg=8)
+    cyl("sweep_loom", o - X * lin, o, 0.08, M["spar"], seg=10, r2=0.072)
+    cyl("sweep_leather", o - X * 0.35, o + X * 0.3, 0.088, M["rope"], seg=10)
+    cyl("sweep_shaft", o, o + X * (lout - 1.75), 0.072, M["spar"], seg=10, r2=0.05)
+    cyl("sweep_neck", o + X * (lout - 1.75), o + X * (lout - 1.5), 0.05, M["spar"], seg=10, r2=0.035)
+    box("sweep_blade", o + X * (lout - 0.75), (1.5, 0.04, 0.24), M["spar"])
+    box("sweep_blade_tip", o + X * (lout - 0.02), (0.06, 0.05, 0.26), M["iron"])
+    SWEEP_PARTS.extend(PARTS[n0:])
+    del PARTS[n0:]
 
 
 # ------------------------------------------------------------------ decks, inside and out
@@ -1391,8 +1476,11 @@ def build_interior():
 
 
 LAMPS = []
-NODES = []        # extra nodes the game moves (the wheel)
+NODES = []        # extra nodes the game moves (the wheel, capstan, anchor, sweep)
 WHEEL_PARTS = []
+CAPSTAN_PARTS, BAR_PARTS, ANCHOR_PARTS, SWEEP_PARTS = [], [], [], []
+CAPSTAN_S = 26.2           # the capstan, in the waist abaft the mainmast
+HAWSE_S = 48.3             # the hawse holes, either side of the stem
 
 
 def build_collision():
@@ -1788,15 +1876,24 @@ def build_head():
         cyl("cathead", p0, p1, 0.17, M["dark"], seg=8, side=True)
         sphere("cathead_end", p1 + Vector((0.12, 0.08, 0)), 0.2, M["gold"], seg=8, side=True)
         xa = half_breadth(46.0, 3.8) + 0.55
-        top, crown = Vector((xa, Y(46.3), zc - 0.4)), Vector((xa, Y(46.3), zc - 4.3))
-        cyl("anchor_shank", top, crown, 0.11, M["iron"], seg=8, side=True)
-        box("anchor_stock", (xa, Y(46.3), top.z - 0.25), (0.22, 3.2, 0.22), M["dark"], side=True)
-        for d in (-1, 1):
-            tip = Vector((xa + 0.12, Y(46.3 + d * 1.25), crown.z + 1.15))
-            cyl("anchor_arm", crown, tip, 0.1, M["iron"], seg=8, side=True)
-            panel("anchor_fluke", tip + Vector((0.0, -d * 0.12, -0.2)), (0, d, 0.45), (0, -0.45, 1), 0.55, 0.6, M["iron"], 0.05, side=True)
-        cyl("anchor_ring", top + Vector((0, 0, 0.1)), top + Vector((0, 0, 0.45)), 0.16, M["iron"], seg=8, cap=False, side=True)
-        rod("anchor_cable", [p1 + Vector((0, 0, -0.1)), top + Vector((0, 0, 0.4))], 0.045, M["rope"], seg=5, side=True)
+        top = Vector((xa, Y(46.3), zc - 0.4))
+        for sx in (1, -1):                  # the bowers, catted; the starboard one is let go by the game
+            n0 = len(PARTS)
+            anchor_parts(Vector((sx * xa, top.y, top.z)), sx)
+            if sx > 0:
+                ANCHOR_PARTS.extend(PARTS[n0:])
+                del PARTS[n0:]
+        # the port one's cat fall (the starboard one's is drawn by the game)
+        rod("anchor_cable", [Vector((-p1.x, p1.y, p1.z - 0.1)), Vector((-xa, top.y, top.z + 0.4))], 0.045, M["rope"], seg=5)
+        RIG["anchor"] = {"ring": g(top + Vector((0, 0, 0.42))), "cathead": g(p1 + Vector((0.12, 0.08, -0.15))),
+                         "shank": 3.9}
+    # hawse holes either bow, a bolster round each: the cable comes in here
+    sh, zh_ = HAWSE_S, D_UGD + sheer(HAWSE_S) + 0.55
+    p, n, ts, tz = hull_frame(sh, zh_)
+    cyl("hawse_bolster", p - n * 0.02, p + n * 0.14, 0.26, M["dark"], seg=14, side=True)
+    cyl("hawse_hole", p + n * 0.13, p + n * 0.16, 0.16, M["hold"], seg=12, side=True)
+    cyl("hawse_lip", p + n * 0.12, p + n * 0.17, 0.2, M["iron"], seg=14, cap=False, side=True)
+    RIG.setdefault("anchor", {})["hawse"] = g(p + n * 0.16)
     # beakhead grating between the rails
     bm = bmesh.new()
     zg = zh + 0.08
@@ -1809,12 +1906,150 @@ def build_head():
                 bm.faces.new([prev[k], prev[k + 1], cur[k + 1], cur[k]])
         prev = cur
     new_obj("beak_grating", bm, M["grating"])
-    build_lion((0.0, 56.9, zh - 0.15))
+    build_serpent()
     for x in (-0.6, 0.6):           # knightheads either side of the bowsprit
         box("knighthead", (x, Y(50.3), D_FC + sheer(50.3) + 1.2), (0.3, 0.35, 2.5), M["carved"])
     box("bowsprit_bitts", (0, Y(39.4), D_FC + sheer(39.4) + 0.55), (1.6, 0.35, 0.3), M["oak_x"])
     for x in (-0.65, 0.65):
         box("bowsprit_bitt", (x, Y(39.4), D_FC + sheer(39.4) + 0.45), (0.3, 0.3, 1.0), M["oak_z"])
+
+
+def anchor_parts(top, sx):
+    """A bower anchor hanging from its ring at `top` (Blender frame): shank,
+    oak stock, arms and flukes."""
+    crown = top - Vector((0, 0, 3.9))
+    cyl("anchor_shank", top, crown, 0.11, M["iron"], seg=8, r2=0.13)
+    box("anchor_stock", (top.x, top.y, top.z - 0.25), (0.22, 3.2, 0.22), M["dark"])
+    for d in (-1, 1):
+        tip = Vector((top.x + sx * 0.12, top.y + d * 1.25, crown.z + 1.15))
+        cyl("anchor_arm", crown, tip, 0.1, M["iron"], seg=8, r2=0.07)
+        panel("anchor_fluke", tip + Vector((0.0, -d * 0.12, -0.2)), (0, d, 0.45), (0, -0.45, 1), 0.55, 0.6, M["iron"], 0.05)
+        sphere("anchor_bill", tip + Vector((0, d * 0.06, 0.12)), 0.06, M["iron"], seg=6)
+    sphere("anchor_crown", crown, 0.15, M["iron"], seg=8)
+    cyl("anchor_ring", top + Vector((0, 0, 0.1)), top + Vector((0, 0, 0.45)), 0.16, M["iron"], seg=8, cap=False)
+
+
+def _spline(ctrl, n):
+    """Catmull-Rom through control points, n points per span."""
+    P = [Vector(c) for c in ctrl]
+    P = [P[0] * 2 - P[1]] + P + [P[-1] * 2 - P[-2]]
+    out = []
+    for i in range(1, len(P) - 2):
+        p0, p1, p2, p3 = P[i - 1], P[i], P[i + 1], P[i + 2]
+        for k in range(n):
+            t = k / n
+            out.append(0.5 * ((2 * p1) + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t + (-p0 + 3 * p1 - 3 * p2 + p3) * t ** 3))
+    out.append(P[-2])
+    return out
+
+
+def build_serpent():
+    """The figurehead: a sea serpent, our own, carved in oak and tarred. Its
+    body lies along the knee of the head with the tail curled down its side;
+    the neck rises forward in a curve, ringed with carved scales and crested
+    with spines, and the head, open-jawed, looks out ahead under the
+    spritsail."""
+    zh = Z_STEMHEAD
+    mat, teeth_mat, eye_mat = M["carved"], M["oak"], M["iron"]
+    # the spine of it, (s, z) on the centreline: tail, body on the knee, neck
+    ctrl = [(53.7, zh - 1.35), (54.2, zh - 0.75), (54.9, zh - 0.38), (55.6, zh - 0.27), (56.3, zh - 0.16),
+            (56.95, zh + 0.12), (57.45, zh + 0.65), (57.8, zh + 1.15), (58.15, zh + 1.42)]
+    pts = _spline([(0.0, Y(sv), zv) for sv, zv in ctrl], 12)
+    L = [0.0]
+    for a_, b_ in zip(pts[:-1], pts[1:]):
+        L.append(L[-1] + (b_ - a_).length)
+    tot = L[-1]
+    def rad(d):                       # thin at the tail, thickest on the knee, the neck thinning to the head
+        u = d / tot
+        return 0.06 + 0.27 * min(1.0, u / 0.3) ** 0.8 - 0.1 * max(0.0, (u - 0.45) / 0.55)
+    radii = [rad(d) for d in L]
+    def scales(k, a_):                # carved rings of scales, and a flatter belly
+        band = max(0.0, math.cos(2 * math.pi * L[k] / 0.13)) ** 6
+        belly = 1.0 - 0.12 * max(0.0, -math.sin(a_)) ** 2
+        return (1.0 + 0.06 * band) * belly
+    sweep_tube("figure_body", pts, radii, mat, seg=18, ring=scales)
+    # the crest of spines along its back, from the knee to the head
+    bm = bmesh.new()
+    prev = None
+    for k, p in enumerate(pts):
+        if L[k] < tot * 0.3:
+            continue
+        t = (pts[min(k + 1, len(pts) - 1)] - pts[max(k - 1, 0)]).normalized()
+        up = Vector((0, -t.z, t.y)).normalized()
+        if up.z < 0:
+            up = -up
+        h = 0.05 + 0.2 * ((L[k] / 0.24) % 1.0) * (1.0 - 0.5 * max(0.0, (L[k] / tot - 0.85) / 0.15))
+        base = p + up * (radii[k] * 0.92)
+        tip = base + up * h - t * h * 0.5             # the spines lean back
+        cur = [bm.verts.new(base + Vector((sx * 0.018, 0, 0))) for sx in (-1, 1)] + [bm.verts.new(tip + Vector((sx * 0.006, 0, 0))) for sx in (1, -1)]
+        if prev:
+            for q in range(4):
+                bm.faces.new([prev[q], prev[(q + 1) % 4], cur[(q + 1) % 4], cur[q]])
+        prev = cur
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    new_obj("figure_crest", bm, mat)
+
+    # the head: a loft of rounded sections, the lower jaw hinged open
+    H0 = pts[-1] + Vector((0, 0.02, 0.02))
+    F = Vector((0, 1, -0.14)).normalized()
+    R = Vector((1, 0, 0))
+    U = R.cross(F)
+    Lh = 1.4
+    K = 1.35                          # the head's size against the 1 m sketch below
+
+    def section(c, Fv, Uv, w, ht, hb, n=22, ex=2.6):
+        out = []
+        for j in range(n):
+            ph = 2 * math.pi * j / n
+            cy, sz = math.cos(ph), math.sin(ph)
+            yy = K * w * math.copysign(abs(cy) ** (2 / ex), cy)
+            zz = K * (ht if sz > 0 else hb) * math.copysign(abs(sz) ** (2 / ex), sz)
+            out.append(c + R * yy + Uv * zz)
+        return out
+    prof = [(0.0, 0.27, 0.26, 0.2), (0.14, 0.28, 0.3, 0.14), (0.3, 0.25, 0.24, 0.07), (0.48, 0.2, 0.18, 0.05),
+            (0.66, 0.16, 0.14, 0.04), (0.82, 0.12, 0.11, 0.03), (0.94, 0.085, 0.08, 0.025), (1.0, 0.05, 0.05, 0.02)]
+    loft("figure_head", [section(H0 + F * (t * Lh), F, U, w, ht, hb) for t, w, ht, hb in prof], mat)
+    # brow ridges and eyes
+    for sx in (-1, 1):
+        ce = H0 + F * (0.3 * Lh) + U * (0.12 * K) + R * (sx * 0.19 * K)
+        sphere("figure_eye", ce, 0.075, eye_mat, seg=12)
+        brow = [H0 + F * ((0.2 + 0.08 * k) * Lh) + U * K * (0.2 - 0.012 * (k - 1.5) ** 2) + R * (sx * K * (0.2 - 0.01 * k)) for k in range(4)]
+        sweep_tube("figure_brow", brow, [0.065, 0.075, 0.065, 0.045], mat, seg=8)
+        # horns, swept back and up from behind the brows
+        hc = [H0 + F * 0.16 + U * 0.3 + R * (sx * 0.21), H0 - F * 0.14 + U * 0.5 + R * (sx * 0.29),
+              H0 - F * 0.55 + U * 0.64 + R * (sx * 0.31), H0 - F * 0.88 + U * 0.62 + R * (sx * 0.26)]
+        hp = _spline(hc, 5)
+        sweep_tube("figure_horn", hp, [0.1 * (1 - k / len(hp)) + 0.01 for k in range(len(hp))], mat, seg=8,
+                   ring=lambda k, a_: 1.0 + 0.08 * max(0.0, math.cos(k * 1.7)) ** 4)
+        # barbels hanging from the corners of the snout, as carvers gave them
+        bc = [H0 + F * (0.86 * Lh) + R * (sx * 0.09) - U * 0.02, H0 + F * (0.98 * Lh) + R * (sx * 0.2) - U * 0.18,
+              H0 + F * (0.9 * Lh) + R * (sx * 0.26) - U * 0.42, H0 + F * (0.78 * Lh) + R * (sx * 0.22) - U * 0.6]
+        bp = _spline(bc, 5)
+        sweep_tube("figure_barbel", bp, [0.03 * (1 - 0.8 * k / len(bp)) for k in range(len(bp))], mat, seg=6)
+        # nostrils
+        sphere("figure_nostril", H0 + F * (0.95 * Lh) + U * 0.07 + R * (sx * 0.05), 0.03, eye_mat, seg=6)
+    # the lower jaw, open
+    J = H0 + F * (0.16 * Lh) - U * 0.11
+    a_open = math.radians(24)
+    Fj = (F * math.cos(a_open) - U * math.sin(a_open)).normalized()
+    Uj = R.cross(Fj)
+    Lj = 1.16
+    jprof = [(0.0, 0.2, 0.05, 0.12), (0.25, 0.18, 0.04, 0.1), (0.5, 0.14, 0.035, 0.08), (0.75, 0.1, 0.03, 0.06), (1.0, 0.055, 0.025, 0.035)]
+    loft("figure_jaw", [section(J + Fj * (t * Lj), Fj, Uj, w, ht, hb) for t, w, ht, hb in jprof], mat)
+    # teeth: down from the upper jaw, up from the lower, fangs forward
+    for sx in (-1, 1):
+        for k in range(7):
+            t = 0.4 + 0.085 * k
+            w = K * (0.25 - 0.19 * (t - 0.3) / 0.7)
+            base = H0 + F * (t * Lh) + R * (sx * w * 0.82) - U * 0.03
+            ln = 0.18 if k == 4 else 0.1
+            cyl("figure_tooth", base, base - U * ln + F * 0.015, 0.03 if k == 4 else 0.021, teeth_mat, seg=6, r2=0.003)
+        for k in range(6):
+            t = 0.3 + 0.12 * k
+            w = K * (0.19 - 0.13 * t)
+            base = J + Fj * (t * Lj) + R * (sx * w * 0.8) + Uj * 0.04
+            cyl("figure_tooth", base, base + Uj * (0.15 if k == 4 else 0.08), 0.021, teeth_mat, seg=6, r2=0.003)
+    cyl("figure_tongue", J + Fj * 0.2 + Uj * 0.04, J + Fj * 0.95 + Uj * 0.08, 0.065, M["red"], seg=8, r2=0.025)
 
 
 def build_lion(base):
@@ -1866,13 +2101,30 @@ def build_lion(base):
 def build_deck_fittings():
     zu = lambda s: D_UGD + sheer(s)  # noqa: E731
     # capstan in the waist, abaft the mainmast
-    s = 26.2
+    # (its own node, turned by the game when the anchor is weighed; the bars
+    # are shipped in the drumhead only then)
+    s = CAPSTAN_S
     z = zu(s)
-    cyl("capstan_barrel", (0, Y(s), z), (0, Y(s), z + 0.95), 0.36, M["oak_z"], seg=12, r2=0.3)
+    cyl("capstan_step", (0, Y(s), z), (0, Y(s), z + 0.08), 0.62, M["dark"], seg=16)
+    n0 = len(PARTS)
+    cyl("capstan_barrel", (0, Y(s), z + 0.08), (0, Y(s), z + 0.95), 0.36, M["oak_z"], seg=12, r2=0.3)
     cyl("capstan_head", (0, Y(s), z + 0.95), (0, Y(s), z + 1.25), 0.6, M["dark"], seg=14)
+    cyl("capstan_cap", (0, Y(s), z + 1.25), (0, Y(s), z + 1.3), 0.3, M["iron"], seg=14)
     for k in range(8):
         a = 2 * math.pi * k / 8
-        box("capstan_whelp", (0.36 * math.cos(a), Y(s) + 0.36 * math.sin(a), z + 0.45), (0.12, 0.12, 0.8), M["oak_z"])
+        box("capstan_whelp", (0.36 * math.cos(a), Y(s) + 0.36 * math.sin(a), z + 0.5), (0.12, 0.12, 0.8), M["oak_z"])
+        a2 = a + math.pi / 8
+        box("capstan_bar_hole", (0.6 * math.cos(a2), Y(s) + 0.6 * math.sin(a2), z + 1.1), (0.06, 0.06, 0.14), M["hold"])
+    CAPSTAN_PARTS.extend(PARTS[n0:])
+    del PARTS[n0:]
+    n0 = len(PARTS)
+    for k in range(8):                    # the bars: ash, 2.2 m, a man to each
+        a2 = 2 * math.pi * k / 8 + math.pi / 8
+        d = Vector((math.cos(a2), math.sin(a2), 0))
+        c = Vector((0, Y(s), z + 1.1))
+        cyl("capstan_bar", c + d * 0.5, c + d * 2.7, 0.045, M["spar"], seg=8, r2=0.038)
+    BAR_PARTS.extend(PARTS[n0:])
+    del PARTS[n0:]
     # belfry at the forecastle break
     s, z = BRK_FC + 0.6, D_FC + sheer(BRK_FC)
     for x in (-0.45, 0.45):
@@ -2272,7 +2524,8 @@ def access():
         P("Румпель", "рычаг на голове руля; его тянут штуртросы от штурвала", 0, WHIPSTAFF_S - 2.0, zu(WHIPSTAFF_S), 2.0),
         P("Шкафут", "открытая середина верхней батарейной палубы: шпиль, люки", 0, 30.0, zu(30.0), 4.0),
         P("Бак", "под полубаком: битенги бушприта, фок-мачта", 0, 44.0, zu(44.0), 3.5),
-        P("Гальюн", "решётка на носу, за ней — лев", 0, 52.5, Z_STEMHEAD + 0.1, 2.5),
+        P("Гальюн", "решётка на носу; на княвдигеде — резной морской змей", 0, 52.5, Z_STEMHEAD + 0.1, 2.5),
+        P("Шпиль", "вымбовки вставляют, когда выбирают якорь", 0, CAPSTAN_S, zu(CAPSTAN_S), 1.6),
         P("Нижняя батарейная палуба", "24 тяжёлые пушки за закрытыми портами", 0, 26.0, zl(26.0), 6.0),
         P("Орлоп", "бухты якорных канатов, запасные паруса, бочки", 0, 26.0, zo(26.0), 7.0),
         P("Трюм", "балласт, бочки с водой и пивом, груз; камбуз и помпы", 0, 22.0, Z_HOLD, 9.0),
@@ -2294,6 +2547,7 @@ def access():
 build_hull()
 build_wales()
 build_ports()
+build_sweeps()
 build_decks()
 build_interior()
 build_stern()
@@ -2357,6 +2611,9 @@ def merge(parts, name):
 
 WHEEL = merge(WHEEL_PARTS, "wheel")
 NODES.append(WHEEL)
+for _parts, _name in ((CAPSTAN_PARTS, "capstan"), (BAR_PARTS, "capstan_bars"), (ANCHOR_PARTS, "anchor"), (SWEEP_PARTS, "sweep")):
+    if _parts:
+        NODES.append(merge(_parts, _name))
 
 
 def _mat(o):
